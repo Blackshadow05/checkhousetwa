@@ -126,6 +126,24 @@ export type Database = {
         };
         Relationships: [];
       };
+      menus: {
+        Row: {
+          id: string;
+          fecha_menu: string;
+          contenido_menu: string;
+        };
+        Insert: {
+          id?: string;
+          fecha_menu: string;
+          contenido_menu: string;
+        };
+        Update: {
+          id?: string;
+          fecha_menu?: string;
+          contenido_menu?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -178,6 +196,15 @@ export type RevisionCasitaInicio = Pick<
   | "notas"
   | "room_move"
 >;
+
+export type MenuRow = Database["public"]["Tables"]["menus"]["Row"];
+
+export type MenuDelDia = {
+  id: string;
+  fecha: string;
+  diaSemana: string;
+  comidas: string[];
+};
 
 export type InicioRevisionRow = {
   id: string;

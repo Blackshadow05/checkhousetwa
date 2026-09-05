@@ -21,6 +21,9 @@ export function getBrowserSupabase() {
     loading = loadConfig().then(({ url, publishableKey }) => {
       client = createBrowserClient<Database>(url, publishableKey);
       return client;
+    }).catch((error) => {
+      loading = null;
+      throw error;
     });
   }
   return loading;

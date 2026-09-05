@@ -6,18 +6,34 @@ export const IDB_STORES = {
   snapshots: "snapshots",
 } as const;
 
+const STORAGE_TIMEOUT_MS = 2500;
+
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("IndexedDB"));
+    const timer = setTimeout(() => {
+      reject(new Error("El almacenamiento local no respondió"));
+      try { request.transaction?.abort(); } catch { /* Already completed. */ }
+    }, STORAGE_TIMEOUT_MS);
+    request.onsuccess = () => { clearTimeout(timer); resolve(request.result); };
+    request.onerror = () => { clearTimeout(timer); reject(request.error ?? new Error("IndexedDB")); };
   });
 }
 
 export function openAppDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+    let settled = false;
+    const fail = (error: Error | DOMException) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    };
+    const timer = setTimeout(() => fail(new Error("El almacenamiento local no respondió")), STORAGE_TIMEOUT_MS);
+    request.onblocked = () => fail(new Error("El almacenamiento local está ocupado en otra pestaña"));
 
     request.onupgradeneeded = () => {
+      if (settled) { request.transaction?.abort(); return; }
       const db = request.result;
 
       if (!db.objectStoreNames.contains(IDB_STORES.snapshots)) {
@@ -37,23 +53,34 @@ export function openAppDatabase(): Promise<IDBDatabase> {
     };
 
     request.onsuccess = () => {
+      if (settled) { request.result.close(); return; }
+      settled = true;
+      clearTimeout(timer);
       request.result.onversionchange = () => request.result.close();
       resolve(request.result);
     };
     request.onerror = () =>
-      reject(request.error ?? new Error("No se pudo abrir IndexedDB"));
+      fail(request.error ?? new Error("No se pudo abrir IndexedDB"));
   });
 }
 
 export async function idbPut<T>(storeName: string, value: T): Promise<void> {
   const db = await openAppDatabase();
-  const tx = db.transaction(storeName, "readwrite");
-  tx.objectStore(storeName).put(value);
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB put"));
-  });
-  db.close();
+  try {
+    const tx = db.transaction(storeName, "readwrite");
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("No se pudo confirmar el guardado local"));
+        try { tx.abort(); } catch { /* Already completed. */ }
+      }, STORAGE_TIMEOUT_MS);
+      const fail = () => { clearTimeout(timer); reject(tx.error ?? new Error("IndexedDB put")); };
+      tx.oncomplete = () => { clearTimeout(timer); resolve(); };
+      tx.onerror = fail;
+      tx.onabort = fail;
+      try { tx.objectStore(storeName).put(value); }
+      catch (error) { clearTimeout(timer); reject(error); }
+    });
+  } finally { db.close(); }
 }
 
 export async function idbGet<T>(
@@ -61,20 +88,16 @@ export async function idbGet<T>(
   key: IDBValidKey,
 ): Promise<T | undefined> {
   const db = await openAppDatabase();
-  const tx = db.transaction(storeName, "readonly");
-  const result = await requestToPromise(
-    tx.objectStore(storeName).get(key) as IDBRequest<T | undefined>,
-  );
-  db.close();
-  return result;
+  try {
+    const tx = db.transaction(storeName, "readonly");
+    return await requestToPromise(tx.objectStore(storeName).get(key) as IDBRequest<T | undefined>);
+  } finally { db.close(); }
 }
 
 export async function idbGetAll<T>(storeName: string): Promise<T[]> {
   const db = await openAppDatabase();
-  const tx = db.transaction(storeName, "readonly");
-  const result = await requestToPromise(
-    tx.objectStore(storeName).getAll() as IDBRequest<T[]>,
-  );
-  db.close();
-  return result;
+  try {
+    const tx = db.transaction(storeName, "readonly");
+    return await requestToPromise(tx.objectStore(storeName).getAll() as IDBRequest<T[]>);
+  } finally { db.close(); }
 }

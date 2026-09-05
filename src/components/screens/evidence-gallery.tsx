@@ -1,17 +1,9 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type MouseEvent,
-  type PointerEvent,
-} from "react";
-import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, Share2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import PhotoSwipeLightbox from "photoswipe/lightbox";
+import type { SlideData } from "photoswipe";
+import "photoswipe/style.css";
 import {
   cloudinaryPreviewUrl,
   cloudinaryViewerUrl,
@@ -22,12 +14,100 @@ type EvidenceGalleryProps = {
   casita: string;
 };
 
-function useActiveSlide(length: number, enabled = true) {
+type ImageSize = {
+  width: number;
+  height: number;
+};
+
+const FALLBACK_SIZE: ImageSize = { width: 1600, height: 1200 };
+const sizeCache = new Map<string, ImageSize>();
+
+const SHARE_ICON = `<svg class="pswp__icn" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>`;
+
+function loadImageSize(src: string) {
+  const cached = sizeCache.get(src);
+  if (cached) return Promise.resolve({ src, ...cached });
+  return new Promise<{ src: string } & ImageSize>((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const size: ImageSize = {
+        width: image.naturalWidth || FALLBACK_SIZE.width,
+        height: image.naturalHeight || FALLBACK_SIZE.height,
+      };
+      sizeCache.set(src, size);
+      resolve({ src, ...size });
+    };
+    image.onerror = () => resolve({ src, ...FALLBACK_SIZE });
+    image.src = src;
+  });
+}
+
+function safeArea(side: "top" | "right" | "bottom" | "left") {
+  const probe = document.createElement("div");
+  probe.style.cssText = `position:absolute;visibility:hidden;padding-${side}:env(safe-area-inset-${side},0px)`;
+  document.body.append(probe);
+  const styles = getComputedStyle(probe);
+  const value =
+    Number.parseFloat(
+      {
+        top: styles.paddingTop,
+        right: styles.paddingRight,
+        bottom: styles.paddingBottom,
+        left: styles.paddingLeft,
+      }[side],
+    ) || 0;
+  probe.remove();
+  return value;
+}
+
+async function shareSlide(
+  path: string | undefined,
+  index: number,
+  casita: string,
+  statusEl: HTMLElement | null,
+) {
+  if (!path) return;
+  const setStatus = (message: string) => {
+    if (statusEl) statusEl.textContent = message;
+  };
+  if (typeof navigator.share !== "function") {
+    setStatus("Compartir no está disponible en este dispositivo.");
+    return;
+  }
+  const url = cloudinaryViewerUrl(path);
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("share");
+    const blob = await response.blob();
+    const file = new File(
+      [blob],
+      `casita-${casita}-evidencia-${index + 1}.jpg`,
+      { type: blob.type || "image/jpeg" },
+    );
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: `Evidencia ${index + 1} · Casita ${casita}`,
+      });
+      setStatus("");
+      return;
+    }
+    await navigator.share({
+      title: `Evidencia ${index + 1} · Casita ${casita}`,
+      url,
+    });
+    setStatus("");
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    setStatus("No se pudo compartir ahora.");
+  }
+}
+
+function useActiveSlide(length: number) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    if (!enabled) return;
     const track = trackRef.current;
     if (!track || length === 0) return;
     const slides = [...track.children];
@@ -44,10 +124,10 @@ function useActiveSlide(length: number, enabled = true) {
     );
     for (const slide of slides) observer.observe(slide);
     return () => observer.disconnect();
-  }, [length, enabled]);
+  }, [length]);
 
   const goTo = useCallback(
-    (next: number, instant = false) => {
+    (next: number) => {
       const clamped = Math.max(0, Math.min(length - 1, next));
       setIndex(clamped);
       const track = trackRef.current;
@@ -56,44 +136,117 @@ function useActiveSlide(length: number, enabled = true) {
         .matches;
       track.scrollTo({
         left: track.clientWidth * clamped,
-        behavior: instant || reduce ? "auto" : "smooth",
+        behavior: reduce ? "auto" : "smooth",
       });
     },
     [length],
   );
 
-  return { trackRef, index, setIndex, goTo };
+  return { trackRef, index, goTo };
 }
 
 export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
-  const [viewerOpen, setViewerOpen] = useState(false);
-  const {
-    trackRef: carouselTrackRef,
-    index: carouselIndex,
-    goTo: goToCarousel,
-  } = useActiveSlide(paths.length, true);
-  const {
-    trackRef: viewerTrackRef,
-    index: viewerIndex,
-    setIndex: setViewerIndex,
-    goTo: goToViewer,
-  } = useActiveSlide(paths.length, viewerOpen);
-  const closeRef = useRef<HTMLButtonElement>(null);
-  const startIndex = useRef(0);
+  const { trackRef, index, goTo } = useActiveSlide(paths.length);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
-  const [shareMessage, setShareMessage] = useState("");
+  const lightboxRef = useRef<PhotoSwipeLightbox | null>(null);
+  const pathsRef = useRef(paths);
+  const casitaRef = useRef(casita);
+  const openingRef = useRef(false);
 
-  useLayoutEffect(() => {
-    if (!viewerOpen) return;
-    closeRef.current?.focus();
-    goToViewer(startIndex.current, true);
-  }, [viewerOpen, goToViewer]);
+  pathsRef.current = paths;
+  casitaRef.current = casita;
 
-  const openViewer = (next: number) => {
-    startIndex.current = next;
-    setViewerIndex(next);
-    setShareMessage("");
-    setViewerOpen(true);
+  const pathsKey = paths.join("|");
+
+  useEffect(() => {
+    for (const path of paths) {
+      void loadImageSize(cloudinaryViewerUrl(path));
+    }
+  }, [paths, pathsKey]);
+
+  useEffect(() => {
+    const lightbox = new PhotoSwipeLightbox({
+      pswpModule: () => import("photoswipe"),
+      bgOpacity: 1,
+      showHideAnimationType: "fade",
+      wheelToZoom: true,
+      mainClass: "evidence-pswp",
+      closeTitle: "Cerrar",
+      zoomTitle: "Ampliar",
+      arrowPrevTitle: "Evidencia anterior",
+      arrowNextTitle: "Evidencia siguiente",
+      indexIndicatorSep: " de ",
+      errorMsg: "No se pudo cargar la imagen.",
+      paddingFn: () => ({
+        top: 60 + safeArea("top"),
+        bottom: 40 + safeArea("bottom"),
+        left: safeArea("left"),
+        right: safeArea("right"),
+      }),
+    });
+    lightbox.on("uiRegister", () => {
+      const pswp = lightbox.pswp;
+      if (!pswp?.ui) return;
+      pswp.ui.registerElement({
+        name: "share-status",
+        order: 8,
+        appendTo: "root",
+        onInit: (element) => {
+          element.className = "evidence-pswp-status";
+          element.setAttribute("role", "status");
+        },
+      });
+      pswp.ui.registerElement({
+        name: "share-button",
+        order: 9,
+        isButton: true,
+        title: "Compartir evidencia",
+        ariaLabel: "Compartir evidencia",
+        html: SHARE_ICON,
+        onClick: (_event, _element, instance) => {
+          const current = instance.currIndex;
+          const status = instance.element?.querySelector<HTMLElement>(
+            ".evidence-pswp-status",
+          );
+          void shareSlide(
+            pathsRef.current[current],
+            current,
+            casitaRef.current,
+            status ?? null,
+          );
+        },
+      });
+    });
+    lightbox.init();
+    lightboxRef.current = lightbox;
+    return () => {
+      lightbox.destroy();
+      lightboxRef.current = null;
+    };
+  }, []);
+
+  const openViewer = async (next: number, point: { x: number; y: number }) => {
+    const lightbox = lightboxRef.current;
+    if (!lightbox || openingRef.current || lightbox.pswp) return;
+    openingRef.current = true;
+    try {
+      const dataSource: SlideData[] = await Promise.all(
+        pathsRef.current.map(async (path, slideIndex) => {
+          const src = cloudinaryViewerUrl(path);
+          const sized = await loadImageSize(src);
+          return {
+            src: sized.src,
+            width: sized.width,
+            height: sized.height,
+            alt: `Evidencia ${slideIndex + 1} de casita ${casitaRef.current}`,
+            msrc: cloudinaryPreviewUrl(path),
+          };
+        }),
+      );
+      lightbox.loadAndOpen(next, dataSource, point);
+    } finally {
+      openingRef.current = false;
+    }
   };
 
   const onSlidePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
@@ -110,200 +263,57 @@ export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
       event.preventDefault();
       return;
     }
-    openViewer(next);
-  };
-
-  const closeViewer = () => {
-    setViewerOpen(false);
-    setShareMessage("");
-  };
-
-  useEffect(() => {
-    if (!viewerOpen) return;
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopImmediatePropagation();
-      closeViewer();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [viewerOpen]);
-
-  const onViewerKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      closeViewer();
-    }
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      goToViewer(Math.min(paths.length - 1, viewerIndex + 1));
-    }
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      goToViewer(Math.max(0, viewerIndex - 1));
-    }
-  };
-
-  const shareCurrent = async () => {
-    const path = paths[viewerIndex];
-    if (!path) return;
-    if (typeof navigator.share !== "function") {
-      setShareMessage("Compartir no está disponible en este dispositivo.");
-      return;
-    }
-    const url = cloudinaryViewerUrl(path);
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("share");
-      const blob = await response.blob();
-      const file = new File(
-        [blob],
-        `casita-${casita}-evidencia-${viewerIndex + 1}.jpg`,
-        { type: blob.type || "image/jpeg" },
-      );
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `Evidencia ${viewerIndex + 1} · Casita ${casita}`,
-        });
-        return;
-      }
-      await navigator.share({
-        title: `Evidencia ${viewerIndex + 1} · Casita ${casita}`,
-        url,
-      });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setShareMessage("No se pudo compartir ahora.");
-    }
+    void openViewer(next, { x: event.clientX, y: event.clientY });
   };
 
   if (paths.length === 0) return null;
 
   return (
-    <>
-      <div className="evidence-header">
-        <div
-          ref={carouselTrackRef}
-          className="evidence-track"
-          aria-roledescription="carrusel"
-          aria-label="Evidencias de la revisión"
-        >
-          {paths.map((path, index) => (
-            <button
-              key={`${path}-${index}`}
-              type="button"
-              className="evidence-slide"
-              onPointerDown={onSlidePointerDown}
-              onClick={(event) => onSlideClick(event, index)}
-              aria-label={`Ver evidencia ${index + 1} de ${paths.length}`}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={cloudinaryPreviewUrl(path)}
-                alt=""
-                decoding="async"
-                fetchPriority={index === 0 ? "high" : "low"}
-              />
-            </button>
-          ))}
-        </div>
-        {paths.length > 1 && (
-          <>
-            <div className="evidence-dots">
-              {paths.map((path, index) => (
-                <button
-                  key={`${path}-dot`}
-                  type="button"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                  className={index === carouselIndex ? "is-active" : ""}
-                  onClick={() => goToCarousel(index)}
-                />
-              ))}
-            </div>
-            <span className="evidence-count">
-              {carouselIndex + 1}/{paths.length}
-            </span>
-          </>
-        )}
-      </div>
-      {viewerOpen &&
-        createPortal(
-          <div
-            className="evidence-viewer"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Galería de evidencias"
-            tabIndex={-1}
-            onKeyDown={onViewerKey}
+    <div className="evidence-header">
+      <div
+        ref={trackRef}
+        className="evidence-track"
+        aria-roledescription="carrusel"
+        aria-label="Evidencias de la revisión"
+      >
+        {paths.map((path, slideIndex) => (
+          <button
+            key={`${path}-${slideIndex}`}
+            type="button"
+            className="evidence-slide"
+            onPointerDown={onSlidePointerDown}
+            onClick={(event) => onSlideClick(event, slideIndex)}
+            aria-label={`Ver evidencia ${slideIndex + 1} de ${paths.length}`}
           >
-            <div className="evidence-viewer-bar">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={cloudinaryPreviewUrl(path)}
+              alt=""
+              decoding="async"
+              fetchPriority={slideIndex === 0 ? "high" : "low"}
+            />
+          </button>
+        ))}
+      </div>
+      {paths.length > 1 && (
+        <>
+          <div className="evidence-dots">
+            {paths.map((path, slideIndex) => (
               <button
-                ref={closeRef}
+                key={`${path}-dot`}
                 type="button"
-                className="icon-button evidence-viewer-close"
-                aria-label="Cerrar galería"
-                onClick={closeViewer}
-              >
-                <X size={22} />
-              </button>
-              <p>
-                {viewerIndex + 1} de {paths.length}
-              </p>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Compartir evidencia"
-                onClick={() => void shareCurrent()}
-              >
-                <Share2 size={20} />
-              </button>
-            </div>
-            <div ref={viewerTrackRef} className="evidence-viewer-track">
-              {paths.map((path, index) => (
-                <div
-                  key={`${path}-view`}
-                  className="evidence-viewer-slide"
-                  aria-hidden={index !== viewerIndex}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={cloudinaryViewerUrl(path)}
-                    alt={`Evidencia ${index + 1} de casita ${casita}`}
-                    decoding="async"
-                  />
-                </div>
-              ))}
-            </div>
-            {paths.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  className="evidence-nav evidence-nav-prev"
-                  aria-label="Evidencia anterior"
-                  disabled={viewerIndex === 0}
-                  onClick={() => goToViewer(viewerIndex - 1)}
-                >
-                  <ChevronLeft size={26} />
-                </button>
-                <button
-                  type="button"
-                  className="evidence-nav evidence-nav-next"
-                  aria-label="Evidencia siguiente"
-                  disabled={viewerIndex === paths.length - 1}
-                  onClick={() => goToViewer(viewerIndex + 1)}
-                >
-                  <ChevronRight size={26} />
-                </button>
-              </>
-            )}
-            <p className="evidence-share-feedback" role="status">
-              {shareMessage}
-            </p>
-          </div>,
-          document.body,
-        )}
-    </>
+                tabIndex={-1}
+                aria-hidden="true"
+                className={slideIndex === index ? "is-active" : ""}
+                onClick={() => goTo(slideIndex)}
+              />
+            ))}
+          </div>
+          <span className="evidence-count">
+            {index + 1}/{paths.length}
+          </span>
+        </>
+      )}
+    </div>
   );
 }

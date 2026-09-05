@@ -61,7 +61,11 @@ export function RevisionDetailScreen() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeRevision();
+      if (event.key !== "Escape") return;
+      if (event.defaultPrevented || document.querySelector(".pswp--open")) {
+        return;
+      }
+      closeRevision();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -97,7 +101,7 @@ export function RevisionDetailScreen() {
             ref={backRef}
             type="button"
             className="detail-back"
-            aria-label="Volver a revisiones"
+            aria-label="Volver"
             onClick={closeRevision}
           >
             <ChevronLeft size={24} />

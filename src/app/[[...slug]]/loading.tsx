@@ -2,7 +2,7 @@ import { House } from "lucide-react";
 
 export default function Loading() {
   return (
-    <div className="app-shell" role="status" aria-label="Cargando revisiones">
+    <div className="app-shell" role="status" aria-label="Cargando">
       <header className="app-header">
         <div className="header-inner">
           <div className="app-brand">
@@ -31,20 +31,12 @@ export default function Loading() {
           </div>
           <div
             className="skeleton"
-            style={{ height: 139, borderRadius: 21, marginBottom: 28 }}
+            style={{ height: 148, borderRadius: 18, marginBottom: 18 }}
           />
           <div
             className="skeleton"
-            style={{ width: 185, height: 24, marginBottom: 16 }}
+            style={{ height: 168, borderRadius: 18, marginBottom: 18 }}
           />
-          <div className="skeleton" style={{ height: 48, marginBottom: 76 }} />
-          {[0, 1, 2].map((item) => (
-            <div
-              key={item}
-              className="skeleton"
-              style={{ height: 125, marginBottom: 12, borderRadius: 17 }}
-            />
-          ))}
         </div>
       </main>
       <div className="bottom-navigation" aria-hidden="true">

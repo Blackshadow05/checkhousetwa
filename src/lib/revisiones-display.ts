@@ -47,11 +47,21 @@ export function normalizeText(value: string) {
     .trim();
 }
 
+export function isUpsellStatus(value: string) {
+  return normalizeText(value) === "upsell";
+}
+
 export function statusAppearance(value: string) {
   const normalized = normalizeText(value);
-  if (normalized === "check in") return { tone: "sage", label: value };
-  if (normalized === "check out") return { tone: "blue", label: value };
-  if (normalized.includes("upsell")) return { tone: "amber", label: value };
+  if (normalized === "check in" || normalized === "check inn")
+    return { tone: "sage", label: "Check in" };
+  if (normalized === "check out") return { tone: "rose", label: "Check out" };
+  if (isUpsellStatus(value)) return { tone: "blue", label: "Upsell" };
+  if (normalized === "guardar upsell")
+    return { tone: "sage", label: "Guardar Upsell" };
+  if (normalized === "back to back")
+    return { tone: "amber", label: "Back to back" };
+  if (normalized === "room move") return { tone: "plum", label: "Room Move" };
   if (normalized === "si" || normalized === "sí")
     return { tone: "sage", label: "Sí" };
   if (normalized === "no") return { tone: "rose", label: "No" };
@@ -59,6 +69,102 @@ export function statusAppearance(value: string) {
     tone: "neutral",
     label: value === "—" || !value ? "Sin registro" : value,
   };
+}
+
+export const HOY_BOARD_GROUPS = [
+  { id: "check_in", label: "Check in", tone: "sage" },
+  { id: "upsell", label: "Upsell", tone: "blue" },
+  { id: "back_to_back", label: "Back to back", tone: "amber" },
+  { id: "room_move", label: "Room Move", tone: "plum" },
+  { id: "check_out", label: "Check out", tone: "rose" },
+] as const;
+
+export type HoyBoardGroupId = (typeof HOY_BOARD_GROUPS)[number]["id"];
+
+export function hoyBoardGroup(value: string): HoyBoardGroupId | null {
+  const normalized = normalizeText(value);
+  if (normalized === "check in" || normalized === "check inn") return "check_in";
+  if (isUpsellStatus(value)) return "upsell";
+  if (normalized === "back to back") return "back_to_back";
+  if (normalized === "room move") return "room_move";
+  if (normalized === "check out") return "check_out";
+  return null;
+}
+
+export function casitaNumber(value: string) {
+  const match = value.match(/\d+/);
+  return match?.[0] ?? value.trim();
+}
+
+function sortByCasita(rows: InicioRevisionRow[]) {
+  return [...rows].sort((left, right) => {
+    const a = Number.parseInt(casitaNumber(left.casita), 10);
+    const b = Number.parseInt(casitaNumber(right.casita), 10);
+    if (Number.isNaN(a) || Number.isNaN(b)) {
+      return casitaNumber(left.casita).localeCompare(
+        casitaNumber(right.casita),
+        "es",
+        { numeric: true },
+      );
+    }
+    return a - b;
+  });
+}
+
+function latestTodayByCasita(rows: InicioRevisionRow[], today: string) {
+  const latestByCasita = new Map<string, InicioRevisionRow>();
+  for (const row of rows) {
+    if (revisionDay(row.created_at) !== today) continue;
+    const group = hoyBoardGroup(row.caja_fuerte);
+    if (!group || group === "upsell") continue;
+    const number = casitaNumber(row.casita);
+    if (!number || latestByCasita.has(number)) continue;
+    latestByCasita.set(number, row);
+  }
+  return latestByCasita;
+}
+
+export function latestUpsellsByCasita(rows: InicioRevisionRow[]) {
+  const latestByCasita = new Map<string, InicioRevisionRow>();
+  for (const row of rows) {
+    if (hoyBoardGroup(row.caja_fuerte) !== "upsell") continue;
+    const number = casitaNumber(row.casita);
+    if (!number || latestByCasita.has(number)) continue;
+    latestByCasita.set(number, row);
+  }
+  return latestByCasita;
+}
+
+export function currentUpsellsFromRows(rows: InicioRevisionRow[]) {
+  const latestByCasita = new Map<string, InicioRevisionRow>();
+  for (const row of rows) {
+    const number = casitaNumber(row.casita);
+    if (!number || latestByCasita.has(number)) continue;
+    latestByCasita.set(number, row);
+  }
+  return [...latestByCasita.values()].filter(
+    (row) => hoyBoardGroup(row.caja_fuerte) === "upsell",
+  );
+}
+
+export function groupHoyCasitas(
+  rows: InicioRevisionRow[],
+  today: string,
+  upsells: InicioRevisionRow[] = [],
+) {
+  const latestToday = latestTodayByCasita(rows, today);
+  const latestUpsells = latestUpsellsByCasita(upsells);
+
+  return HOY_BOARD_GROUPS.map((group) => ({
+    ...group,
+    rows: sortByCasita(
+      group.id === "upsell"
+        ? [...latestUpsells.values()]
+        : [...latestToday.values()].filter(
+            (row) => hoyBoardGroup(row.caja_fuerte) === group.id,
+          ),
+    ),
+  })).filter((group) => group.rows.length > 0);
 }
 
 // The home query supplies the recorded wall-clock date as YYYY-MM-DD HH:mm.

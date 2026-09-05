@@ -13,19 +13,25 @@ import { fetchInicioRevisiones } from "@/app/actions/revisiones";
 import { REVISIONES_TABLE } from "@/lib/constants";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { todayKey } from "@/lib/revisiones-display";
-import { applyRealtimeChange } from "@/lib/revisiones-map";
+import { applyRealtimeChange, applyUpsellChange, mapInicioRevision } from "@/lib/revisiones-map";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { useOnline } from "@/lib/use-online";
-import type { InicioRevisionRow, RevisionCasita } from "@/types/database";
+import type { InicioRevisionRow, RevisionCasita, RevisionCasitaInicio } from "@/types/database";
 import type {
   RealtimeChannel,
   RealtimePostgresChangesPayload,
 } from "@supabase/supabase-js";
 
-type Snapshot = { id: "inicio"; rows: InicioRevisionRow[]; savedAt: string };
+type Snapshot = {
+  id: "inicio";
+  rows: InicioRevisionRow[];
+  upsells?: InicioRevisionRow[];
+  savedAt: string;
+};
 type RefreshOptions = { force?: boolean };
 type RevisionState = {
   revisiones: InicioRevisionRow[];
+  upsells: InicioRevisionRow[];
   error: string | null;
   refreshing: boolean;
   savedAt: string | null;
@@ -37,6 +43,8 @@ type RevisionState = {
   openRevision: (row: InicioRevisionRow) => void;
   closeRevision: () => void;
   refresh: (options?: RefreshOptions) => Promise<boolean>;
+  rememberRevisiones: (rows: InicioRevisionRow[]) => void;
+  acceptRevision: (row: InicioRevisionRow) => void;
 };
 const Context = createContext<RevisionState | null>(null);
 
@@ -46,15 +54,18 @@ const LEFT_APP_MS = 2_000;
 export function RevisionesProvider({
   children,
   initialRows,
+  initialUpsells,
   initialError,
   initialDay,
 }: {
   children: ReactNode;
   initialRows: InicioRevisionRow[];
+  initialUpsells: InicioRevisionRow[];
   initialError: string | null;
   initialDay: string;
 }) {
   const [revisiones, setRevisiones] = useState(initialRows);
+  const [upsells, setUpsells] = useState(initialUpsells);
   const [error, setError] = useState(initialError);
   const [refreshing, setRefreshing] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -67,7 +78,9 @@ export function RevisionesProvider({
   const inFlight = useRef(false);
   const generation = useRef(0);
   const revisionesRef = useRef(revisiones);
+  const upsellsRef = useRef(upsells);
   const initialRowsRef = useRef(initialRows);
+  const initialUpsellsRef = useRef(initialUpsells);
   const initialErrorRef = useRef(initialError);
   const lastFetchedAt = useRef(Date.now());
   const lastHiddenAt = useRef(0);
@@ -75,20 +88,27 @@ export function RevisionesProvider({
   const wasOffline = useRef(false);
   const pendingForce = useRef<boolean | null>(null);
   const selectedRevisionRef = useRef(selectedRevision);
+  const knownRowsRef = useRef(new Map<string, InicioRevisionRow>());
 
   useEffect(() => {
     revisionesRef.current = revisiones;
   }, [revisiones]);
 
   useEffect(() => {
+    upsellsRef.current = upsells;
+  }, [upsells]);
+
+  useEffect(() => {
     selectedRevisionRef.current = selectedRevision;
   }, [selectedRevision]);
 
   initialRowsRef.current = initialRows;
+  initialUpsellsRef.current = initialUpsells;
   initialErrorRef.current = initialError;
 
   const openRevision = useCallback((row: InicioRevisionRow) => {
     setSelectedRevision(row);
+    if (row.id) knownRowsRef.current.set(row.id, row);
     if (!row.id) return;
     try {
       const url = new URL(window.location.href);
@@ -129,21 +149,44 @@ export function RevisionesProvider({
     }
   }, []);
 
-  const persist = useCallback(async (rows: InicioRevisionRow[]) => {
-    const savedAt = new Date().toISOString();
-    try {
-      await idbPut<Snapshot>(IDB_STORES.snapshots, {
-        id: "inicio",
-        rows,
-        savedAt,
-      });
-      setSavedAt(savedAt);
-      setLocalAvailable(true);
-      setStorageError(false);
-    } catch {
-      setStorageError(true);
+  const rememberRevisiones = useCallback((rows: InicioRevisionRow[]) => {
+    for (const row of rows) {
+      if (row.id) knownRowsRef.current.set(row.id, row);
     }
   }, []);
+
+  const persist = useCallback(
+    async (rows: InicioRevisionRow[], nextUpsells?: InicioRevisionRow[]) => {
+      const savedAt = new Date().toISOString();
+      const upsellsToSave = nextUpsells ?? upsellsRef.current;
+      try {
+        await idbPut<Snapshot>(IDB_STORES.snapshots, {
+          id: "inicio",
+          rows,
+          upsells: upsellsToSave,
+          savedAt,
+        });
+        setSavedAt(savedAt);
+        setLocalAvailable(true);
+        setStorageError(false);
+      } catch {
+        setStorageError(true);
+      }
+    },
+    [],
+  );
+
+  const acceptRevision = useCallback((row: InicioRevisionRow) => {
+    const next = [row, ...revisionesRef.current.filter((item) => item.id !== row.id)]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100);
+    const nextUpsells = applyUpsellChange(upsellsRef.current, "INSERT", row, null);
+    revisionesRef.current = next;
+    upsellsRef.current = nextUpsells;
+    knownRowsRef.current.set(row.id, row);
+    setRevisiones(next);
+    setUpsells(nextUpsells);
+    void persist(next, nextUpsells);
+  }, [persist]);
 
   const refresh = useCallback(
     async ({ force = true }: RefreshOptions = {}) => {
@@ -169,8 +212,9 @@ export function RevisionesProvider({
         }
         lastFetchedAt.current = Date.now();
         setRevisiones(result.revisiones);
+        setUpsells(result.upsells);
         setError(null);
-        await persist(result.revisiones);
+        await persist(result.revisiones, result.upsells);
         return true;
       } catch {
         setError("No pudimos conectar. Tus revisiones guardadas siguen aquí.");
@@ -202,10 +246,11 @@ export function RevisionesProvider({
           setLocalAvailable(true);
           if (initialErrorRef.current || !navigator.onLine) {
             setRevisiones(cached.rows);
+            if (cached.upsells) setUpsells(cached.upsells);
           }
         }
         if (!initialErrorRef.current && navigator.onLine) {
-          await persist(initialRowsRef.current);
+          await persist(initialRowsRef.current, initialUpsellsRef.current);
         }
       } catch {
         if (!cancelled) setStorageError(true);
@@ -258,7 +303,10 @@ export function RevisionesProvider({
         setSelectedRevision(null);
         return;
       }
-      const row = revisionesRef.current.find((item) => item.id === id);
+      const row =
+        revisionesRef.current.find((item) => item.id === id) ??
+        upsellsRef.current.find((item) => item.id === id) ??
+        knownRowsRef.current.get(id);
       if (row) setSelectedRevision(row);
     };
     window.addEventListener("popstate", syncFromUrl);
@@ -282,10 +330,13 @@ export function RevisionesProvider({
     let persistTimer: number | undefined;
     let missedEvents = false;
 
-    const queuePersist = (rows: InicioRevisionRow[]) => {
+    const queuePersist = (
+      rows: InicioRevisionRow[],
+      nextUpsells: InicioRevisionRow[],
+    ) => {
       window.clearTimeout(persistTimer);
       persistTimer = window.setTimeout(() => {
-        void persist(rows);
+        void persist(rows, nextUpsells);
       }, 320);
     };
 
@@ -298,18 +349,53 @@ export function RevisionesProvider({
         payload.new,
         payload.old,
       );
+      const nextUpsells = applyUpsellChange(
+        upsellsRef.current,
+        payload.eventType,
+        payload.new,
+        payload.old,
+      );
       revisionesRef.current = next;
+      upsellsRef.current = nextUpsells;
       setRevisiones(next);
+      setUpsells(nextUpsells);
       setToday(todayKey());
       setError(null);
       lastFetchedAt.current = Date.now();
       const open = selectedRevisionRef.current;
       if (open?.id) {
-        const match = next.find((row) => row.id === open.id);
-        if (match) setSelectedRevision(match);
-        else closeRevision();
+        if (payload.eventType === "DELETE") {
+          const deleted =
+            payload.old &&
+            typeof payload.old === "object" &&
+            "id" in payload.old &&
+            typeof payload.old.id === "string"
+              ? payload.old.id
+              : null;
+          if (deleted === open.id) {
+            knownRowsRef.current.delete(open.id);
+            closeRevision();
+          }
+        } else if (
+          payload.new &&
+          typeof payload.new === "object" &&
+          "id" in payload.new &&
+          payload.new.id === open.id
+        ) {
+          const mapped = mapInicioRevision(
+            payload.new as RevisionCasitaInicio,
+          );
+          knownRowsRef.current.set(mapped.id, mapped);
+          setSelectedRevision(mapped);
+        } else {
+          const match =
+            next.find((row) => row.id === open.id) ??
+            nextUpsells.find((row) => row.id === open.id) ??
+            knownRowsRef.current.get(open.id);
+          if (match) setSelectedRevision(match);
+        }
       }
-      queuePersist(next);
+      queuePersist(next, nextUpsells);
     };
 
     const connect = async () => {
@@ -349,6 +435,7 @@ export function RevisionesProvider({
     <Context.Provider
       value={{
         revisiones,
+        upsells,
         error,
         refreshing,
         savedAt,
@@ -360,6 +447,8 @@ export function RevisionesProvider({
         openRevision,
         closeRevision,
         refresh,
+        rememberRevisiones,
+        acceptRevision,
       }}
     >
       {children}

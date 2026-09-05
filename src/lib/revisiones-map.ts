@@ -1,4 +1,4 @@
-import { INICIO_LIST_LIMIT } from "@/lib/revisiones-display";
+import { INICIO_LIST_LIMIT, casitaNumber, hoyBoardGroup } from "@/lib/revisiones-display";
 import type {
   InicioRevisionRow,
   RevisionCasita,
@@ -76,4 +76,36 @@ export function applyRealtimeChange(
     (left, right) => right.created_at.localeCompare(left.created_at),
   );
   return merged.slice(0, INICIO_LIST_LIMIT);
+}
+
+export function applyUpsellChange(
+  rows: InicioRevisionRow[],
+  eventType: "INSERT" | "UPDATE" | "DELETE",
+  nextRecord: RevisionCasita | Record<string, unknown> | null,
+  previousRecord: { id?: string } | Record<string, unknown> | null,
+): InicioRevisionRow[] {
+  if (eventType === "DELETE") {
+    const id = rowId(previousRecord) ?? rowId(nextRecord);
+    if (!id) return rows;
+    return rows.filter((row) => row.id !== id);
+  }
+  const id = rowId(nextRecord);
+  if (!id || !nextRecord || typeof nextRecord !== "object") return rows;
+  const mapped = mapInicioRevision(nextRecord as RevisionCasitaInicio);
+  const number = casitaNumber(mapped.casita);
+  const existing = rows.find((row) => casitaNumber(row.casita) === number);
+  if (
+    existing &&
+    mapped.id !== existing.id &&
+    mapped.created_at < existing.created_at
+  ) {
+    return rows;
+  }
+  const withoutCasita = rows.filter(
+    (row) => casitaNumber(row.casita) !== number,
+  );
+  if (hoyBoardGroup(mapped.caja_fuerte) !== "upsell") {
+    return withoutCasita;
+  }
+  return [mapped, ...withoutCasita];
 }

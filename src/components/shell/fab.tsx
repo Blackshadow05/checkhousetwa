@@ -1,6 +1,15 @@
 "use client";
 
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Plus } from "lucide-react";
+
+export function NewRevisionFab({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="new-revision-fab" onClick={onClick} aria-label="Crear nueva revisión">
+      <Plus size={24} strokeWidth={2} aria-hidden="true" />
+      <span>Nueva revisión</span>
+    </button>
+  );
+}
 
 export function Fab({ onClick }: { onClick: () => void }) {
   return (

@@ -22,11 +22,12 @@ export function useAppNavigation(initialScreen: ScreenId) {
   const navigate = useCallback((next: ScreenId) => {
     const path = pathFromScreen(next);
 
-    if (window.location.pathname !== path) {
+    if (window.location.pathname !== path || window.location.search || window.location.hash) {
       window.history.pushState({ screen: next }, "", path);
     }
 
     setScreen(next);
+    window.dispatchEvent(new Event("casitas:navigate"));
   }, []);
 
   return { screen, navigate };

@@ -7,6 +7,9 @@ export default function OfflinePage() {
       initialScreen="inicio"
       revisionesInicio={[]}
       revisionesError="offline"
+      upsellsInicio={[]}
+      menusInicio={[]}
+      menusError="offline"
       initialDay={todayKey()}
     />
   );

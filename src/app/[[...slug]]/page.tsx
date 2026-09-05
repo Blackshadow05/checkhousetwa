@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/shell/app-shell";
+import { getInicioMenus } from "@/lib/db/menus";
 import { getInicioRevisiones } from "@/lib/db/revisiones-casitas";
 import { screenFromSlug } from "@/lib/navigation/screens";
 import { todayKey } from "@/lib/revisiones-display";
@@ -11,13 +12,19 @@ export const dynamic = "force-dynamic";
 
 export default async function Page({ params }: PageProps) {
   const { slug } = await params;
-  const { revisiones, error } = await getInicioRevisiones();
+  const [{ revisiones, upsells, error }, menusResult] = await Promise.all([
+    getInicioRevisiones(),
+    getInicioMenus(),
+  ]);
 
   return (
     <AppShell
       initialScreen={screenFromSlug(slug)}
       revisionesInicio={revisiones}
       revisionesError={error}
+      upsellsInicio={upsells}
+      menusInicio={menusResult.menus}
+      menusError={menusResult.error}
       initialDay={todayKey()}
     />
   );

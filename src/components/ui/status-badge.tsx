@@ -4,11 +4,12 @@ import { ArrowDownLeft, ArrowUpRight, ShieldCheck } from "lucide-react";
 import { normalizeText, statusAppearance } from "@/lib/revisiones-display";
 
 export function StatusBadge({ value }: { value: string }) {
+  const normalized = normalizeText(value);
   const { tone, label } = statusAppearance(value);
   const Icon =
-    normalizeText(value) === "check in"
+    normalized === "check in" || normalized === "check inn"
       ? ArrowDownLeft
-      : normalizeText(value) === "check out"
+      : normalized === "check out"
         ? ArrowUpRight
         : ShieldCheck;
   return (
