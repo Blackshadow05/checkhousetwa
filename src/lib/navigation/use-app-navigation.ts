@@ -14,6 +14,8 @@ export function useAppNavigation(initialScreen: ScreenId) {
     const onPopState = () => {
       setScreen(screenFromPath(window.location.pathname));
     };
+    // The offline fallback serves one shell for every URL.
+    queueMicrotask(onPopState);
 
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);

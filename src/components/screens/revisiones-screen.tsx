@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   Clock3,
   House,
+  MessageSquareText,
   Search,
   SlidersHorizontal,
   WifiOff,
@@ -18,6 +19,7 @@ import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import {
   dayLabel,
+  hasRevisionValue,
   initials,
   revisionDay,
   revisionKey,
@@ -25,6 +27,7 @@ import {
   statusAppearance,
 } from "@/lib/revisiones-display";
 import type { InicioRevisionRow } from "@/types/database";
+import styles from "./revisiones-screen.module.css";
 
 function groupByDay(rows: InicioRevisionRow[]) {
   const result = new Map<string, InicioRevisionRow[]>();
@@ -159,11 +162,12 @@ export function RevisionesScreen({ savedRevision, onDismissSaved }: {
             ) : null}
           </button>
         </div>
-        <div className="period-tabs" aria-label="Filtrar por fecha">
+        <div className={`period-tabs ${styles.periods}`} aria-label="Filtrar por fecha">
           {(
             [
               { id: "all", label: "Todas" },
               { id: "today", label: "Hoy" },
+              { id: "three-days", label: "Últimos 3 días" },
               { id: "week", label: "Últimos 7 días" },
             ] as const
           ).map((item) => (
@@ -203,19 +207,14 @@ export function RevisionesScreen({ savedRevision, onDismissSaved }: {
           ? [0, 1, 2].map((item) => (
               <div
                 key={item}
-                className="revision-card"
+                 className={styles.card}
                 aria-hidden="true"
               >
-                <div className="revision-card-top">
-                  <div className="casita-icon skeleton" />
-                  <div className="revision-identity">
-                    <div className="skeleton" style={{ width: 120, height: 16 }} />
-                    <div
-                      className="skeleton"
-                      style={{ width: 160, height: 12, marginTop: 8 }}
-                    />
-                  </div>
-                </div>
+                 <div className={`${styles.plaque} skeleton`} />
+                 <div className={styles.content}>
+                   <div className="skeleton" style={{ width: "65%", height: 28 }} />
+                   <div className="skeleton" style={{ width: "85%", height: 32, marginTop: 22 }} />
+                 </div>
               </div>
             ))
           : Array.from(groups, ([day, dayRows]) => (
@@ -224,7 +223,7 @@ export function RevisionesScreen({ savedRevision, onDismissSaved }: {
                 className="revision-group"
                 aria-label={dayLabel(day, archive.today)}
               >
-                <div className="group-heading">
+                <div className={`group-heading ${styles.dayHeading}`}>
                   <h3>{dayLabel(day, archive.today)}</h3>
                   <span>
                     {dayRows.length}{" "}
@@ -235,40 +234,44 @@ export function RevisionesScreen({ savedRevision, onDismissSaved }: {
                   {dayRows.map((row, index) => (
                     <button
                       key={revisionKey(row, index)}
-                      className="revision-card"
+                       className={styles.card}
+                       data-tone={statusAppearance(row.caja_fuerte).tone}
                       type="button"
                       onClick={() => archive.openRevision(row)}
-                      aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${row.created_at}`}
+                      aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${row.created_at}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}
                     >
-                      <div className="revision-card-top">
-                        <div className="casita-icon">
-                          <House size={23} strokeWidth={1.6} aria-hidden="true" />
-                        </div>
-                        <div className="revision-identity">
-                          <h4>Casita {row.casita}</h4>
-                          <div className="reviewer">
-                            <span className="person-initials" aria-hidden="true">
-                              {initials(row.quien_revisa)}
+                       <span className={styles.plaque}>
+                         <House size={17} strokeWidth={1.5} aria-hidden="true" />
+                         <span className={styles.casitaLabel}>Casita</span>
+                         <strong className={styles.number}>{row.casita}</strong>
+                       </span>
+                       <span className={styles.content}>
+                         <span className={styles.top}>
+                           <span className={styles.status}>
+                             <span className={styles.safeLabel}>Caja fuerte</span>
+                             <StatusBadge value={row.caja_fuerte} />
+                           </span>
+                           <span className={styles.arrow}>
+                             <ChevronRight size={17} aria-hidden="true" />
+                           </span>
+                         </span>
+                          {hasRevisionValue(row.notas) && (
+                            <span className={styles.note}>
+                              <MessageSquareText size={14} aria-hidden="true" />
+                              <span>{row.notas?.trim()}</span>
                             </span>
-                            <span>{row.quien_revisa}</span>
-                          </div>
-                        </div>
-                        <ChevronRight
-                          size={19}
-                          className="card-chevron"
-                          aria-hidden="true"
-                        />
-                      </div>
-                      <div className="revision-card-bottom">
-                        <div className="safe-status">
-                          <span className="safe-label">Caja fuerte</span>
-                          <StatusBadge value={row.caja_fuerte} />
-                        </div>
-                        <span className="revision-time">
-                          <Clock3 size={13} aria-hidden="true" />
-                          {shortTime(row.created_at)}
-                        </span>
-                      </div>
+                          )}
+                          <span className={styles.footer}>
+                           <span className={styles.reviewer}>
+                             <span className={styles.avatar} aria-hidden="true">{initials(row.quien_revisa)}</span>
+                             <span className={styles.name}>{row.quien_revisa}</span>
+                           </span>
+                           <span className={styles.time}>
+                             <Clock3 size={12} aria-hidden="true" />
+                             {shortTime(row.created_at)}
+                           </span>
+                         </span>
+                       </span>
                     </button>
                   ))}
                 </div>

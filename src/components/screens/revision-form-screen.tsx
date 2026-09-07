@@ -7,8 +7,8 @@ import { useRevisionDraft } from "@/hooks/use-revision-draft";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import { ELECTRONIC_FIELDS, EQUIPMENT_FIELDS, statusAppearance } from "@/lib/revisiones-display";
-import { BOOLEAN_FIELDS, QUANTITY_LIMITS, evidencePhotoLimit, formatRevisionDateTime, validateRevisionForm, type InventoryKey, type RevisionFormErrors, type RevisionFormValues, type RevisionPhoto } from "@/lib/revision-form";
-import { prepareRevisionPhoto } from "@/lib/revision-photos";
+import { BOOLEAN_FIELDS, QUANTITY_LIMITS, costaRicaDateTime, evidencePhotoLimit, formatRevisionDateTime, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionFormErrors, type RevisionFormValues, type RevisionPhoto } from "@/lib/revision-form";
+import { prepareRevisionPhoto, revisionShareFiles } from "@/lib/revision-photos";
 import { discardUpload, ensureBackgroundUploads, releaseUploads, resolveEvidenciaUrls } from "@/lib/revision-evidence-upload";
 import type { InicioRevisionRow } from "@/types/database";
 import { RevisionPhotoPreview } from "@/components/screens/revision-photo-preview";
@@ -23,10 +23,15 @@ function ChoiceField({ name, label, options, value, onChange, errors, numeric = 
   numeric?: boolean;
 }) {
   const selected = numeric && /^\d+$/.test(value) ? String(Number(value)) : value;
+  const choicesClassName = [
+    "revision-choices",
+    numeric ? "revision-number-choices" : "",
+    name === "caja_fuerte" ? "revision-caja-fuerte-choices" : "",
+  ].filter(Boolean).join(" ");
   return (
     <fieldset className="revision-choice-field" data-invalid={Boolean(errors[name])} aria-describedby={errors[name] ? `error-${name}` : undefined}>
       <legend>{label}</legend>
-      <div className={`revision-choices${numeric ? " revision-number-choices" : ""}`}>
+      <div className={choicesClassName}>
         {options.map((option) => (
           <label key={option} className={selected === option ? "is-selected" : ""}>
             <input type="radio" name={name} value={option} checked={selected === option}
@@ -42,13 +47,30 @@ function ChoiceField({ name, label, options, value, onChange, errors, numeric = 
 }
 
 function FormCard({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
-  return <section className="revision-form-card"><h3><span>{icon}</span>{title}</h3>{children}</section>;
+  return <section className="revision-form-card"><h2><span>{icon}</span>{title}</h2>{children}</section>;
+}
+
+function useCostaRicaClock(active: boolean) {
+  const [now, setNow] = useState(costaRicaDateTime);
+  useEffect(() => {
+    if (!active) return;
+    const tick = () => setNow(costaRicaDateTime());
+    tick();
+    const id = window.setInterval(tick, 15_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [active]);
+  return now;
 }
 
 export function RevisionFormScreen({ open, onClose, onSaved }: {
-  open: boolean; onClose: () => void; onSaved: (row: InicioRevisionRow) => void;
+  open: boolean; onClose: () => void; onSaved: (row: InicioRevisionRow, files: File[]) => void;
 }) {
-  const { draft, storage, update, clear } = useRevisionDraft();
+  const { draft, storage, update, clear } = useRevisionDraft(open);
+  const recordedAt = useCostaRicaClock(open);
   const { online, revisiones } = useRevisiones();
   const [errors, setErrors] = useState<RevisionFormErrors>({});
   const [message, setMessage] = useState("");
@@ -75,6 +97,16 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
   useEffect(() => {
     if (draft?.photos.length) ensureBackgroundUploads(draft.photos);
   }, [draft?.photos]);
+
+  useEffect(() => {
+    setErrors({});
+    setMessage("");
+    setProgress("");
+  }, [draft?.id]);
+
+  useEffect(() => {
+    if (open) scrollRef.current?.scrollTo(0, 0);
+  }, [draft?.id, open]);
 
   if (!draft) return open ? <div className="revision-form-screen"><p className="revision-form-loading" role="status">Preparando tu revisión…</p></div> : null;
   const { values, photos } = draft;
@@ -125,7 +157,8 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
   };
   const submit = () => {
     if (inFlight.current) return;
-    const nextErrors = validateRevisionForm(values, undefined, photos.length);
+    const stamped = withCurrentRevisionTime(values);
+    const nextErrors = validateRevisionForm(stamped, undefined, photos.length);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
       focusError(nextErrors); return;
@@ -135,6 +168,7 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
     setMessage("");
     startTransition(async () => {
       try {
+        const shareFiles = revisionShareFiles(photos, stamped.casita);
         const photoIds = photos.map((photo) => photo.id);
         let paths: string[] = [];
         if (photos.length) {
@@ -147,12 +181,12 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
           }
         }
         setProgress("Guardando revisión…");
-        const result = await createRevision({ id: draft.id, values, photos: paths });
+        const result = await createRevision({ id: draft.id, values: withCurrentRevisionTime(stamped), photos: paths });
         if (!result.row) { setMessage(result.error ?? "No pudimos confirmar el guardado."); return; }
         releaseUploads(photoIds);
         await clear();
         setErrors({});
-        onSaved(result.row);
+        onSaved(result.row, shareFiles);
       } catch {
         setMessage("No pudimos confirmar el guardado. Tu borrador sigue aquí; vuelve a intentarlo.");
       } finally {
@@ -192,15 +226,21 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
       </header>
       <form className="revision-form" noValidate onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <div className="revision-form-scroll" ref={scrollRef}>
+          <div className="revision-form-welcome">
+            <div className="revision-form-welcome-copy">
+              <p className="revision-form-welcome-title">{values.casita ? `Casita ${String(Number(values.casita)).padStart(2, "0")}` : "Selecciona una casita"}</p>
+            </div>
+            <span className="revision-form-welcome-icon" aria-hidden="true"><House size={32} strokeWidth={1.25} /><Check size={14} /></span>
+          </div>
           <div className={`revision-draft-status ${storage === "error" || !online ? "is-warning" : ""}`} role="status">
             {!online ? <WifiOff size={14} /> : storage === "saved" ? <CheckCheck size={15} /> : null}
-            <span>{storage === "error" ? "No pudimos guardar el borrador en este dispositivo. Mantén la app abierta." : storage === "saving" ? "Guardando borrador en este dispositivo…" : !online ? "Sin conexión. Puedes continuar con tu borrador." : storage === "saved" ? "Borrador guardado en este dispositivo" : "Tu borrador se guarda mientras completas la revisión."}</span>
+            <span>{storage === "error" ? "No pudimos guardar el progreso en este dispositivo. Mantén la app abierta." : storage === "saving" ? "Guardando tu progreso…" : !online ? "Sin conexión. Puedes continuar; se guarda al recargar." : storage === "saved" ? "Progreso guardado" : "Tu progreso se guarda mientras estás en el formulario."}</span>
           </div>
           <fieldset className="revision-form-fields" disabled={busy}>
               <FormCard icon={<House size={18} />} title="Datos de la revisión">
                 <div className="revision-text-field"><label htmlFor="revision-casita">Número de casita</label><select id="revision-casita" name="casita" value={values.casita ? String(Number(values.casita)) : ""} onChange={(e) => change("casita", e.target.value)} aria-invalid={Boolean(errors.casita)} aria-describedby={errors.casita ? "error-casita" : undefined}><option value="" disabled>Selecciona una casita</option>{Array.from({ length: 50 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select><FieldError name="casita" errors={errors} /></div>
                 <div className="revision-text-field"><label htmlFor="revision-quien_revisa">¿Quién revisa?</label><input id="revision-quien_revisa" name="quien_revisa" list="revision-reviewers" autoComplete="name" maxLength={100} value={values.quien_revisa} onChange={(e) => change("quien_revisa", e.target.value)} aria-invalid={Boolean(errors.quien_revisa)} aria-describedby={errors.quien_revisa ? "error-quien_revisa" : undefined} /><datalist id="revision-reviewers">{reviewers.map((name) => <option key={name} value={name} />)}</datalist><FieldError name="quien_revisa" errors={errors} /></div>
-                <div className="revision-text-field"><label htmlFor="revision-created_at">Fecha y hora</label><input id="revision-created_at" name="created_at" type="text" readOnly value={formatRevisionDateTime(values.created_at)} aria-readonly="true" /></div>
+                <div className="revision-text-field"><label htmlFor="revision-created_at">Fecha y hora<small>Se registra al guardar</small></label><input id="revision-created_at" name="created_at" type="text" readOnly value={formatRevisionDateTime(recordedAt)} aria-readonly="true" /></div>
               </FormCard>
               <FormCard icon={<LockKeyhole size={18} />} title="Seguridad">
                 <ChoiceField name="caja_fuerte" label="Caja fuerte" options={CAJA_FUERTE_FILTERS} value={values.caja_fuerte} onChange={change} errors={errors} />
@@ -214,8 +254,9 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
               <FormCard icon={<ClipboardCheck size={18} />} title="Notas de revisión">
                 <div className="revision-text-field"><label htmlFor="revision-notas">Observaciones<small>Opcional. ¿Hay algún daño, faltante o detalle por atender?</small></label><textarea id="revision-notas" name="notas" rows={4} maxLength={2000} placeholder="¿Hay algún daño, faltante o detalle por atender?" value={values.notas} onChange={(e) => change("notas", e.target.value)} aria-invalid={Boolean(errors.notas)} aria-describedby={errors.notas ? "error-notas" : undefined} /><FieldError name="notas" errors={errors} /></div>
               </FormCard>
-              {photoLimit > 0 && <FormCard icon={<Camera size={18} />} title={`Evidencias · ${photos.length} de ${photoLimit}`}>
+              {photoLimit > 0 && <FormCard icon={<Camera size={18} />} title="Añade imágenes de evidencias">
                 <div data-revision-evidencias="" tabIndex={-1}>
+                  {photos.length === 0 && <div className="revision-evidence-empty"><ImagePlus size={26} strokeWidth={1.5} aria-hidden="true" /></div>}
                   {photos.length > 0 && <div className="revision-photo-grid">{photos.map((photo, index) => <RevisionPhotoPreview key={photo.id} photo={photo} index={index} disabled={busy} active={open} onRemove={() => removePhoto(photo.id)} />)}</div>}
                   <input ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
                   <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />

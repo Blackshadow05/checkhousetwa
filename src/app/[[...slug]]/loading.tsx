@@ -11,7 +11,6 @@ export default function Loading() {
             </span>
             <div>
               <p className="brand-name">Casitas</p>
-              <p className="brand-caption">Cuidamos cada detalle</p>
             </div>
           </div>
         </div>
@@ -25,17 +24,16 @@ export default function Loading() {
             />
             <div
               className="skeleton"
-              style={{ width: "80%", height: 36, marginBottom: 12 }}
+              style={{ width: 100, height: 32, marginBottom: 12 }}
             />
-            <div className="skeleton" style={{ width: "90%", height: 16 }} />
           </div>
           <div
             className="skeleton"
-            style={{ height: 148, borderRadius: 18, marginBottom: 18 }}
+              style={{ height: 194, borderRadius: 20, marginBottom: 24 }}
           />
           <div
             className="skeleton"
-            style={{ height: 168, borderRadius: 18, marginBottom: 18 }}
+              style={{ height: 168, borderRadius: 20, marginBottom: 24 }}
           />
         </div>
       </main>

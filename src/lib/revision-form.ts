@@ -48,6 +48,10 @@ export function costaRicaDateTime(date = new Date()) {
   return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
 }
 
+export function withCurrentRevisionTime(values: RevisionFormValues, date = new Date()): RevisionFormValues {
+  return { ...values, created_at: costaRicaDateTime(date) };
+}
+
 export function formatRevisionDateTime(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
   if (!match) return value;

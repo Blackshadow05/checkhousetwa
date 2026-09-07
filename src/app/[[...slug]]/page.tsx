@@ -12,8 +12,9 @@ export const dynamic = "force-dynamic";
 
 export default async function Page({ params }: PageProps) {
   const { slug } = await params;
-  const [{ revisiones, upsells, error }, menusResult] = await Promise.all([
-    getInicioRevisiones(),
+  const initialDay = todayKey();
+  const [{ revisiones, upsells, revisionActivity, activityError, error }, menusResult] = await Promise.all([
+    getInicioRevisiones(initialDay),
     getInicioMenus(),
   ]);
 
@@ -23,9 +24,11 @@ export default async function Page({ params }: PageProps) {
       revisionesInicio={revisiones}
       revisionesError={error}
       upsellsInicio={upsells}
+      revisionActivityInicio={revisionActivity}
+      activityError={activityError}
       menusInicio={menusResult.menus}
       menusError={menusResult.error}
-      initialDay={todayKey()}
+      initialDay={initialDay}
     />
   );
 }

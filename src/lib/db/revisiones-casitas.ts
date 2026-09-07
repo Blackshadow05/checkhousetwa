@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { REVISIONES_TABLE } from "@/lib/constants";
+import type { RevisionActivity } from "@/lib/casitas-sin-revision";
 import { createClient } from "@/lib/supabase/server";
 import {
   INICIO_LIST_LIMIT,
@@ -102,38 +103,79 @@ export async function listCurrentUpsells(client: Client) {
   };
 }
 
-export async function getInicioRevisiones(): Promise<{
+export async function listRevisionActivity(client: Client, today = todayKey()): Promise<{
+  data: RevisionActivity[] | null;
+  error: string | null;
+}> {
+  try {
+    const rows: RevisionActivity[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+      let request = revisionesCasitas(client)
+        .select("id, casita, created_at")
+        .gte("created_at", `${shiftDay(today, -7)} 00:00:00`)
+        .lt("created_at", `${shiftDay(today, 1)} 00:00:00`)
+        .order("id", { ascending: true })
+        .limit(500);
+      if (cursor !== null) request = request.gt("id", cursor);
+      const { data, error } = await request;
+      if (error) return { data: null, error: error.message };
+      if (!data) return { data: null, error: "No se pudo cargar la actividad de revisiones" };
+      if (data.length === 0) return { data: rows, error: null };
+      rows.push(...data);
+      cursor = data[data.length - 1].id;
+    }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error.message : "No se pudo cargar la actividad de revisiones",
+    };
+  }
+}
+
+export async function getInicioRevisiones(today = todayKey()): Promise<{
   revisiones: InicioRevisionRow[];
   upsells: InicioRevisionRow[];
+  revisionActivity: RevisionActivity[] | null;
+  activityError: string | null;
   error: string | null;
 }> {
   try {
     const supabase = await createClient();
-    const [latest, currentUpsells] = await Promise.all([
+    const [latestResult, upsellsResult, activityResult] = await Promise.allSettled([
       listLatestRevisionesCasitas(supabase),
       listCurrentUpsells(supabase),
+      listRevisionActivity(supabase, today),
     ]);
+    const latest = latestResult.status === "fulfilled" ? latestResult.value : null;
+    const currentUpsells = upsellsResult.status === "fulfilled" ? upsellsResult.value : null;
+    const activity = activityResult.status === "fulfilled" ? activityResult.value : null;
 
-    if (latest.error) {
-      return { revisiones: [], upsells: [], error: latest.error.message };
-    }
-
-    const revisiones = (latest.data ?? []).map((row: RevisionCasitaInicio) =>
+    const revisiones = (latest?.data ?? []).map((row: RevisionCasitaInicio) =>
       mapInicioRevision(row),
     );
     const upsells =
-      currentUpsells.error || !currentUpsells.data
+      currentUpsells?.error || !currentUpsells?.data
         ? currentUpsellsFromRows(revisiones)
         : currentUpsells.data.map((row) => mapInicioRevision(row));
 
-    return { revisiones, upsells, error: null };
+    return {
+      revisiones,
+      upsells,
+      revisionActivity: activity?.data ?? null,
+      activityError: activity?.error ?? (activity?.data ? null : "No se pudo cargar la actividad de revisiones"),
+      error: latest ? latest.error?.message ?? null : "No se pudieron cargar las revisiones",
+    };
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
         : "No se pudieron cargar las revisiones";
 
-    return { revisiones: [], upsells: [], error: message };
+    return {
+      revisiones: [], upsells: [], revisionActivity: null,
+      activityError: message, error: message,
+    };
   }
 }
 
@@ -173,9 +215,9 @@ export async function getArchiveRevisiones(input: ArchiveQuery): Promise<{
       request = request
         .gte("created_at", archiveCreatedAtStart(today))
         .lt("created_at", archiveCreatedAtStart(shiftDay(today, 1)));
-    } else if (period === "week") {
+    } else if (period === "week" || period === "three-days") {
       request = request
-        .gte("created_at", archiveCreatedAtStart(shiftDay(today, -6)))
+        .gte("created_at", archiveCreatedAtStart(shiftDay(today, period === "three-days" ? -2 : -6)))
         .lt("created_at", archiveCreatedAtStart(shiftDay(today, 1)));
     }
 

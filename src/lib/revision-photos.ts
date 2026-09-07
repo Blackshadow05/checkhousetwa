@@ -1,6 +1,14 @@
 import { MAX_PHOTO_BYTES, type RevisionPhoto } from "@/lib/revision-form";
 import { createUuid } from "@/lib/uuid";
-import { revisionPhotoDimensions, revisionPhotoEncoding } from "@/lib/revision-photo-format";
+import { revisionPhotoDimensions, revisionPhotoEncoding, revisionPhotoExtension } from "@/lib/revision-photo-format";
+
+export function revisionShareFiles(photos: RevisionPhoto[], casita: string) {
+  return photos.map((photo, index) => new File(
+    [photo.blob],
+    `casita-${casita}-evidencia-${index + 1}.${revisionPhotoExtension(photo.blob.type)}`,
+    { type: photo.blob.type },
+  ));
+}
 
 export async function prepareRevisionPhoto(file: File): Promise<RevisionPhoto> {
   if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(file.type))

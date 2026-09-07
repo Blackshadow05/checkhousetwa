@@ -1,10 +1,11 @@
 "use client";
 
-import { ClipboardList, House, CloudDownload } from "lucide-react";
+import { ClipboardList, House, CloudDownload, Grid2X2 } from "lucide-react";
 import { SCREEN_ORDER, SCREENS, type ScreenId } from "@/lib/navigation/screens";
 import { useAppNavigationContext } from "@/components/shell/navigation-context";
 
 const ICONS: Record<ScreenId, typeof House> = {
+  otros: Grid2X2,
   inicio: House,
   revisiones: ClipboardList,
   sync: CloudDownload,

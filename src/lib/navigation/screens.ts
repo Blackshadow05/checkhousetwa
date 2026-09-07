@@ -1,4 +1,5 @@
 export const SCREENS = {
+  otros: { id: "otros", path: "/otros", title: "Otros" },
   inicio: {
     id: "inicio",
     path: "/",
@@ -18,7 +19,7 @@ export const SCREENS = {
 
 export type ScreenId = keyof typeof SCREENS;
 
-export const SCREEN_ORDER: ScreenId[] = ["inicio", "revisiones", "sync"];
+export const SCREEN_ORDER: ScreenId[] = ["inicio", "revisiones", "otros", "sync"];
 
 export function isScreenId(value: string): value is ScreenId {
   return value in SCREENS;
@@ -26,6 +27,7 @@ export function isScreenId(value: string): value is ScreenId {
 
 export function screenFromPath(pathname: string): ScreenId {
   const normalized = pathname.replace(/\/+$/, "") || "/";
+  if (normalized === "/otros" || normalized === "/reporte-pantallas" || normalized === "/reporte-pantallas/nuevo") return "otros";
 
   if (normalized === "/revisiones") {
     return "revisiones";
@@ -44,6 +46,7 @@ export function screenFromSlug(slug: string[] | undefined): ScreenId {
   }
 
   const [first] = slug;
+  if (first === "reporte-pantallas" && (slug.length === 1 || slug.length === 2 && slug[1] === "nuevo")) return "otros";
   if (first && isScreenId(first) && slug.length === 1) {
     return first;
   }

@@ -1,0 +1,191 @@
+.content {
+  min-width: 0;
+  padding-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.content .description {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 10px 0 16px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.content .selection {
+  display: grid;
+  gap: 8px;
+  max-height: min(38dvh, 360px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 4px;
+  margin: 0 -4px 14px;
+}
+
+.selection::-webkit-scrollbar {
+  display: none;
+}
+
+.legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.content .report {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 78px;
+  padding: 12px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  cursor: pointer;
+}
+
+.report:has(input:checked) {
+  background: var(--secondary);
+  border-color: var(--primary);
+}
+
+.content .report .checkbox {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--primary);
+  border-radius: 4px;
+}
+
+.reportText {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.reportTitle {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reportTitle strong {
+  color: var(--foreground);
+  font-size: 15px;
+}
+
+.selection:disabled .report {
+  cursor: default;
+  opacity: .7;
+}
+
+.actions {
+  display: grid;
+  gap: 8px;
+}
+
+.content .primary,
+.content .secondary {
+  min-height: 48px;
+  min-width: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  line-height: 1.4;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.content .primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.content .secondary {
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+
+.content :is(button, input):focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.ready {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 18px 8px 10px;
+}
+
+.ready > svg {
+  color: var(--primary);
+}
+
+.ready h3 {
+  font-size: 19px;
+  margin: 0;
+}
+
+.ready h3:focus {
+  outline: none;
+}
+
+.content .ready p {
+  margin: 0;
+}
+
+.filename {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.content .status {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  margin: 10px 0 0;
+}
+
+.status:empty {
+  display: none;
+}
+
+.error {
+  color: var(--destructive);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (max-height: 600px) {
+  .content .selection {
+    max-height: 28dvh;
+  }
+}

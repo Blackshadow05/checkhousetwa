@@ -8,6 +8,8 @@ export default function OfflinePage() {
       revisionesInicio={[]}
       revisionesError="offline"
       upsellsInicio={[]}
+      revisionActivityInicio={null}
+      activityError="offline"
       menusInicio={[]}
       menusError="offline"
       initialDay={todayKey()}

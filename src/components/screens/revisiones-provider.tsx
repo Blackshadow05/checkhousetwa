@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { fetchInicioRevisiones } from "@/app/actions/revisiones";
+import { applyRevisionActivityChange, type RevisionActivity } from "@/lib/casitas-sin-revision";
 import { REVISIONES_TABLE } from "@/lib/constants";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { todayKey } from "@/lib/revisiones-display";
@@ -26,12 +27,15 @@ type Snapshot = {
   id: "inicio";
   rows: InicioRevisionRow[];
   upsells?: InicioRevisionRow[];
+  revisionActivity?: RevisionActivity[] | null;
   savedAt: string;
 };
 type RefreshOptions = { force?: boolean };
 type RevisionState = {
   revisiones: InicioRevisionRow[];
   upsells: InicioRevisionRow[];
+  revisionActivity: RevisionActivity[] | null;
+  activityError: string | null;
   error: string | null;
   refreshing: boolean;
   savedAt: string | null;
@@ -55,17 +59,23 @@ export function RevisionesProvider({
   children,
   initialRows,
   initialUpsells,
+  initialRevisionActivity,
+  initialActivityError,
   initialError,
   initialDay,
 }: {
   children: ReactNode;
   initialRows: InicioRevisionRow[];
   initialUpsells: InicioRevisionRow[];
+  initialRevisionActivity: RevisionActivity[] | null;
+  initialActivityError: string | null;
   initialError: string | null;
   initialDay: string;
 }) {
   const [revisiones, setRevisiones] = useState(initialRows);
   const [upsells, setUpsells] = useState(initialUpsells);
+  const [revisionActivity, setRevisionActivity] = useState(initialRevisionActivity);
+  const [activityError, setActivityError] = useState(initialActivityError);
   const [error, setError] = useState(initialError);
   const [refreshing, setRefreshing] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -79,14 +89,15 @@ export function RevisionesProvider({
   const generation = useRef(0);
   const revisionesRef = useRef(revisiones);
   const upsellsRef = useRef(upsells);
-  const initialRowsRef = useRef(initialRows);
-  const initialUpsellsRef = useRef(initialUpsells);
+  const activityRef = useRef(revisionActivity);
+  const initialActivityRef = useRef(initialRevisionActivity);
   const initialErrorRef = useRef(initialError);
-  const lastFetchedAt = useRef(Date.now());
+  const lastFetchedAt = useRef(0);
   const lastHiddenAt = useRef(0);
   const leftTheApp = useRef(false);
   const wasOffline = useRef(false);
   const pendingForce = useRef<boolean | null>(null);
+  const refreshRef = useRef<RevisionState["refresh"] | null>(null);
   const selectedRevisionRef = useRef(selectedRevision);
   const knownRowsRef = useRef(new Map<string, InicioRevisionRow>());
 
@@ -102,9 +113,13 @@ export function RevisionesProvider({
     selectedRevisionRef.current = selectedRevision;
   }, [selectedRevision]);
 
-  initialRowsRef.current = initialRows;
-  initialUpsellsRef.current = initialUpsells;
-  initialErrorRef.current = initialError;
+  useEffect(() => {
+    initialActivityRef.current = initialRevisionActivity;
+    initialErrorRef.current = initialError;
+    if (lastFetchedAt.current === 0 && !initialError && !initialActivityError) {
+      lastFetchedAt.current = Date.now();
+    }
+  }, [initialRevisionActivity, initialError, initialActivityError]);
 
   const openRevision = useCallback((row: InicioRevisionRow) => {
     setSelectedRevision(row);
@@ -164,6 +179,7 @@ export function RevisionesProvider({
           id: "inicio",
           rows,
           upsells: upsellsToSave,
+          revisionActivity: activityRef.current,
           savedAt,
         });
         setSavedAt(savedAt);
@@ -177,14 +193,19 @@ export function RevisionesProvider({
   );
 
   const acceptRevision = useCallback((row: InicioRevisionRow) => {
+    generation.current += 1;
+    if (inFlight.current) pendingForce.current = true;
     const next = [row, ...revisionesRef.current.filter((item) => item.id !== row.id)]
       .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100);
     const nextUpsells = applyUpsellChange(upsellsRef.current, "INSERT", row, null);
+    const nextActivity = applyRevisionActivityChange(activityRef.current, "INSERT", row, null, todayKey());
     revisionesRef.current = next;
     upsellsRef.current = nextUpsells;
+    activityRef.current = nextActivity;
     knownRowsRef.current.set(row.id, row);
     setRevisiones(next);
     setUpsells(nextUpsells);
+    setRevisionActivity(nextActivity);
     void persist(next, nextUpsells);
   }, [persist]);
 
@@ -204,19 +225,28 @@ export function RevisionesProvider({
       setRefreshing(true);
       try {
         const result = await fetchInicioRevisiones();
+        if (result.revisionActivity !== null) {
+          activityRef.current = result.revisionActivity;
+          setRevisionActivity(result.revisionActivity);
+        }
+        setActivityError(result.activityError);
         if (result.error) {
           setError(
             "No pudimos actualizar las revisiones. Puedes volver a intentarlo.",
           );
+          if (result.revisionActivity !== null) await persist(revisionesRef.current, upsellsRef.current);
           return false;
         }
-        lastFetchedAt.current = Date.now();
+        if (!result.activityError) lastFetchedAt.current = Date.now();
+        revisionesRef.current = result.revisiones;
+        upsellsRef.current = result.upsells;
         setRevisiones(result.revisiones);
         setUpsells(result.upsells);
         setError(null);
         await persist(result.revisiones, result.upsells);
-        return true;
+        return !result.activityError;
       } catch {
+        setActivityError("No se pudo actualizar la actividad de revisiones");
         setError("No pudimos conectar. Tus revisiones guardadas siguen aquí.");
         return false;
       } finally {
@@ -225,12 +255,16 @@ export function RevisionesProvider({
         if (pendingForce.current !== null) {
           const nextForce = pendingForce.current;
           pendingForce.current = null;
-          void refresh({ force: nextForce });
+          void refreshRef.current?.({ force: nextForce });
         }
       }
     },
     [persist],
   );
+
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,12 +279,20 @@ export function RevisionesProvider({
           setSavedAt(cached.savedAt);
           setLocalAvailable(true);
           if (initialErrorRef.current || !navigator.onLine) {
+            revisionesRef.current = cached.rows;
             setRevisiones(cached.rows);
-            if (cached.upsells) setUpsells(cached.upsells);
+            if (cached.upsells) {
+              upsellsRef.current = cached.upsells;
+              setUpsells(cached.upsells);
+            }
+          }
+          if (initialActivityRef.current === null || !navigator.onLine) {
+            activityRef.current = cached.revisionActivity ?? null;
+            setRevisionActivity(cached.revisionActivity ?? null);
           }
         }
-        if (!initialErrorRef.current && navigator.onLine) {
-          await persist(initialRowsRef.current, initialUpsellsRef.current);
+        if (navigator.onLine && (!initialErrorRef.current || initialActivityRef.current !== null)) {
+          await persist(revisionesRef.current, upsellsRef.current);
         }
       } catch {
         if (!cancelled) setStorageError(true);
@@ -330,19 +372,18 @@ export function RevisionesProvider({
     let persistTimer: number | undefined;
     let missedEvents = false;
 
-    const queuePersist = (
-      rows: InicioRevisionRow[],
-      nextUpsells: InicioRevisionRow[],
-    ) => {
+    const queuePersist = () => {
       window.clearTimeout(persistTimer);
       persistTimer = window.setTimeout(() => {
-        void persist(rows, nextUpsells);
+        void persist(revisionesRef.current, upsellsRef.current);
       }, 320);
     };
 
     const onChange = (
       payload: RealtimePostgresChangesPayload<RevisionCasita>,
     ) => {
+      generation.current += 1;
+      if (inFlight.current) pendingForce.current = true;
       const next = applyRealtimeChange(
         revisionesRef.current,
         payload.eventType,
@@ -355,13 +396,21 @@ export function RevisionesProvider({
         payload.new,
         payload.old,
       );
+      const nextActivity = applyRevisionActivityChange(
+        activityRef.current,
+        payload.eventType,
+        payload.new,
+        payload.old,
+        todayKey(),
+      );
       revisionesRef.current = next;
       upsellsRef.current = nextUpsells;
+      activityRef.current = nextActivity;
       setRevisiones(next);
       setUpsells(nextUpsells);
+      setRevisionActivity(nextActivity);
       setToday(todayKey());
       setError(null);
-      lastFetchedAt.current = Date.now();
       const open = selectedRevisionRef.current;
       if (open?.id) {
         if (payload.eventType === "DELETE") {
@@ -395,7 +444,7 @@ export function RevisionesProvider({
           if (match) setSelectedRevision(match);
         }
       }
-      queuePersist(next, nextUpsells);
+      queuePersist();
     };
 
     const connect = async () => {
@@ -436,6 +485,8 @@ export function RevisionesProvider({
       value={{
         revisiones,
         upsells,
+        revisionActivity,
+        activityError,
         error,
         refreshing,
         savedAt,

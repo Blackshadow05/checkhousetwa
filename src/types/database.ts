@@ -1,3 +1,6 @@
+import type { PantallaReport, PantallaStock } from "@/lib/pantallas";
+type Table<Row, Insert = Partial<Row>> = { Row: Row; Insert: Insert; Update: Partial<Row>; Relationships: [] };
+export type UsuarioProfile = { id: number; Usuario: string; Rol: string | null; metodo_login: string | null; totp_enrolled: boolean; auth_user_id: string | null };
 export type Json =
   | string
   | number
@@ -9,6 +12,9 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      reporte_pantallas: Table<PantallaReport, Pick<PantallaReport, "nombre_usuario" | "fecha_hora" | "numero_casita" | "fotos" | "notas"> & Partial<Omit<PantallaReport, "id">>>;
+      inventario_pantallas: Table<PantallaStock & { id: number; updated_at: string }>;
+      Usuarios: Table<UsuarioProfile & { password_hash: string | null }>;
       revisiones_casitas: {
         Row: {
           id: string;
@@ -149,7 +155,9 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      ajustar_inventario_pantalla: { Args: { p_ubicacion: string; p_habitacion: string; p_delta: number }; Returns: undefined };
+      set_inventario_pantalla: { Args: { p_ubicacion: string; p_habitacion: string; p_cantidad: number }; Returns: undefined };
+      registrar_movimiento_pantalla: { Args: { p_nombre_usuario: string; p_fecha_hora: string; p_notas: string; p_origen_ubicacion: string; p_origen_habitacion: string; p_destino_ubicacion: string; p_destino_habitacion: string }; Returns: PantallaReport };
     };
     Enums: {
       [_ in never]: never;

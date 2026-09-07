@@ -1,0 +1,236 @@
+.screen {
+  display: grid;
+  gap: 24px;
+  width: 100%;
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 2px 0 8px;
+}
+
+.heading {
+  display: grid;
+  gap: 4px;
+}
+
+.heading h1 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+
+.heading time {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.heading time::first-letter {
+  text-transform: uppercase;
+}
+
+.board {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.sectionHeading > svg {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.sectionHeading h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.35;
+  font-weight: 650;
+  letter-spacing: -0.35px;
+}
+
+.count,
+.pendingCount {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border-radius: 9px;
+  font-size: 0.75rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+}
+
+.sectionHeading .pendingIcon,
+.pendingCount {
+  color: var(--amber-text);
+}
+
+.pendingCount {
+  background: var(--amber-bg);
+}
+
+.card {
+  min-width: 0;
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+
+.pendingGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.pendingGrid li {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  border-radius: 12px;
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  font-size: 1.0625rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.showAll {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  margin-bottom: -8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  color: var(--primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.screen button:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.screen button:active {
+  opacity: 0.7;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 48px;
+}
+
+.empty h3 {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.textButton {
+  min-width: 48px;
+  min-height: 48px;
+  color: var(--primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.savedStatus {
+  display: block;
+  width: fit-content;
+  margin-bottom: 12px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.sheetGrid {
+  margin-top: 20px;
+}
+
+.group + .group {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.groupHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.groupHeading h3 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.groupHeading span {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 8px;
+}
+
+.chips button {
+  border-radius: 12px;
+}
+
+.menuButton {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+}
+
+.menuButton .sectionHeading > svg:last-child {
+  color: var(--muted-foreground);
+}
+
+.menuDate {
+  font-size: 0.8125rem;
+  font-weight: 550;
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 360px) {
+  .card {
+    padding: 12px;
+  }
+
+  .pendingGrid {
+    gap: 6px;
+  }
+
+  .sectionHeading {
+    gap: 7px;
+  }
+}

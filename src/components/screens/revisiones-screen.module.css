@@ -1,0 +1,215 @@
+.dayHeading {
+  position: sticky;
+  top: calc(-1 * var(--screen-padding-top));
+  z-index: 3;
+  min-height: 44px;
+  padding: 10px 2px;
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+}
+
+.dayHeading h3 {
+  color: var(--foreground);
+  font-weight: 650;
+}
+
+.periods {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.periods button {
+  padding-inline: 10px;
+}
+
+.note {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: .75rem;
+  line-height: 1.4;
+}
+
+.note > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card {
+  --card-tint: var(--secondary);
+  --card-ink: var(--primary);
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  padding: 12px;
+  gap: 12px;
+  align-items: center;
+  text-align: left;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.card[data-tone="sage"] { --card-tint: var(--sage-bg); --card-ink: var(--sage-text); }
+.card[data-tone="rose"] { --card-tint: var(--rose-bg); --card-ink: var(--rose-text); }
+.card[data-tone="blue"] { --card-tint: var(--blue-bg); --card-ink: var(--blue-text); }
+.card[data-tone="amber"] { --card-tint: var(--amber-bg); --card-ink: var(--amber-text); }
+.card[data-tone="plum"] { --card-tint: var(--plum-bg); --card-ink: var(--plum-text); }
+.card[data-tone="neutral"] { --card-tint: var(--muted); --card-ink: var(--muted-foreground); }
+
+.plaque {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 56px;
+  gap: 3px;
+  padding: 8px 4px;
+  border-radius: 11px;
+  color: var(--card-ink);
+  background: var(--card-tint);
+}
+
+.plaque > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.casitaLabel {
+  font-size: .5625rem;
+  font-weight: 650;
+  letter-spacing: .1px;
+}
+
+.number {
+  max-width: 100%;
+  font-size: 1.125rem;
+  font-weight: 650;
+  line-height: 1.15;
+  letter-spacing: -.3px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0;
+  gap: 8px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.status {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.safeLabel {
+  color: var(--muted-foreground);
+  font-size: .6875rem;
+  font-weight: 500;
+}
+
+.status :global(.status-badge) {
+  padding: 3px 6px;
+  gap: 5px;
+  border-radius: 6px;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.arrow {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 24px;
+  color: var(--muted-foreground);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reviewer {
+  display: flex;
+  align-items: center;
+  flex: 1 1 90px;
+  min-width: 0;
+  gap: 7px;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: .5625rem;
+  font-weight: 650;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .75rem;
+  font-weight: 500;
+}
+
+.time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted-foreground);
+  font-size: .6875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .card:is(:hover, :focus-visible) {
+    border-color: var(--card-ink);
+    background: color-mix(in srgb, var(--card-tint) 20%, var(--card));
+  }
+}
+
+.card:active:not(:disabled) {
+  transform: scale(.985);
+}
+
+@media (max-width: 359px) {
+  .card { gap: 10px; padding: 10px; }
+  .plaque { flex-basis: 50px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none; }
+  .card:active:not(:disabled) { transform: none; }
+}

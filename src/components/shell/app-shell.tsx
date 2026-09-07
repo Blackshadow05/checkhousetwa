@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { BottomNavigation } from "@/components/shell/bottom-navigation";
 import { Fab, NewRevisionFab } from "@/components/shell/fab";
 import { Header } from "@/components/shell/header";
@@ -8,8 +8,10 @@ import { AppNavigationProvider } from "@/components/shell/navigation-context";
 import { InicioScreen } from "@/components/screens/inicio-screen";
 import { RevisionDetailScreen } from "@/components/screens/revision-detail-screen";
 import { RevisionFormScreen } from "@/components/screens/revision-form-screen";
+import { RevisionShareSheet } from "@/components/screens/revision-share-sheet";
 import { RevisionesScreen } from "@/components/screens/revisiones-screen";
 import { SyncScreen } from "@/components/screens/sync-screen";
+import { OtrosScreen } from "@/components/screens/otros-screen";
 import {
   RevisionesProvider,
   useRevisiones,
@@ -17,12 +19,15 @@ import {
 import { useAppNavigation } from "@/lib/navigation/use-app-navigation";
 import { SCREEN_ORDER, SCREENS, type ScreenId } from "@/lib/navigation/screens";
 import type { InicioRevisionRow, MenuDelDia } from "@/types/database";
+import type { RevisionActivity } from "@/lib/casitas-sin-revision";
 
 type AppShellProps = {
   initialScreen: ScreenId;
   revisionesInicio: InicioRevisionRow[];
   revisionesError: string | null;
   upsellsInicio: InicioRevisionRow[];
+  revisionActivityInicio: RevisionActivity[] | null;
+  activityError: string | null;
   menusInicio: MenuDelDia[];
   menusError: string | null;
   initialDay: string;
@@ -40,8 +45,9 @@ function AppShellFrame({
   const { selectedRevision, acceptRevision } = useRevisiones();
   const [formOpen, setFormOpen] = useState(false);
   const [savedRevision, setSavedRevision] = useState<InicioRevisionRow | null>(null);
+  const [shareEvidence, setShareEvidence] = useState<{ casita: string; files: File[] } | null>(null);
   const formVisible = formOpen && navigation.screen === "revisiones";
-  useEffect(() => {
+  useLayoutEffect(() => {
     const syncForm = () => setFormOpen(new URL(window.location.href).searchParams.get("nueva") === "1");
     syncForm();
     window.addEventListener("popstate", syncForm);
@@ -76,6 +82,7 @@ function AppShellFrame({
     {},
   );
   const screens = {
+    otros: <OtrosScreen active={navigation.screen === "otros"} />,
     inicio: (
       <InicioScreen menus={menusInicio} menusError={menusError} />
     ),
@@ -115,31 +122,36 @@ function AppShellFrame({
               {screens[id]}
             </div>
           ))}
-          <RevisionFormScreen open={formVisible} onClose={closeForm} onSaved={(row) => {
+          <RevisionFormScreen open={formVisible} onClose={closeForm} onSaved={(row, files) => {
             acceptRevision(row);
             setSavedRevision(row);
             closeForm();
+            if (files.length) setShareEvidence({ casita: row.casita, files });
           }} />
           {navigation.screen === "revisiones" && !formVisible && !detailOpen && <NewRevisionFab onClick={openForm} />}
+          {showTop[navigation.screen] && !formVisible && !detailOpen && (
+            <Fab
+              onClick={() =>
+                screenElements.current[navigation.screen]?.scrollTo({
+                  top: 0,
+                  behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+                    .matches
+                    ? "instant"
+                    : "smooth",
+                })
+              }
+            />
+          )}
         </main>
-        {showTop[navigation.screen] && navigation.screen !== "revisiones" && !detailOpen && (
-          <Fab
-            onClick={() =>
-              screenElements.current[navigation.screen]?.scrollTo({
-                top: 0,
-                behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
-                  .matches
-                  ? "instant"
-                  : "smooth",
-              })
-            }
-          />
-        )}
         <BottomNavigation />
       </div>
       {selectedRevision && (
         <RevisionDetailScreen key={selectedRevision.id} />
       )}
+      {shareEvidence && <RevisionShareSheet casita={shareEvidence.casita} files={shareEvidence.files} onClose={() => {
+        setShareEvidence(null);
+        requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(".new-revision-fab")?.focus({ preventScroll: true }));
+      }} />}
     </div>
   );
 }
@@ -149,6 +161,8 @@ export function AppShell({
   revisionesInicio,
   revisionesError,
   upsellsInicio,
+  revisionActivityInicio,
+  activityError,
   menusInicio,
   menusError,
   initialDay,
@@ -160,6 +174,8 @@ export function AppShell({
       <RevisionesProvider
         initialRows={revisionesInicio}
         initialUpsells={upsellsInicio}
+        initialRevisionActivity={revisionActivityInicio}
+        initialActivityError={activityError}
         initialError={revisionesError}
         initialDay={initialDay}
       >

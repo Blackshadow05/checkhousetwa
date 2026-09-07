@@ -7,12 +7,13 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { menuChipLabel, menuDateHeading } from "@/lib/menus";
 import type { MenuDelDia } from "@/types/database";
+import styles from "./inicio-screen.module.css";
 
 type Snapshot = { id: "menus"; rows: MenuDelDia[]; savedAt: string };
 
 function MenuDishes({ comidas }: { comidas: string[] }) {
   if (comidas.length === 0) {
-    return <p className="menu-empty-dishes">Todavía no hay platos en este menú.</p>;
+    return <h3 className={styles.menuDate}>Sin platos</h3>;
   }
 
   return (
@@ -37,7 +38,7 @@ export function MenuDelDia({
 }) {
   const [menus, setMenus] = useState(initialMenus);
   const [error, setError] = useState(initialError);
-  const [localAvailable, setLocalAvailable] = useState(false);
+  const [previousInitial, setPreviousInitial] = useState({ menus: initialMenus, error: initialError });
   const [open, setOpen] = useState(false);
   const [selectedFecha, setSelectedFecha] = useState(
     initialMenus.find((menu) => menu.fecha === today)?.fecha ??
@@ -46,6 +47,12 @@ export function MenuDelDia({
   );
   const persisted = useRef(false);
 
+  if (previousInitial.menus !== initialMenus || previousInitial.error !== initialError) {
+    setPreviousInitial({ menus: initialMenus, error: initialError });
+    setMenus(initialMenus);
+    setError(initialError);
+  }
+
   const persist = useCallback(async (rows: MenuDelDia[]) => {
     try {
       await idbPut<Snapshot>(IDB_STORES.snapshots, {
@@ -53,15 +60,12 @@ export function MenuDelDia({
         rows,
         savedAt: new Date().toISOString(),
       });
-      setLocalAvailable(true);
     } catch {
       return;
     }
   }, []);
 
   useEffect(() => {
-    setMenus(initialMenus);
-    setError(initialError);
     if (!persisted.current && initialMenus.length > 0 && !initialError) {
       persisted.current = true;
       void persist(initialMenus);
@@ -76,7 +80,6 @@ export function MenuDelDia({
         const cached = await idbGet<Snapshot>(IDB_STORES.snapshots, "menus");
         if (cancelled || !cached?.rows.length) return;
         setMenus(cached.rows);
-        setLocalAvailable(true);
         setError(null);
       } catch {
         return;
@@ -126,37 +129,17 @@ export function MenuDelDia({
     setOpen(true);
   };
 
-  if (menus.length === 0 && !error) {
+  if (menus.length === 0) {
     return (
-      <div className="menu-day-card is-empty">
-        <div className="menu-day-icon" aria-hidden="true">
-          <UtensilsCrossed size={22} strokeWidth={1.7} />
+      <section className={styles.board} aria-label="Menú del día">
+        <div className={styles.sectionHeading}>
+          <UtensilsCrossed size={20} aria-hidden="true" />
+          <h2>Menú del día</h2>
         </div>
-        <div>
-          <p className="menu-day-kicker">Menú del día</p>
-          <h2>Hoy no hay menú</h2>
-          <p>Cuando se publique, lo verás aquí.</p>
+        <div className={styles.card}>
+          <div className={styles.empty}><h3>{error ? "Menú no disponible" : "Sin menú para hoy"}</h3></div>
         </div>
-      </div>
-    );
-  }
-
-  if (menus.length === 0 && error) {
-    return (
-      <div className="menu-day-card is-empty">
-        <div className="menu-day-icon" aria-hidden="true">
-          <UtensilsCrossed size={22} strokeWidth={1.7} />
-        </div>
-        <div>
-          <p className="menu-day-kicker">Menú del día</p>
-          <h2>No pudimos cargar el menú</h2>
-          <p>
-            {localAvailable
-              ? "Conservamos la última copia en este dispositivo."
-              : "Vuelve a intentarlo cuando tengas conexión."}
-          </p>
-        </div>
-      </div>
+      </section>
     );
   }
 
@@ -167,40 +150,21 @@ export function MenuDelDia({
     <>
       <button
         type="button"
-        className="menu-day-card"
+        className={`${styles.card} ${styles.menuButton}`}
         onClick={openMenus}
         aria-label={
           todayMenu
             ? `Menú de hoy, ${todayMenu.comidas.join(", ") || "sin platos"}. Ver menús de los siguientes días`
-            : `Hoy no hay menú. Ver menús de los siguientes días`
+            : `Menú del ${menuDateHeading(featured.fecha)}. Ver menús`
         }
       >
-        <div className="menu-day-top">
-          <div className="menu-day-icon" aria-hidden="true">
-            <UtensilsCrossed size={22} strokeWidth={1.7} />
-          </div>
-          <div className="menu-day-copy">
-            <p className="menu-day-kicker">Menú del día</p>
-            <h2>
-              {todayMenu
-                ? menuDateHeading(todayMenu.fecha)
-                : "Hoy no hay menú"}
-            </h2>
-          </div>
-          <ChevronRight size={19} className="card-chevron" aria-hidden="true" />
+        <div className={styles.sectionHeading}>
+          <UtensilsCrossed size={20} aria-hidden="true" />
+          <h2>{todayMenu ? "Menú del día" : "Próximo menú"}</h2>
+          <ChevronRight size={19} aria-hidden="true" />
         </div>
-        {todayMenu ? (
-          <MenuDishes comidas={todayMenu.comidas} />
-        ) : (
-          <p className="menu-empty-dishes">
-            El próximo menú es {menuDateHeading(featured.fecha)}.
-          </p>
-        )}
-        <span className="menu-day-hint">
-          {upcoming.length > 0
-            ? `Ver los próximos ${upcoming.length} ${upcoming.length === 1 ? "día" : "días"}`
-            : "Ver menú"}
-        </span>
+        {!todayMenu && <h3 className={styles.menuDate}>{menuDateHeading(featured.fecha)}</h3>}
+        <MenuDishes comidas={featured.comidas} />
       </button>
 
       <BottomSheet
@@ -208,9 +172,6 @@ export function MenuDelDia({
         onClose={() => setOpen(false)}
         title="Menús"
       >
-        <p className="sheet-description">
-          Elige un día para ver qué hay de comer.
-        </p>
         <div className="menu-day-chips" aria-label="Días con menú">
           {menus.map((menu) => (
             <button

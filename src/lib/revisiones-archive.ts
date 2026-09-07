@@ -3,7 +3,7 @@ import type { InicioRevisionRow } from "@/types/database";
 
 export const ARCHIVE_PAGE_SIZE = 30;
 
-export type ArchivePeriod = "all" | "today" | "week";
+export type ArchivePeriod = "all" | "today" | "three-days" | "week";
 
 export type ArchiveQuery = {
   search: string;
@@ -17,13 +17,13 @@ export type ArchiveQuery = {
 export const CAJA_FUERTE_FILTERS = [
   "Check in",
   "Check out",
+  "Si",
+  "No",
   "Upsell",
   "Guardar Upsell",
   "Back to Back",
   "Room Move",
   "Show Room",
-  "Si",
-  "No",
 ] as const;
 
 export function shiftDay(day: string, days: number) {
@@ -77,8 +77,8 @@ export function matchesArchivePeriod(
   const day = revisionDay(row.created_at);
   if (period === "today") return day === today;
   if (day === "sin-fecha") return false;
-  const weekStart = shiftDay(today, -6);
-  return day >= weekStart && day <= today;
+  const start = shiftDay(today, period === "three-days" ? -2 : -6);
+  return day >= start && day <= today;
 }
 
 export function filterArchiveLocally(
@@ -96,6 +96,6 @@ export function filterArchiveLocally(
 }
 
 export function parseArchivePeriod(value: string): ArchivePeriod {
-  if (value === "today" || value === "week") return value;
+  if (value === "today" || value === "three-days" || value === "week") return value;
   return "all";
 }

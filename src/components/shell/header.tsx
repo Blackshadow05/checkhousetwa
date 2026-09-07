@@ -17,7 +17,6 @@ export function Header() {
           </span>
           <div>
             <p className="brand-name">{APP_SHORT_NAME}</p>
-            <p className="brand-caption">Cuidamos cada detalle</p>
           </div>
         </div>
         <button

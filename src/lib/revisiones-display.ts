@@ -58,15 +58,15 @@ export function statusAppearance(value: string) {
   if (normalized === "check out") return { tone: "rose", label: "Check out" };
   if (isUpsellStatus(value)) return { tone: "blue", label: "Upsell" };
   if (normalized === "guardar upsell")
-    return { tone: "sage", label: "Guardar Upsell" };
-  if (normalized === "back to back")
-    return { tone: "amber", label: "Back to back" };
-  if (normalized === "room move") return { tone: "plum", label: "Room Move" };
+    return { tone: "plum", label: "Guardar Upsell" };
+    if (normalized === "back to back")
+      return { tone: "amber", label: "Back to Back" };
+  if (normalized === "room move") return { tone: "amber", label: "Room Move" };
   if (normalized === "si" || normalized === "sí")
-    return { tone: "sage", label: "Sí" };
-  if (normalized === "no") return { tone: "rose", label: "No" };
+    return { tone: "amber", label: "Sí" };
+  if (normalized === "no") return { tone: "amber", label: "No" };
   return {
-    tone: "neutral",
+    tone: "amber",
     label: value === "—" || !value ? "Sin registro" : value,
   };
 }
