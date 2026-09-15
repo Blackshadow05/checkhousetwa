@@ -44,7 +44,6 @@ function AppShellFrame({
 }) {
   const { selectedRevision, acceptRevision } = useRevisiones();
   const [formOpen, setFormOpen] = useState(false);
-  const [savedRevision, setSavedRevision] = useState<InicioRevisionRow | null>(null);
   const [shareEvidence, setShareEvidence] = useState<{ casita: string; files: File[] } | null>(null);
   const formVisible = formOpen && navigation.screen === "revisiones";
   useLayoutEffect(() => {
@@ -86,7 +85,7 @@ function AppShellFrame({
     inicio: (
       <InicioScreen menus={menusInicio} menusError={menusError} />
     ),
-    revisiones: <RevisionesScreen savedRevision={savedRevision} onDismissSaved={() => setSavedRevision(null)} />,
+    revisiones: <RevisionesScreen />,
     sync: <SyncScreen />,
   };
   const detailOpen = selectedRevision !== null;
@@ -124,7 +123,6 @@ function AppShellFrame({
           ))}
           <RevisionFormScreen open={formVisible} onClose={closeForm} onSaved={(row, files) => {
             acceptRevision(row);
-            setSavedRevision(row);
             closeForm();
             if (files.length) setShareEvidence({ casita: row.casita, files });
           }} />

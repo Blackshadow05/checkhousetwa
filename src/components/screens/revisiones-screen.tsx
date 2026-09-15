@@ -40,10 +40,7 @@ function groupByDay(rows: InicioRevisionRow[]) {
   return result;
 }
 
-export function RevisionesScreen({ savedRevision, onDismissSaved }: {
-  savedRevision?: InicioRevisionRow | null;
-  onDismissSaved?: () => void;
-}) {
+export function RevisionesScreen() {
   const archive = useRevisionesArchive();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -68,20 +65,6 @@ export function RevisionesScreen({ savedRevision, onDismissSaved }: {
 
   return (
     <section className="home-screen" aria-label="Revisiones">
-      <div className="welcome-block">
-        <p className="eyebrow">TU EQUIPO, AL DÍA</p>
-        <h1>
-          Revisiones<span>.</span>
-        </h1>
-        <p>Busca por casita o por quien revisa, y sigue bajando para ver más.</p>
-      </div>
-
-      {savedRevision && <div className="revision-saved-notice" role="status">
-        <Check size={19} aria-hidden="true" />
-        <div><strong>Revisión guardada</strong><p>Casita {savedRevision.casita} · Confirmada en línea.</p><button type="button" className="text-action" onClick={() => archive.openRevision(savedRevision)}>Ver detalle</button></div>
-        <button type="button" className="icon-button" aria-label="Cerrar confirmación" onClick={onDismissSaved}><X size={18} /></button>
-      </div>}
-
       {!archive.online && (
         <div className="inline-notice" role="status">
           <WifiOff size={17} />

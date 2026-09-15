@@ -1,6 +1,24 @@
 import type { PantallaReport, PantallaStock } from "@/lib/pantallas";
 type Table<Row, Insert = Partial<Row>> = { Row: Row; Insert: Insert; Update: Partial<Row>; Relationships: [] };
-export type UsuarioProfile = { id: number; Usuario: string; Rol: string | null; metodo_login: string | null; totp_enrolled: boolean; auth_user_id: string | null };
+export type UsuarioProfile = { id: number; Usuario: string; Rol: string | null; metodo_login: string | null; totp_enrolled: boolean; auth_user_id: string | null; email: string | null; ultimo_login_at: string | null; ultimo_login_ip: string | null };
+export type NotaRevisionCasita = {
+  id: string;
+  revision_id: string;
+  nota: string;
+  usuario: string | null;
+  imagen: string | null;
+  hora: string | null;
+  created_at: string | null;
+};
+export type NotaRevisionCasitaInsert = {
+  id?: string;
+  revision_id: string;
+  nota: string;
+  usuario?: string | null;
+  imagen?: string | null;
+  hora?: string | null;
+  created_at?: string | null;
+};
 export type Json =
   | string
   | number
@@ -15,6 +33,7 @@ export type Database = {
       reporte_pantallas: Table<PantallaReport, Pick<PantallaReport, "nombre_usuario" | "fecha_hora" | "numero_casita" | "fotos" | "notas"> & Partial<Omit<PantallaReport, "id">>>;
       inventario_pantallas: Table<PantallaStock & { id: number; updated_at: string }>;
       Usuarios: Table<UsuarioProfile & { password_hash: string | null }>;
+      notas_revisiones_casitas: Table<NotaRevisionCasita, NotaRevisionCasitaInsert>;
       revisiones_casitas: {
         Row: {
           id: string;
@@ -132,6 +151,30 @@ export type Database = {
         };
         Relationships: [];
       };
+      "Registro_ediciones": {
+        Row: {
+          id: number;
+          created_at: string;
+          "Usuario que Edito": string | null;
+          Dato_anterior: string | null;
+          Dato_nuevo: string | null;
+        };
+        Insert: {
+          id?: number;
+          created_at: string;
+          "Usuario que Edito"?: string | null;
+          Dato_anterior?: string | null;
+          Dato_nuevo?: string | null;
+        };
+        Update: {
+          id?: number;
+          created_at?: string;
+          "Usuario que Edito"?: string | null;
+          Dato_anterior?: string | null;
+          Dato_nuevo?: string | null;
+        };
+        Relationships: [];
+      };
       menus: {
         Row: {
           id: string;
@@ -158,6 +201,7 @@ export type Database = {
       ajustar_inventario_pantalla: { Args: { p_ubicacion: string; p_habitacion: string; p_delta: number }; Returns: undefined };
       set_inventario_pantalla: { Args: { p_ubicacion: string; p_habitacion: string; p_cantidad: number }; Returns: undefined };
       registrar_movimiento_pantalla: { Args: { p_nombre_usuario: string; p_fecha_hora: string; p_notas: string; p_origen_ubicacion: string; p_origen_habitacion: string; p_destino_ubicacion: string; p_destino_habitacion: string }; Returns: PantallaReport };
+      editar_campo_revision_casita: { Args: { p_id: string; p_editor_id: number; p_campo: string; p_esperado: string | null; p_nuevo: string | null }; Returns: RevisionCasita };
     };
     Enums: {
       [_ in never]: never;

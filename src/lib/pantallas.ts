@@ -13,9 +13,17 @@ export const CASITAS = Array.from({ length: 50 }, (_, i) => String(i + 1));
 export const UBICACIONES = [...CASITAS, "bodega", "casa_verde"];
 const SOLO_LIVING = new Set([5, 6, 16, 17, 18, 19, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 49, 50]);
 const TRES = new Set([1, 2, 3, 4, 7, 8, 9, 10]);
+const LIVING_Y_QUEEN = new Set([15, 20, 21, 22, 23, 24, 25, 38, 39, 40, 43, 46, 47, 48]);
 export function habitaciones(ubicacion: string): string[] {
   if (!CASITAS.includes(ubicacion)) return [];
-  return SOLO_LIVING.has(Number(ubicacion)) ? ["Living"] : TRES.has(Number(ubicacion)) ? ["Living", "Cuarto Queen", "Cuarto King"] : ["Living", "Cuarto King"];
+  const numero = Number(ubicacion);
+  return SOLO_LIVING.has(numero)
+    ? ["Living"]
+    : TRES.has(numero)
+      ? ["Living", "Cuarto Queen", "Cuarto King"]
+      : LIVING_Y_QUEEN.has(numero)
+        ? ["Living", "Cuarto Queen"]
+        : ["Living", "Cuarto King"];
 }
 export function ubicacionLabel(value: string | null) {
   return value === "bodega" ? "Bodega" : value === "casa_verde" ? "Casa Verde" : value ? `Casita ${value}` : "—";

@@ -8,6 +8,7 @@ import {
   filterArchiveLocally,
   type ArchivePeriod,
 } from "@/lib/revisiones-archive";
+import { replaceArchiveRow } from "@/lib/revision-edit";
 
 const SEARCH_DEBOUNCE_MS = 350;
 
@@ -23,6 +24,7 @@ export function useRevisionesArchive() {
     refresh,
     openRevision,
     rememberRevisiones,
+    revisionPatch,
   } = useRevisiones();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -46,6 +48,12 @@ export function useRevisionesArchive() {
   useEffect(() => {
     rememberRevisiones(rows);
   }, [rememberRevisiones, rows]);
+
+  useEffect(() => {
+    if (!revisionPatch?.id) return;
+    setRows((current) => replaceArchiveRow(current, revisionPatch));
+    rememberRevisiones([revisionPatch]);
+  }, [rememberRevisiones, revisionPatch]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

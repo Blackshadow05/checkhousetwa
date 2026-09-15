@@ -13,6 +13,7 @@
 # testing
 /coverage
 /.playwright-mcp/
+/tests/
 
 # next.js
 /.next/
@@ -24,6 +25,8 @@
 # misc
 .DS_Store
 *.pem
+/AGENTS.md
+/supabase/.temp/
 
 # debug
 npm-debug.log*

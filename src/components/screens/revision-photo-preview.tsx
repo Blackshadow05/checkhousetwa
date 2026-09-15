@@ -15,12 +15,13 @@ function photoSize(bytes: number) {
   return `${format.format(bytes / (1024 * 1024))} MB`;
 }
 
-export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active }: {
+export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active, label: labelOverride }: {
   photo: RevisionPhoto;
   index: number;
   onRemove: () => void;
   disabled: boolean;
   active: boolean;
+  label?: string;
 }) {
   const thumbnailRef = useRef<HTMLImageElement>(null);
   const fullImageRef = useRef<HTMLImageElement>(null);
@@ -48,7 +49,7 @@ export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active 
     if (!active) dialogRef.current?.close();
   }, [active]);
 
-  const label = evidenceLabel(index);
+  const label = labelOverride ?? evidenceLabel(index);
 
   return <>
     <figure className="revision-photo">

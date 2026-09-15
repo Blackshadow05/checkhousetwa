@@ -62,13 +62,13 @@ export function OtrosScreen({ active }: { active: boolean }) {
   }, [snapshot, reports]);
   return <div className="otros-screen">
     <div hidden={path !== "/otros"}>
-      <p className="pantalla-eyebrow">HERRAMIENTAS</p><h1>Otros</h1><p>Más herramientas para el día a día.</p>
+      <p className="pantalla-eyebrow">HERRAMIENTAS</p><h1>Otros</h1>
       <button type="button" className="pantalla-feature" onClick={() => navigate("/reporte-pantallas")}><span className="pantalla-feature-icon"><Monitor size={27} aria-hidden /></span><span><strong>Reporte de pantallas</strong><small>Revisiones, movimientos e inventario</small></span><ArrowRight size={21} aria-hidden /></button>
     </div>
     <div ref={listRef} hidden={path !== "/reporte-pantallas"}>
       <button type="button" onClick={() => navigate("/otros")}>← Otros</button>
       <div className="pantalla-toolbar"><h1>Reporte de pantallas</h1><button type="button" aria-label="Actualizar pantallas" disabled={loading || !online} onClick={() => void refresh()}><RefreshCw size={20} aria-hidden /></button></div>
-      <p>Revisa el estado y sigue los traslados de cada pantalla.</p>
+      <p>Reporte estado de Pantallas, movimientos y inventario</p>
       <button type="button" className="pantalla-primary" onClick={() => navigate("/reporte-pantallas/nuevo")}><Plus size={20} aria-hidden /> Nuevo registro</button>
       <p role="status" className="pantalla-status">{loading ? "Actualizando…" : !online ? "Sin conexión · Últimos datos guardados" : cached || error ? "Últimos datos guardados" : snapshot ? "Datos actualizados" : "Sin datos disponibles"}{snapshot && ` · ${new Date(snapshot.updatedAt).toLocaleString("es-CR", { timeZone: "America/Costa_Rica" })}`}</p>
       {message && <p role="status" className="pantalla-notice">{message}</p>}{error && <p role="alert" className="pantalla-error">{error}</p>}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
-import { ArrowLeft, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, LoaderCircle, LockKeyhole, Minus, Package, Plus, Tv, WifiOff } from "lucide-react";
+import { Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, LoaderCircle, Minus, Plus, WifiOff } from "lucide-react";
 import { createRevision } from "@/app/actions/revisiones";
 import { useRevisionDraft } from "@/hooks/use-revision-draft";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
@@ -46,8 +46,8 @@ function ChoiceField({ name, label, options, value, onChange, errors, numeric = 
   );
 }
 
-function FormCard({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
-  return <section className="revision-form-card"><h2><span>{icon}</span>{title}</h2>{children}</section>;
+function FormCard({ icon, title, children }: { icon?: ReactNode; title?: string; children: ReactNode }) {
+  return <section className="revision-form-card">{title ? <h2><span>{icon}</span>{title}</h2> : null}{children}</section>;
 }
 
 function useCostaRicaClock(active: boolean) {
@@ -79,12 +79,11 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
   const [progress, setProgress] = useState("");
   const inFlight = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLHeadingElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (open) titleRef.current?.focus({ preventScroll: true });
+    if (open) scrollRef.current?.focus({ preventScroll: true });
   }, [open]);
 
   useEffect(() => {
@@ -220,12 +219,8 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
 
   return (
     <section className="revision-form-screen" hidden={!open} aria-label="Nueva revisión" inert={!open ? true : undefined}>
-      <header className="revision-form-header">
-        <button type="button" className="icon-button" onClick={onClose} aria-label="Volver a revisiones" disabled={pending}><ArrowLeft size={21} /></button>
-        <div><h1 ref={titleRef} tabIndex={-1}>Nueva revisión</h1></div>
-      </header>
       <form className="revision-form" noValidate onSubmit={(event) => { event.preventDefault(); submit(); }}>
-        <div className="revision-form-scroll" ref={scrollRef}>
+        <div className="revision-form-scroll" ref={scrollRef} tabIndex={-1}>
           <div className="revision-form-welcome">
             <div className="revision-form-welcome-copy">
               <p className="revision-form-welcome-title">{values.casita ? `Casita ${String(Number(values.casita)).padStart(2, "0")}` : "Selecciona una casita"}</p>
@@ -240,17 +235,17 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
               <FormCard icon={<House size={18} />} title="Datos de la revisión">
                 <div className="revision-text-field"><label htmlFor="revision-casita">Número de casita</label><select id="revision-casita" name="casita" value={values.casita ? String(Number(values.casita)) : ""} onChange={(e) => change("casita", e.target.value)} aria-invalid={Boolean(errors.casita)} aria-describedby={errors.casita ? "error-casita" : undefined}><option value="" disabled>Selecciona una casita</option>{Array.from({ length: 50 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select><FieldError name="casita" errors={errors} /></div>
                 <div className="revision-text-field"><label htmlFor="revision-quien_revisa">¿Quién revisa?</label><input id="revision-quien_revisa" name="quien_revisa" list="revision-reviewers" autoComplete="name" maxLength={100} value={values.quien_revisa} onChange={(e) => change("quien_revisa", e.target.value)} aria-invalid={Boolean(errors.quien_revisa)} aria-describedby={errors.quien_revisa ? "error-quien_revisa" : undefined} /><datalist id="revision-reviewers">{reviewers.map((name) => <option key={name} value={name} />)}</datalist><FieldError name="quien_revisa" errors={errors} /></div>
-                <div className="revision-text-field"><label htmlFor="revision-created_at">Fecha y hora<small>Se registra al guardar</small></label><input id="revision-created_at" name="created_at" type="text" readOnly value={formatRevisionDateTime(recordedAt)} aria-readonly="true" /></div>
+                <div className="revision-text-field"><label htmlFor="revision-created_at">Fecha y hora</label><input id="revision-created_at" name="created_at" type="text" readOnly value={formatRevisionDateTime(recordedAt)} aria-readonly="true" /></div>
               </FormCard>
-              <FormCard icon={<LockKeyhole size={18} />} title="Seguridad">
+              <FormCard>
                 <ChoiceField name="caja_fuerte" label="Caja fuerte" options={CAJA_FUERTE_FILTERS} value={values.caja_fuerte} onChange={change} errors={errors} />
                 <div className="revision-text-field"><label htmlFor="revision-puertas_ventanas">Puertas y ventanas<small>Ej. Cerradas y en buen estado</small></label><textarea id="revision-puertas_ventanas" name="puertas_ventanas" rows={2} maxLength={500} placeholder="Ej. Cerradas y en buen estado" value={values.puertas_ventanas} onChange={(e) => change("puertas_ventanas", e.target.value)} aria-invalid={Boolean(errors.puertas_ventanas)} aria-describedby={errors.puertas_ventanas ? "error-puertas_ventanas" : undefined} /><FieldError name="puertas_ventanas" errors={errors} /></div>
                 {values.caja_fuerte === "Room Move" && <div className="revision-text-field"><label htmlFor="revision-room_move">Movimiento entre casitas<small>Ej. De casita 12 a casita 24</small></label><input id="revision-room_move" name="room_move" placeholder="Ej. De casita 12 a casita 24" maxLength={120} value={values.room_move} onChange={(e) => change("room_move", e.target.value)} aria-invalid={Boolean(errors.room_move)} aria-describedby={errors.room_move ? "error-room_move" : undefined} /><FieldError name="room_move" errors={errors} /></div>}
               </FormCard>
-              <FormCard icon={<Tv size={18} />} title="Electrónicos">{ELECTRONIC_FIELDS.map(quantity)}</FormCard>
-              <FormCard icon={<Package size={18} />} title="Cuidado personal">{EQUIPMENT_FIELDS.slice(0, 5).map(quantity)}</FormCard>
-              <FormCard icon={<Package size={18} />} title="Accesorios de la casita">{EQUIPMENT_FIELDS.slice(5, 11).map(quantity)}</FormCard>
-              <FormCard icon={<House size={18} />} title="Orden">{quantity(EQUIPMENT_FIELDS[11])}</FormCard>
+              <FormCard>{ELECTRONIC_FIELDS.map(quantity)}</FormCard>
+              <FormCard>{EQUIPMENT_FIELDS.slice(0, 5).map(quantity)}</FormCard>
+              <FormCard>{EQUIPMENT_FIELDS.slice(5, 11).map(quantity)}</FormCard>
+              <FormCard>{quantity(EQUIPMENT_FIELDS[11])}</FormCard>
               <FormCard icon={<ClipboardCheck size={18} />} title="Notas de revisión">
                 <div className="revision-text-field"><label htmlFor="revision-notas">Observaciones<small>Opcional. ¿Hay algún daño, faltante o detalle por atender?</small></label><textarea id="revision-notas" name="notas" rows={4} maxLength={2000} placeholder="¿Hay algún daño, faltante o detalle por atender?" value={values.notas} onChange={(e) => change("notas", e.target.value)} aria-invalid={Boolean(errors.notas)} aria-describedby={errors.notas ? "error-notas" : undefined} /><FieldError name="notas" errors={errors} /></div>
               </FormCard>
@@ -268,11 +263,11 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
           </fieldset>
           {message && <div className="inline-notice notice-error revision-submit-error" role="alert" tabIndex={-1}>{message}</div>}
           {Object.values(errors).some(Boolean) && <p className="sr-only" role="alert">Revisa los campos marcados antes de continuar.</p>}
+          <footer className="revision-form-footer">
+            <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Salir</button>
+            <button type="submit" className="primary-button" disabled={busy || !online}>{pending ? <><LoaderCircle size={16} className="revision-spinner" />{progress || "Guardando…"}</> : <><CloudCheck size={16} />{online ? "Guardar revisión" : "Sin conexión"}</>}</button>
+          </footer>
         </div>
-        <footer className="revision-form-footer">
-          <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Salir</button>
-          <button type="submit" className="primary-button" disabled={busy || !online}>{pending ? <><LoaderCircle size={17} className="revision-spinner" />{progress || "Guardando…"}</> : <><CloudCheck size={18} />{online ? "Guardar revisión" : "Sin conexión"}</>}</button>
-        </footer>
       </form>
     </section>
   );

@@ -1,6 +1,6 @@
 "use server";
 import { createClient } from "@/lib/supabase/server";
-import { getUsuarioSession } from "@/lib/usuarios-session";
+import { getSesionUsuario } from "@/lib/auth/session";
 import { validarPantalla, type PantallaInput, type PantallaReport, type PantallaStock } from "@/lib/pantallas";
 import { isPantallaUrl } from "@/lib/pantallas-upload";
 import { costaRicaDateTime } from "@/lib/revision-form";
@@ -27,7 +27,7 @@ export async function fetchPantallas() {
 }
 export async function createPantalla(input: PantallaInput): Promise<PantallaSaveResult> {
   try {
-    const user = await getUsuarioSession();
+    const user = await getSesionUsuario();
     if (!user) return { saved: false, error: "Inicia sesión para guardar este registro.", warning: null };
     const error = validarPantalla(input);
     if (error) return { saved: false, error, warning: null };

@@ -1,11 +1,15 @@
 "use server";
 
-import { getArchiveRevisiones, getInicioRevisiones } from "@/lib/db/revisiones-casitas";
+import { getArchiveRevisiones, getInicioRevisiones, getRevisionInicioById, listRevisionEdits, listRevisionNotes } from "@/lib/db/revisiones-casitas";
 import type { ArchiveQuery } from "@/lib/revisiones-archive";
 import { createClient } from "@/lib/supabase/server";
-import { revisionInsert, validateRevisionForm, withCurrentRevisionTime, type RevisionFormValues } from "@/lib/revision-form";
+import { costaRicaDateTime, revisionInsert, validateRevisionForm, withCurrentRevisionTime, type RevisionFormValues } from "@/lib/revision-form";
 import { isEvidenceCloudinaryPath } from "@/lib/revision-evidence";
-import { saveRevision } from "@/lib/save-revision";
+import { isRevisionEditField, persistRevisionFieldValue, validateRevisionField, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
+import { mapNotaRevision, noteRevisionPage, NOTAS_REVISION_PAGE_SIZE, persistNotaRevision, persistNotaRevisionImage, validateNotaRevision, validateNotaRevisionImage, type RevisionNoteItem } from "@/lib/revision-notes";
+import { saveRevision, saveNotaRevision, editRevisionCampo, type SaveNoteResult } from "@/lib/save-revision";
+import { getSesionUsuario } from "@/lib/auth/session";
+import type { RevisionCasitaInicio } from "@/types/database";
 
 export async function fetchInicioRevisiones() {
   return getInicioRevisiones();
@@ -34,5 +38,143 @@ export async function createRevision(input: { id: string; values: RevisionFormVa
     return await saveRevision(client, revisionInsert(input.id, values, input.photos));
   } catch {
     return { row: null, error: "No pudimos conectar para guardar. Tu borrador sigue disponible." };
+  }
+}
+
+const REVISION_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function fetchRevisionEdits(id: string): Promise<{
+  rows: RevisionEditHistoryItem[];
+  error: string | null;
+}> {
+  try {
+    if (!REVISION_ID.test(id)) return { rows: [], error: "No encontramos esta revisión." };
+    const client = await createClient();
+    const result = await listRevisionEdits(client, id);
+    if (result.error) return { rows: [], error: "No pudimos cargar el historial. Conservamos lo ya visto." };
+    return { rows: (result.data ?? []).map(mapRegistroEdicion), error: null };
+  } catch {
+    return { rows: [], error: "No pudimos conectar para cargar el historial." };
+  }
+}
+
+export async function fetchRevisionNotes(id: string, offset = 0): Promise<{
+  rows: RevisionNoteItem[];
+  hasMore: boolean;
+  error: string | null;
+}> {
+  try {
+    if (!REVISION_ID.test(id)) {
+      return { rows: [], hasMore: false, error: "No encontramos esta revisión." };
+    }
+    const start = Math.max(0, Math.min(Math.trunc(offset) || 0, 100_000));
+    const client = await createClient();
+    const result = await listRevisionNotes(
+      client,
+      id,
+      start,
+      NOTAS_REVISION_PAGE_SIZE + 1,
+    );
+    if (result.error) {
+      return {
+        rows: [],
+        hasMore: false,
+        error: "No pudimos cargar las notas. Conservamos lo ya visto.",
+      };
+    }
+    const page = noteRevisionPage(result.data ?? []);
+    return {
+      rows: page.rows.map(mapNotaRevision),
+      hasMore: page.hasMore,
+      error: null,
+    };
+  } catch {
+    return {
+      rows: [],
+      hasMore: false,
+      error: "No pudimos conectar para cargar las notas.",
+    };
+  }
+}
+
+export async function createRevisionNote(input: {
+  id: string;
+  revisionId: string;
+  nota: string;
+  imagen: string | null;
+}): Promise<SaveNoteResult> {
+  try {
+    if (
+      !input ||
+      !REVISION_ID.test(input.id) ||
+      !REVISION_ID.test(input.revisionId) ||
+      typeof input.nota !== "string" ||
+      (input.imagen !== null && typeof input.imagen !== "string")
+    ) {
+      return { row: null, error: "Revisa los datos e inténtalo de nuevo.", ambiguous: false };
+    }
+    const notaError = validateNotaRevision(input.nota);
+    if (notaError) return { row: null, error: notaError, ambiguous: false };
+    const imagenError = validateNotaRevisionImage(input.imagen);
+    if (imagenError) return { row: null, error: imagenError, ambiguous: false };
+    const autor = await getSesionUsuario();
+    const client = await createClient();
+    return await saveNotaRevision(client, {
+      id: input.id,
+      revision_id: input.revisionId,
+      nota: persistNotaRevision(input.nota),
+      usuario: autor?.nombre ?? null,
+      imagen: persistNotaRevisionImage(input.imagen),
+      hora: costaRicaDateTime(),
+    });
+  } catch {
+    return {
+      row: null,
+      error: "No pudimos confirmar la nota. Conservamos tu texto y tu foto; reintenta.",
+      ambiguous: true,
+    };
+  }
+}
+
+export async function fetchRevisionRaw(id: string): Promise<{ row: RevisionCasitaInicio | null; error: string | null }> {
+  try {
+    if (!REVISION_ID.test(id)) return { row: null, error: "No encontramos esta revisión." };
+    const client = await createClient();
+    const result = await getRevisionInicioById(client, id);
+    if (result.error) return { row: null, error: "No pudimos cargar la revisión. Vuelve a intentarlo." };
+    if (!result.data) return { row: null, error: "No encontramos esta revisión." };
+    return { row: result.data, error: null };
+  } catch {
+    return { row: null, error: "No pudimos conectar para abrir el editor." };
+  }
+}
+
+export async function editRevisionField(input: {
+  id: string;
+  campo: string;
+  esperado: string | null;
+  nuevo: string | null;
+}) {
+  try {
+    if (!input || !REVISION_ID.test(input.id) || !isRevisionEditField(input.campo) ||
+      (input.esperado !== null && typeof input.esperado !== "string") ||
+      (input.nuevo !== null && typeof input.nuevo !== "string")) {
+      return { row: null, error: "Revisa los datos e inténtalo de nuevo." };
+    }
+    const editor = await getSesionUsuario();
+    if (!editor) return { row: null, error: "Inicia sesión para guardar este cambio." };
+    const campo: RevisionEditField = input.campo;
+    const fieldError = validateRevisionField(campo, input.nuevo);
+    if (fieldError) return { row: null, error: fieldError };
+    const client = await createClient();
+    return await editRevisionCampo(client, {
+      id: input.id,
+      campo,
+      esperado: input.esperado,
+      nuevo: persistRevisionFieldValue(campo, input.nuevo),
+    }, editor.id);
+  } catch {
+    return { row: null, error: "No pudimos conectar para guardar el cambio." };
   }
 }

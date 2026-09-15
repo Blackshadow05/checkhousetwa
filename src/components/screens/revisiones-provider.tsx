@@ -49,6 +49,8 @@ type RevisionState = {
   refresh: (options?: RefreshOptions) => Promise<boolean>;
   rememberRevisiones: (rows: InicioRevisionRow[]) => void;
   acceptRevision: (row: InicioRevisionRow) => void;
+  replaceRevision: (row: InicioRevisionRow) => void;
+  revisionPatch: InicioRevisionRow | null;
 };
 const Context = createContext<RevisionState | null>(null);
 
@@ -84,6 +86,7 @@ export function RevisionesProvider({
   const [today, setToday] = useState(initialDay);
   const [selectedRevision, setSelectedRevision] =
     useState<InicioRevisionRow | null>(null);
+  const [revisionPatch, setRevisionPatch] = useState<InicioRevisionRow | null>(null);
   const online = useOnline();
   const inFlight = useRef(false);
   const generation = useRef(0);
@@ -206,6 +209,33 @@ export function RevisionesProvider({
     setRevisiones(next);
     setUpsells(nextUpsells);
     setRevisionActivity(nextActivity);
+    void persist(next, nextUpsells);
+  }, [persist]);
+
+  const replaceRevision = useCallback((row: InicioRevisionRow) => {
+    if (!row.id) return;
+    generation.current += 1;
+    if (inFlight.current) pendingForce.current = true;
+    const next = revisionesRef.current.some((item) => item.id === row.id)
+      ? revisionesRef.current.map((item) => (item.id === row.id ? row : item))
+      : revisionesRef.current;
+    const nextUpsells = applyUpsellChange(upsellsRef.current, "UPDATE", row, { id: row.id });
+    const nextActivity = applyRevisionActivityChange(
+      activityRef.current,
+      "UPDATE",
+      { id: row.id, casita: row.casita, created_at: row.created_at },
+      { id: row.id },
+      todayKey(),
+    );
+    revisionesRef.current = next;
+    upsellsRef.current = nextUpsells;
+    activityRef.current = nextActivity;
+    knownRowsRef.current.set(row.id, row);
+    setRevisiones(next);
+    setUpsells(nextUpsells);
+    setRevisionActivity(nextActivity);
+    setRevisionPatch(row);
+    if (selectedRevisionRef.current?.id === row.id) setSelectedRevision(row);
     void persist(next, nextUpsells);
   }, [persist]);
 
@@ -500,6 +530,8 @@ export function RevisionesProvider({
         refresh,
         rememberRevisiones,
         acceptRevision,
+        replaceRevision,
+        revisionPatch,
       }}
     >
       {children}

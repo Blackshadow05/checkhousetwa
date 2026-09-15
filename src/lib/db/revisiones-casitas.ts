@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { REVISIONES_TABLE } from "@/lib/constants";
+import { REGISTRO_EDICIONES_TABLE, REVISIONES_TABLE, NOTAS_REVISIONES_TABLE } from "@/lib/constants";
 import type { RevisionActivity } from "@/lib/casitas-sin-revision";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -12,6 +12,7 @@ import {
   isUpsellStatus,
 } from "@/lib/revisiones-display";
 import { todayKey } from "@/lib/revisiones-display";
+import { NOTAS_REVISION_PAGE_SIZE } from "@/lib/revision-notes";
 import {
   ARCHIVE_PAGE_SIZE,
   archiveSearchOrFilter,
@@ -242,6 +243,41 @@ export async function getArchiveRevisiones(input: ArchiveQuery): Promise<{
 
 export async function getRevisionCasitaById(client: Client, id: string) {
   return revisionesCasitas(client).select("*").eq("id", id).maybeSingle();
+}
+
+export async function getRevisionInicioById(client: Client, id: string) {
+  return revisionesCasitas(client)
+    .select(INICIO_REVISION_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+}
+
+export async function listRevisionEdits(client: Client, id: string) {
+  return client
+    .from(REGISTRO_EDICIONES_TABLE)
+    .select('id, created_at, "Usuario que Edito", Dato_anterior, Dato_nuevo')
+    .like("Dato_nuevo", `[${id}]%`)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(50);
+}
+
+export async function listRevisionNotes(
+  client: Client,
+  id: string,
+  offset = 0,
+  limit = NOTAS_REVISION_PAGE_SIZE,
+) {
+  const start = Math.max(0, Math.trunc(offset) || 0);
+  const size = Math.max(1, Math.trunc(limit) || 1);
+  return client
+    .from(NOTAS_REVISIONES_TABLE)
+    .select("id, revision_id, nota, usuario, imagen, hora, created_at")
+    .eq("revision_id", id)
+    .order("hora", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .order("id", { ascending: false })
+    .range(start, start + size - 1);
 }
 
 export async function insertRevisionCasita(
