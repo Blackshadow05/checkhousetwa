@@ -384,7 +384,7 @@ svg {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
   padding: var(--screen-padding-top) max(20px, env(safe-area-inset-right)) 26px
     max(20px, env(safe-area-inset-left));
 }
@@ -1138,11 +1138,14 @@ svg {
   pointer-events: none;
 }
 .bottom-sheet {
-  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  inset: auto 0 var(--sheet-keyboard-offset, 0px);
   margin: 0 auto;
   width: 100%;
   max-width: 540px;
-  max-height: calc(100dvh - env(safe-area-inset-top) - 24px);
+  max-height: calc(var(--sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 24px);
+  scroll-padding-block: 20px;
   padding: 8px max(22px, env(safe-area-inset-right))
     max(20px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
   color: var(--foreground);
@@ -1151,7 +1154,7 @@ svg {
   border-bottom: 0;
   border-radius: 26px 26px 0 0;
   box-shadow: 0 -16px 60px #00000016;
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 .bottom-sheet[open] {
@@ -1159,9 +1162,9 @@ svg {
 }
 .bottom-sheet::backdrop {
   background: #0b201859;
-  backdrop-filter: blur(3px);
 }
 .sheet-handle {
+  flex-shrink: 0;
   width: 34px;
   height: 4px;
   border-radius: 4px;
@@ -1169,10 +1172,19 @@ svg {
   margin: 0 auto 12px;
 }
 .sheet-heading {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+}
+.sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-padding-block: 12px;
+  padding: 4px;
+  margin-inline: -4px;
 }
 .sheet-heading h2 {
   font-size: 1.25rem;
@@ -2294,6 +2306,12 @@ svg {
   font-size: 16px;
   line-height: 1.5;
 }
+.revision-text-field :is(input, textarea, select):focus {
+  border-color: var(--primary);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  scroll-margin-block: 24px;
+}
 .revision-text-field textarea { resize: vertical; }
 .revision-text-field input:read-only {
   background: var(--muted);
@@ -2373,9 +2391,20 @@ svg {
   .is-creating-revision .brand-mark { width: 32px; height: 34px; border-radius: 11px 11px 11px 4px; }
   .revision-form-footer { margin-top: 14px; }
 }
-.auth-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--secondary); margin: 0 0 20px; }
+.auth-form { display: grid; gap: 16px; }
+.auth-form .revision-text-field { display: grid; gap: 6px; margin: 0; font-size: .875rem; font-weight: 550; }
+.auth-form .revision-text-field > label { margin: 0; font: inherit; }
+.auth-form .auth-hint { margin: 0; line-height: 1.5; }
+.auth-form .auth-actions { margin-top: 0; }
+.auth-form .revision-field-error { margin: 0; }
+.auth-password { position: relative; display: block; }
+.auth-password input { padding-right: 54px; }
+.auth-password-toggle { position: absolute; inset: 2px 2px 2px auto; display: grid; place-items: center; width: 46px; min-height: 44px; border-radius: 9px; color: var(--muted-foreground); }
+.auth-status { margin: 0; color: var(--muted-foreground); font-size: .8125rem; }
+.auth-status:empty { display: none; }
+.auth-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--secondary); margin: 0; }
 .auth-tab { flex: 1; min-height: 44px; padding: 8px 6px; border: 0; border-radius: 11px; background: transparent; color: var(--secondary-foreground); font-size: .75rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
-.auth-tab[aria-selected="true"] { background: var(--card); color: var(--primary); box-shadow: 0 1px 4px #0001; }
+.auth-tab[aria-pressed="true"] { background: var(--card); color: var(--primary); box-shadow: 0 1px 4px #0001; }
 .auth-tab:disabled { opacity: .55; cursor: default; }
 .auth-hint { margin: 0 0 14px; color: var(--muted-foreground); font-size: .8125rem; line-height: 1.6; }
 .auth-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }

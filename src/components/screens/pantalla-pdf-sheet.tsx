@@ -126,7 +126,7 @@ export function PantallaPdfSheet({ reports, onClose }: {
           <button type="button" className={styles.secondary} disabled={sharing} onClick={() => { setFile(null); setError(""); setMessage(""); }}>Cambiar selección</button>
         </div>
       </> : <>
-        <p className={styles.description}>Elige las casitas de esta búsqueda. Se incluye solo el último reporte de cada una, ordenadas de menor a mayor, con hasta 5 por hoja. Las notas largas irán completas al final.</p>
+        <p className={styles.description}>Selecciona las casitas que quieres que salgan en el reporte, las casas seleccionadas solo cuenta el último reporte registrado de cada casita.</p>
         <div className={styles.toolbar}>
           <strong role="status">{selectedReports.length} de {reports.length} seleccionados</strong>
           <button type="button" className={styles.secondary} disabled={busy || !reports.length} onClick={() => { setSelected(new Set(allSelected ? [] : reports.map(report => report.id))); setError(""); }}>{allSelected ? "Quitar todos" : "Seleccionar todos"}</button>

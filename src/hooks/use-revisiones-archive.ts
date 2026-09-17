@@ -7,6 +7,7 @@ import {
   ARCHIVE_PAGE_SIZE,
   filterArchiveLocally,
   type ArchivePeriod,
+  type ReportFilter,
 } from "@/lib/revisiones-archive";
 import { replaceArchiveRow } from "@/lib/revision-edit";
 
@@ -28,8 +29,13 @@ export function useRevisionesArchive() {
   } = useRevisiones();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [period, setPeriod] = useState<ArchivePeriod>("all");
+  const [period, setPeriodValue] = useState<ArchivePeriod>("all");
   const [status, setStatus] = useState<string | null>(null);
+  const [date, setDateValue] = useState("");
+  const [reportFilter, setReportFilterValue] = useState<ReportFilter | null>(null);
+  const setPeriod = (value: ArchivePeriod) => { setPeriodValue(value); setDateValue(""); };
+  const setDate = (value: string) => { setDateValue(value); setPeriodValue("all"); };
+  const setReportFilter = (value: ReportFilter | null) => { setReportFilterValue(value); setStatus(null); };
   const [rows, setRows] = useState(revisiones);
   const [total, setTotal] = useState(revisiones.length);
   const [hasMore, setHasMore] = useState(false);
@@ -39,7 +45,7 @@ export function useRevisionesArchive() {
   const rowsRef = useRef(rows);
   const generation = useRef(0);
   const loadingMoreRef = useRef(false);
-  const filtersActive = search.length > 0 || period !== "all" || status !== null;
+  const filtersActive = search.length > 0 || period !== "all" || status !== null || reportFilter !== null || date !== "";
 
   const revisionesRef = useRef(revisiones);
   revisionesRef.current = revisiones;
@@ -81,6 +87,8 @@ export function useRevisionesArchive() {
           period,
           status,
           today,
+          reportFilter,
+          date,
         );
         setRows(local);
         setTotal(local.length);
@@ -103,6 +111,8 @@ export function useRevisionesArchive() {
           offset: mode === "count" ? 0 : offset,
           limit: mode === "count" ? 1 : ARCHIVE_PAGE_SIZE,
           today,
+          reportFilter: mode === "count" ? null : reportFilter,
+          date: mode === "count" ? "" : date,
         });
         if (current !== generation.current) return;
         if (result.error) {
@@ -116,6 +126,8 @@ export function useRevisionesArchive() {
               period,
               status,
               today,
+              reportFilter,
+              date,
             );
             setRows(local);
             setTotal(local.length);
@@ -155,23 +167,29 @@ export function useRevisionesArchive() {
         }
       }
     },
-    [period, search, status, today],
+    [date, period, reportFilter, search, status, today],
   );
 
   useEffect(() => {
     if (online) return;
+    generation.current += 1;
+    loadingMoreRef.current = false;
+    setLoading(false);
+    setLoadingMore(false);
     const local = filterArchiveLocally(
       revisiones,
       search,
       period,
       status,
       today,
+      reportFilter,
+      date,
     );
     setRows(local);
     setTotal(local.length);
     setHasMore(false);
     setArchiveError(null);
-  }, [online, period, revisiones, search, status, today]);
+  }, [date, online, period, reportFilter, revisiones, search, status, today]);
 
   useEffect(() => {
     if (!online) return;
@@ -181,7 +199,7 @@ export function useRevisionesArchive() {
       return;
     }
     void fetchPage(0, "replace");
-  }, [fetchPage, filtersActive, online, period, revisiones, search, status, today]);
+  }, [date, fetchPage, filtersActive, online, period, reportFilter, revisiones, search, status, today]);
 
   const loadMore = useCallback(() => {
     if (!online || !hasMore || loading || loadingMoreRef.current) return;
@@ -191,7 +209,9 @@ export function useRevisionesArchive() {
   const resetFilters = useCallback(() => {
     setSearchInput("");
     setSearch("");
-    setPeriod("all");
+    setPeriodValue("all");
+    setDateValue("");
+    setReportFilterValue(null);
     setStatus(null);
   }, []);
 
@@ -202,6 +222,10 @@ export function useRevisionesArchive() {
     setPeriod,
     status,
     setStatus,
+    date,
+    setDate,
+    reportFilter,
+    setReportFilter,
     rows,
     total,
     hasMore,
@@ -218,7 +242,7 @@ export function useRevisionesArchive() {
     openRevision,
     loadMore,
     resetFilters,
-    filterCount: Number(period !== "all") + Number(status !== null),
+    filterCount: Number(period !== "all" || date !== "") + Number(reportFilter !== null || status !== null),
     filtersActive,
   };
 }

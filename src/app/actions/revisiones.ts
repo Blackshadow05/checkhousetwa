@@ -1,15 +1,16 @@
 "use server";
 
-import { getArchiveRevisiones, getInicioRevisiones, getRevisionInicioById, listRevisionEdits, listRevisionNotes } from "@/lib/db/revisiones-casitas";
+import { getArchiveRevisiones, getInicioRevisiones, getLatestRevisionCasita, getRevisionInicioById, listRevisionEdits, listRevisionNotes } from "@/lib/db/revisiones-casitas";
 import type { ArchiveQuery } from "@/lib/revisiones-archive";
-import { createClient } from "@/lib/supabase/server";
+import { createPrivateClient } from "@/lib/auth/session";
 import { costaRicaDateTime, revisionInsert, validateRevisionForm, withCurrentRevisionTime, type RevisionFormValues } from "@/lib/revision-form";
 import { isEvidenceCloudinaryPath } from "@/lib/revision-evidence";
 import { isRevisionEditField, persistRevisionFieldValue, validateRevisionField, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
 import { mapNotaRevision, noteRevisionPage, NOTAS_REVISION_PAGE_SIZE, persistNotaRevision, persistNotaRevisionImage, validateNotaRevision, validateNotaRevisionImage, type RevisionNoteItem } from "@/lib/revision-notes";
 import { saveRevision, saveNotaRevision, editRevisionCampo, type SaveNoteResult } from "@/lib/save-revision";
 import { getSesionUsuario } from "@/lib/auth/session";
-import type { RevisionCasitaInicio } from "@/types/database";
+import { mapInicioRevision } from "@/lib/revisiones-map";
+import type { InicioRevisionRow, RevisionCasitaInicio } from "@/types/database";
 
 export async function fetchInicioRevisiones() {
   return getInicioRevisiones();
@@ -34,7 +35,7 @@ export async function createRevision(input: { id: string; values: RevisionFormVa
     }
     // Use the request's publishable client and session: the existing RLS policies
     // authorize this app's public insert flow. No privileged key or policy change.
-    const client = await createClient();
+    const client = await createPrivateClient();
     return await saveRevision(client, revisionInsert(input.id, values, input.photos));
   } catch {
     return { row: null, error: "No pudimos conectar para guardar. Tu borrador sigue disponible." };
@@ -50,7 +51,7 @@ export async function fetchRevisionEdits(id: string): Promise<{
 }> {
   try {
     if (!REVISION_ID.test(id)) return { rows: [], error: "No encontramos esta revisión." };
-    const client = await createClient();
+    const client = await createPrivateClient();
     const result = await listRevisionEdits(client, id);
     if (result.error) return { rows: [], error: "No pudimos cargar el historial. Conservamos lo ya visto." };
     return { rows: (result.data ?? []).map(mapRegistroEdicion), error: null };
@@ -69,7 +70,7 @@ export async function fetchRevisionNotes(id: string, offset = 0): Promise<{
       return { rows: [], hasMore: false, error: "No encontramos esta revisión." };
     }
     const start = Math.max(0, Math.min(Math.trunc(offset) || 0, 100_000));
-    const client = await createClient();
+    const client = await createPrivateClient();
     const result = await listRevisionNotes(
       client,
       id,
@@ -119,12 +120,13 @@ export async function createRevisionNote(input: {
     const imagenError = validateNotaRevisionImage(input.imagen);
     if (imagenError) return { row: null, error: imagenError, ambiguous: false };
     const autor = await getSesionUsuario();
-    const client = await createClient();
+    if (!autor) return { row: null, error: "Inicia sesión para agregar una nota.", ambiguous: false };
+    const client = await createPrivateClient();
     return await saveNotaRevision(client, {
       id: input.id,
       revision_id: input.revisionId,
       nota: persistNotaRevision(input.nota),
-      usuario: autor?.nombre ?? null,
+      usuario: autor.nombre,
       imagen: persistNotaRevisionImage(input.imagen),
       hora: costaRicaDateTime(),
     });
@@ -137,10 +139,29 @@ export async function createRevisionNote(input: {
   }
 }
 
+export async function fetchLatestRevisionCasita(
+  casita: string,
+): Promise<{ row: InicioRevisionRow | null; error: string | null }> {
+  try {
+    if (!/^\d{1,4}$/.test(casita)) {
+      return { row: null, error: "No encontramos esta casita." };
+    }
+    const client = await createPrivateClient();
+    const result = await getLatestRevisionCasita(client, casita);
+    if (result.error) {
+      return { row: null, error: "No pudimos cargar la última revisión. Vuelve a intentarlo." };
+    }
+    if (!result.data) return { row: null, error: null };
+    return { row: mapInicioRevision(result.data), error: null };
+  } catch {
+    return { row: null, error: "No pudimos conectar para abrir la revisión." };
+  }
+}
+
 export async function fetchRevisionRaw(id: string): Promise<{ row: RevisionCasitaInicio | null; error: string | null }> {
   try {
     if (!REVISION_ID.test(id)) return { row: null, error: "No encontramos esta revisión." };
-    const client = await createClient();
+    const client = await createPrivateClient();
     const result = await getRevisionInicioById(client, id);
     if (result.error) return { row: null, error: "No pudimos cargar la revisión. Vuelve a intentarlo." };
     if (!result.data) return { row: null, error: "No encontramos esta revisión." };
@@ -167,7 +188,7 @@ export async function editRevisionField(input: {
     const campo: RevisionEditField = input.campo;
     const fieldError = validateRevisionField(campo, input.nuevo);
     if (fieldError) return { row: null, error: fieldError };
-    const client = await createClient();
+    const client = await createPrivateClient();
     return await editRevisionCampo(client, {
       id: input.id,
       campo,

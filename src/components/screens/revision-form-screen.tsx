@@ -4,10 +4,11 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from "reac
 import { Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, LoaderCircle, Minus, Plus, WifiOff } from "lucide-react";
 import { createRevision } from "@/app/actions/revisiones";
 import { useRevisionDraft } from "@/hooks/use-revision-draft";
+import { useDismissKeyboard } from "@/hooks/use-dismiss-keyboard";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
-import { ELECTRONIC_FIELDS, EQUIPMENT_FIELDS, statusAppearance } from "@/lib/revisiones-display";
-import { BOOLEAN_FIELDS, QUANTITY_LIMITS, costaRicaDateTime, evidencePhotoLimit, formatRevisionDateTime, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionFormErrors, type RevisionFormValues, type RevisionPhoto } from "@/lib/revision-form";
+import { statusAppearance } from "@/lib/revisiones-display";
+import { BOOLEAN_FIELDS, QUANTITY_LIMITS, evidencePhotoLimit, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionFormErrors, type RevisionFormValues, type RevisionPhoto } from "@/lib/revision-form";
 import { prepareRevisionPhoto, revisionShareFiles } from "@/lib/revision-photos";
 import { discardUpload, ensureBackgroundUploads, releaseUploads, resolveEvidenciaUrls } from "@/lib/revision-evidence-upload";
 import type { InicioRevisionRow } from "@/types/database";
@@ -50,27 +51,36 @@ function FormCard({ icon, title, children }: { icon?: ReactNode; title?: string;
   return <section className="revision-form-card">{title ? <h2><span>{icon}</span>{title}</h2> : null}{children}</section>;
 }
 
-function useCostaRicaClock(active: boolean) {
-  const [now, setNow] = useState(costaRicaDateTime);
-  useEffect(() => {
-    if (!active) return;
-    const tick = () => setNow(costaRicaDateTime());
-    tick();
-    const id = window.setInterval(tick, 15_000);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [active]);
-  return now;
-}
+const FORM_INVENTORY_GROUPS = [
+  [
+    { key: "chromecast", label: "Chromecast" },
+    { key: "controles_tv", label: "Controles TV" },
+    { key: "speaker", label: "Speaker" },
+    { key: "usb_speaker", label: "USB speaker" },
+  ],
+  [
+    { key: "binoculares", label: "Binoculares" },
+    { key: "trapo_binoculares", label: "Trapo de binoculares" },
+    { key: "secadora", label: "Secadora" },
+    { key: "accesorios_secadora", label: "Accesorios secadora" },
+    { key: "steamer", label: "Steamer" },
+    { key: "bolsa_vapor", label: "Bolsa steamer" },
+    { key: "plancha_cabello", label: "Plancha de cabello" },
+  ],
+  [
+    { key: "bulto", label: "Bulto" },
+    { key: "sombrero", label: "Sombrero" },
+    { key: "bolso_yute", label: "Bolso de yute" },
+    { key: "cola_caballo", label: "Cola de caballo" },
+  ],
+  [{ key: "camas_ordenadas", label: "Camas ordenadas" }],
+] as const satisfies ReadonlyArray<ReadonlyArray<{ key: InventoryKey; label: string }>>;
 
 export function RevisionFormScreen({ open, onClose, onSaved }: {
   open: boolean; onClose: () => void; onSaved: (row: InicioRevisionRow, files: File[]) => void;
 }) {
   const { draft, storage, update, clear } = useRevisionDraft(open);
-  const recordedAt = useCostaRicaClock(open);
+  useDismissKeyboard(open);
   const { online, revisiones } = useRevisiones();
   const [errors, setErrors] = useState<RevisionFormErrors>({});
   const [message, setMessage] = useState("");
@@ -235,20 +245,13 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
               <FormCard icon={<House size={18} />} title="Datos de la revisión">
                 <div className="revision-text-field"><label htmlFor="revision-casita">Número de casita</label><select id="revision-casita" name="casita" value={values.casita ? String(Number(values.casita)) : ""} onChange={(e) => change("casita", e.target.value)} aria-invalid={Boolean(errors.casita)} aria-describedby={errors.casita ? "error-casita" : undefined}><option value="" disabled>Selecciona una casita</option>{Array.from({ length: 50 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select><FieldError name="casita" errors={errors} /></div>
                 <div className="revision-text-field"><label htmlFor="revision-quien_revisa">¿Quién revisa?</label><input id="revision-quien_revisa" name="quien_revisa" list="revision-reviewers" autoComplete="name" maxLength={100} value={values.quien_revisa} onChange={(e) => change("quien_revisa", e.target.value)} aria-invalid={Boolean(errors.quien_revisa)} aria-describedby={errors.quien_revisa ? "error-quien_revisa" : undefined} /><datalist id="revision-reviewers">{reviewers.map((name) => <option key={name} value={name} />)}</datalist><FieldError name="quien_revisa" errors={errors} /></div>
-                <div className="revision-text-field"><label htmlFor="revision-created_at">Fecha y hora</label><input id="revision-created_at" name="created_at" type="text" readOnly value={formatRevisionDateTime(recordedAt)} aria-readonly="true" /></div>
               </FormCard>
               <FormCard>
                 <ChoiceField name="caja_fuerte" label="Caja fuerte" options={CAJA_FUERTE_FILTERS} value={values.caja_fuerte} onChange={change} errors={errors} />
                 <div className="revision-text-field"><label htmlFor="revision-puertas_ventanas">Puertas y ventanas<small>Ej. Cerradas y en buen estado</small></label><textarea id="revision-puertas_ventanas" name="puertas_ventanas" rows={2} maxLength={500} placeholder="Ej. Cerradas y en buen estado" value={values.puertas_ventanas} onChange={(e) => change("puertas_ventanas", e.target.value)} aria-invalid={Boolean(errors.puertas_ventanas)} aria-describedby={errors.puertas_ventanas ? "error-puertas_ventanas" : undefined} /><FieldError name="puertas_ventanas" errors={errors} /></div>
                 {values.caja_fuerte === "Room Move" && <div className="revision-text-field"><label htmlFor="revision-room_move">Movimiento entre casitas<small>Ej. De casita 12 a casita 24</small></label><input id="revision-room_move" name="room_move" placeholder="Ej. De casita 12 a casita 24" maxLength={120} value={values.room_move} onChange={(e) => change("room_move", e.target.value)} aria-invalid={Boolean(errors.room_move)} aria-describedby={errors.room_move ? "error-room_move" : undefined} /><FieldError name="room_move" errors={errors} /></div>}
               </FormCard>
-              <FormCard>{ELECTRONIC_FIELDS.map(quantity)}</FormCard>
-              <FormCard>{EQUIPMENT_FIELDS.slice(0, 5).map(quantity)}</FormCard>
-              <FormCard>{EQUIPMENT_FIELDS.slice(5, 11).map(quantity)}</FormCard>
-              <FormCard>{quantity(EQUIPMENT_FIELDS[11])}</FormCard>
-              <FormCard icon={<ClipboardCheck size={18} />} title="Notas de revisión">
-                <div className="revision-text-field"><label htmlFor="revision-notas">Observaciones<small>Opcional. ¿Hay algún daño, faltante o detalle por atender?</small></label><textarea id="revision-notas" name="notas" rows={4} maxLength={2000} placeholder="¿Hay algún daño, faltante o detalle por atender?" value={values.notas} onChange={(e) => change("notas", e.target.value)} aria-invalid={Boolean(errors.notas)} aria-describedby={errors.notas ? "error-notas" : undefined} /><FieldError name="notas" errors={errors} /></div>
-              </FormCard>
+              {FORM_INVENTORY_GROUPS.map((fields) => <FormCard key={fields[0].key}>{fields.map(quantity)}</FormCard>)}
               {photoLimit > 0 && <FormCard icon={<Camera size={18} />} title="Añade imágenes de evidencias">
                 <div data-revision-evidencias="" tabIndex={-1}>
                   {photos.length === 0 && <div className="revision-evidence-empty"><ImagePlus size={26} strokeWidth={1.5} aria-hidden="true" /></div>}
@@ -260,6 +263,9 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
                   <FieldError name="evidencias" errors={errors} />
                 </div>
               </FormCard>}
+              <FormCard icon={<ClipboardCheck size={18} />} title="Notas de revisión">
+                <div className="revision-text-field"><label htmlFor="revision-notas">Observaciones<small>Opcional. ¿Hay algún daño, faltante o detalle por atender?</small></label><textarea id="revision-notas" name="notas" rows={4} maxLength={2000} placeholder="¿Hay algún daño, faltante o detalle por atender?" value={values.notas} onChange={(e) => change("notas", e.target.value)} aria-invalid={Boolean(errors.notas)} aria-describedby={errors.notas ? "error-notas" : undefined} /><FieldError name="notas" errors={errors} /></div>
+              </FormCard>
           </fieldset>
           {message && <div className="inline-notice notice-error revision-submit-error" role="alert" tabIndex={-1}>{message}</div>}
           {Object.values(errors).some(Boolean) && <p className="sr-only" role="alert">Revisa los campos marcados antes de continuar.</p>}

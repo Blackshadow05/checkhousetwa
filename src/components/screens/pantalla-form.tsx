@@ -247,14 +247,14 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
 
   return <div className="pantalla-form">
     <div className="pantalla-toolbar"><button type="button" disabled={busy} onClick={onClose}>← Volver</button><h2>Nuevo registro</h2></div>
-    <p role="status">{!online ? "Sin conexión. El guardado estará disponible cuando vuelvas a conectarte." : "La fecha y hora se registrarán en hora de Costa Rica."}</p>
+    {!online && <p role="status">Sin conexión. El guardado estará disponible cuando vuelvas a conectarte.</p>}
     {checking ? <p role="status">Comprobando sesión…</p> : !user ? <LoginForm online={online} variant="card" onSuccess={(usuario) => { setUser(usuario); setError(""); }} /> : <form onSubmit={e => { e.preventDefault(); void submit(); }}>
-      <div className="pantalla-toolbar"><span>Registrado por <strong>{user.nombre}</strong></span><button type="button" disabled={busy} onClick={() => { void logoutUsuario().then(() => setUser(null)).catch(() => setError("No se pudo cerrar sesión.")); }}>Salir</button></div>
+      <div className="pantalla-toolbar"><span>Registrado por <strong>{user.nombre}</strong></span><button type="button" disabled={busy} onClick={() => { void logoutUsuario().then(() => { setUser(null); window.dispatchEvent(new Event("casitas:logout")); }).catch(() => setError("No se pudo cerrar sesión.")); }}>Salir</button></div>
       <fieldset disabled={busy}>
         <label>Tipo<select aria-label="Tipo de registro" value={tipo} onChange={e => setTipo(e.target.value as typeof tipo)}><option value="reporte">Reporte de pantalla</option><option value="movimiento">Movimiento de pantalla</option></select></label>
         {tipo === "reporte" ? <>
           <label>Casita<select aria-label="Casita" required value={casita} disabled={photos.length > 0} onChange={e => setCasita(e.target.value)}><option value="">Selecciona una casita</option>{CASITAS.map(v => <option key={v} value={v}>Casita {v}</option>)}</select></label>
-          {casita && <p>{habitaciones(casita).join(" · ")}. Una foto por habitación. Las fotos se suben al guardar.</p>}
+          {casita && <p>{habitaciones(casita).join(" · ")}. Una foto por habitación.</p>}
           {photos.length > 0 && <div className="pantalla-photo-list">{photos.map((photo, index) => <article className="pantalla-photo-item" key={photo.id}>
             <button className="pantalla-photo-thumb-button" type="button" aria-label={`Abrir foto ${index + 1} de ${photo.ubicacion}`} onClick={(event) => { viewerTriggerRef.current = event.currentTarget; void openPhoto(index); }}>
               {/* Local object URLs are intentional for the compressed photo preview. */}

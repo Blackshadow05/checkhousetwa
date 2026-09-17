@@ -1,7 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 const COOKIE = "casitas-usuario";
 const MAX_AGE = 6 * 24 * 60 * 60;
 function sign(value: string) {
@@ -24,7 +24,7 @@ export async function getUsuarioSession() {
     if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
     const payload = JSON.parse(Buffer.from(value, "base64url").toString());
     if (!Number.isInteger(payload.id) || !(payload.expires > Date.now())) return null;
-    const client = await createClient();
+    const client = await createAdminClient();
     const { data, error } = await client.from("Usuarios").select("id,Usuario,Rol,metodo_login,totp_enrolled").eq("id", payload.id).single();
     if (error || !data || data.Rol === "inactivo" || data.metodo_login === "google" || data.totp_enrolled) return null;
     return { id: data.id, nombre: data.Usuario };

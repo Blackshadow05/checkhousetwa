@@ -1,5 +1,5 @@
 "use server";
-import { createClient } from "@/lib/supabase/server";
+import { createPrivateClient } from "@/lib/auth/session";
 import { getSesionUsuario } from "@/lib/auth/session";
 import { validarPantalla, type PantallaInput, type PantallaReport, type PantallaStock } from "@/lib/pantallas";
 import { isPantallaUrl } from "@/lib/pantallas-upload";
@@ -7,7 +7,7 @@ import { costaRicaDateTime } from "@/lib/revision-form";
 import { savePantalla, type PantallaSaveResult } from "@/lib/save-pantalla";
 export async function fetchPantallas() {
   try {
-    const client = await createClient();
+    const client = await createPrivateClient();
     // Read every page: replaying a truncated history would silently corrupt the board.
     const reports: PantallaReport[] = []; const stock: PantallaStock[] = [];
     for (let offset = 0; ; offset += 500) {
@@ -32,6 +32,6 @@ export async function createPantalla(input: PantallaInput): Promise<PantallaSave
     const error = validarPantalla(input);
     if (error) return { saved: false, error, warning: null };
     if (input.fotos.some(f => !isPantallaUrl(f.url))) return { saved: false, error: "Una foto no se cargó correctamente.", warning: null };
-    return await savePantalla(await createClient(), input, user.nombre, costaRicaDateTime());
+    return await savePantalla(await createPrivateClient(), input, user.nombre, costaRicaDateTime());
   } catch { return { saved: false, error: "No se pudo confirmar el guardado. Consulta el historial antes de volver a guardar.", warning: null }; }
 }

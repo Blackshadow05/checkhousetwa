@@ -3,7 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { REGISTRO_EDICIONES_TABLE, REVISIONES_TABLE, NOTAS_REVISIONES_TABLE } from "@/lib/constants";
 import type { RevisionActivity } from "@/lib/casitas-sin-revision";
-import { createClient } from "@/lib/supabase/server";
+import { createPrivateClient } from "@/lib/auth/session";
 import {
   INICIO_LIST_LIMIT,
   INICIO_REVISION_COLUMNS,
@@ -16,7 +16,10 @@ import { NOTAS_REVISION_PAGE_SIZE } from "@/lib/revision-notes";
 import {
   ARCHIVE_PAGE_SIZE,
   archiveSearchOrFilter,
+  filterArchiveLocally,
+  parseArchiveDate,
   parseArchivePeriod,
+  parseReportFilter,
   sanitizeArchiveSearch,
   shiftDay,
   type ArchiveQuery,
@@ -142,7 +145,7 @@ export async function getInicioRevisiones(today = todayKey()): Promise<{
   error: string | null;
 }> {
   try {
-    const supabase = await createClient();
+    const supabase = await createPrivateClient();
     const [latestResult, upsellsResult, activityResult] = await Promise.allSettled([
       listLatestRevisionesCasitas(supabase),
       listCurrentUpsells(supabase),
@@ -192,6 +195,8 @@ export async function getArchiveRevisiones(input: ArchiveQuery): Promise<{
   try {
     const search = sanitizeArchiveSearch(input.search);
     const period = parseArchivePeriod(input.period);
+    const date = parseArchiveDate(input.date);
+    const reportFilter = parseReportFilter(input.reportFilter);
     const status = input.status?.trim() ? input.status.trim() : null;
     const offset = Math.max(0, Math.min(Math.trunc(input.offset) || 0, 100_000));
     const limit = Math.max(
@@ -202,7 +207,42 @@ export async function getArchiveRevisiones(input: ArchiveQuery): Promise<{
       ? input.today
       : todayKey();
 
-    const supabase = await createClient();
+    const supabase = await createPrivateClient();
+    const startDay = date || (period === "all" ? "" : shiftDay(today, period === "today" ? 0 : period === "three-days" ? -2 : -6));
+    const endDay = startDay ? shiftDay(date || today, 1) : "";
+
+    if (reportFilter && reportFilter !== "caja_fuerte") {
+      // Select the latest report BEFORE testing inventory, notes or reviewer.
+      // Read the entire index in pages so the API row cap cannot hide a casita.
+      const latest = new Map<string, string>();
+      for (let page = 0; ; page += 500) {
+        let indexRequest = revisionesCasitas(supabase)
+          .select("id, casita, created_at")
+          .order("created_at", { ascending: false, nullsFirst: false })
+          .order("id", { ascending: false })
+          .range(page, page + 499);
+        if (startDay) indexRequest = indexRequest
+          .gte("created_at", archiveCreatedAtStart(startDay))
+          .lt("created_at", archiveCreatedAtStart(endDay));
+        const { data, error } = await indexRequest;
+        if (error) return { rows: [], total: 0, error: error.message };
+        if (!data?.length) break;
+        for (const row of data) {
+          const key = casitaNumber(row.casita).replace(/^0+(?=\d)/, "");
+          if (!latest.has(key)) latest.set(key, row.id);
+        }
+      }
+      const ids = [...latest.values()];
+      const candidates: InicioRevisionRow[] = [];
+      for (let index = 0; index < ids.length; index += 100) {
+        const { data, error } = await revisionesCasitas(supabase)
+          .select(INICIO_REVISION_COLUMNS).in("id", ids.slice(index, index + 100));
+        if (error) return { rows: [], total: 0, error: error.message };
+        candidates.push(...(data ?? []).map(mapInicioRevision));
+      }
+      const matches = filterArchiveLocally(candidates, search, period, status, today, reportFilter, date);
+      return { rows: matches.slice(offset, offset + limit), total: matches.length, error: null };
+    }
     let request = revisionesCasitas(supabase)
       .select(INICIO_REVISION_COLUMNS, { count: "exact" })
       .order("created_at", { ascending: false, nullsFirst: false })
@@ -212,14 +252,10 @@ export async function getArchiveRevisiones(input: ArchiveQuery): Promise<{
     const searchFilter = archiveSearchOrFilter(search);
     if (searchFilter) request = request.or(searchFilter);
     if (status) request = request.eq("caja_fuerte", status);
-    if (period === "today") {
+    if (startDay) {
       request = request
-        .gte("created_at", archiveCreatedAtStart(today))
-        .lt("created_at", archiveCreatedAtStart(shiftDay(today, 1)));
-    } else if (period === "week" || period === "three-days") {
-      request = request
-        .gte("created_at", archiveCreatedAtStart(shiftDay(today, period === "three-days" ? -2 : -6)))
-        .lt("created_at", archiveCreatedAtStart(shiftDay(today, 1)));
+        .gte("created_at", archiveCreatedAtStart(startDay))
+        .lt("created_at", archiveCreatedAtStart(endDay));
     }
 
     const { data, error, count } = await request;
@@ -249,6 +285,16 @@ export async function getRevisionInicioById(client: Client, id: string) {
   return revisionesCasitas(client)
     .select(INICIO_REVISION_COLUMNS)
     .eq("id", id)
+    .maybeSingle();
+}
+
+export async function getLatestRevisionCasita(client: Client, casita: string) {
+  return revisionesCasitas(client)
+    .select(INICIO_REVISION_COLUMNS)
+    .eq("casita", casita)
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .order("id", { ascending: false })
+    .limit(1)
     .maybeSingle();
 }
 

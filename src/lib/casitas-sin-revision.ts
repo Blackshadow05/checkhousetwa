@@ -16,18 +16,23 @@ function activityDay(value: string | null) {
     : null;
 }
 
-export function isRevisionActivityInWindow(row: RevisionActivity, today: string) {
+export function isRevisionActivityInWindow(
+  row: RevisionActivity,
+  today: string,
+  days = 7,
+) {
   const day = activityDay(row.created_at);
-  return day !== null && day >= shiftDay(today, -7) && day <= today;
+  return day !== null && day >= shiftDay(today, -days) && day <= today;
 }
 
 export function casitasSinRevision(
   rows: RevisionActivity[] | null,
   today: string,
+  days = 7,
 ): string[] | null {
   if (rows === null || activityDay(today) !== today) return null;
   const reviewed = new Set(
-    rows.filter((row) => isRevisionActivityInWindow(row, today))
+    rows.filter((row) => isRevisionActivityInWindow(row, today, days))
       .map((row) => Number(casitaNumber(row.casita))),
   );
   return CASITAS.filter((casita) => !reviewed.has(Number(casita)));
@@ -39,11 +44,12 @@ export function applyRevisionActivityChange(
   nextRecord: Partial<RevisionActivity> | null,
   previousRecord: Partial<RevisionActivity> | null,
   today: string,
+  days = 7,
 ): RevisionActivity[] | null {
   if (rows === null) return null;
   const next = rows.filter((row) =>
     row.id !== nextRecord?.id && row.id !== previousRecord?.id &&
-    isRevisionActivityInWindow(row, today),
+    isRevisionActivityInWindow(row, today, days),
   );
   if (eventType !== "DELETE" && nextRecord?.id &&
     typeof nextRecord.casita === "string" &&
@@ -53,7 +59,7 @@ export function applyRevisionActivityChange(
       casita: nextRecord.casita,
       created_at: nextRecord.created_at,
     };
-    if (isRevisionActivityInWindow(row, today)) next.push(row);
+    if (isRevisionActivityInWindow(row, today, days)) next.push(row);
   }
   return next;
 }

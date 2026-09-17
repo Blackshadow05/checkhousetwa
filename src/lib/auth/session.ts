@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cookies } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { clearUsuarioSession, getUsuarioSession } from "@/lib/usuarios-session";
 import {
   fetchAuthorizedProfile,
@@ -62,24 +62,17 @@ async function hasCompletedAuthentication(client: AuthClient, profile: AuthProfi
 
 export async function getSupabaseUsuario() {
   try {
+    const startedAt = (await cookies()).get(STARTED_AT_COOKIE)?.value;
+    const startedAtMs = startedAt ? Date.parse(startedAt) : NaN;
+    const age = Date.now() - startedAtMs;
+    if (!Number.isFinite(age) || age < 0 || age >= MAX_AGE * 1000) return null;
+
     const client = await createClient();
     const { data, error } = await client.auth.getUser();
     if (error || !data.user) return null;
 
-    const startedAt = (await cookies()).get(STARTED_AT_COOKIE)?.value;
-    const startedAtMs = startedAt ? Date.parse(startedAt) : NaN;
-    const age = Date.now() - startedAtMs;
-    if (!Number.isFinite(age) || age < 0 || age >= MAX_AGE * 1000) {
-      await clearSupabaseSession();
-      return null;
-    }
-
     const profile = await fetchAuthorizedProfile(client, data.user);
-    if (!profile || profile.Rol === "inactivo") {
-      await signOutLocal(client);
-      await clearStartedAt();
-      return null;
-    }
+    if (!profile || profile.Rol === "inactivo") return null;
     if (!(await hasCompletedAuthentication(client, profile, data.user))) return null;
     return { id: profile.id, nombre: profile.Usuario };
   } catch {
@@ -87,16 +80,22 @@ export async function getSupabaseUsuario() {
   }
 }
 
-export async function completeSupabaseSession(profile: AuthProfile) {
-  const client = await createClient();
-  const { data, error } = await client.auth.getUser();
-  if (error || !data.user || profile.Rol === "inactivo" || !(await hasCompletedAuthentication(client, profile, data.user))) {
+// Only pass the user returned by a successful Auth server operation in this
+// request (signInWithPassword, MFA verify or exchangeCodeForSession), never a
+// user read from request data or getSession(). Keep the same updated client.
+export async function completeSupabaseSession(client: AuthClient, profile: AuthProfile, verifiedUser: User) {
+  if (!verifiedUser?.id || profile.Rol === "inactivo" || !(await hasCompletedAuthentication(client, profile, verifiedUser))) {
     throw new Error("No se pudo completar la sesión.");
   }
-  const linked = await linkAuthUserToProfile(client, profile, data.user);
+  const linked = await linkAuthUserToProfile(client, profile, verifiedUser);
   await clearUsuarioSession();
   await setStartedAt();
   return { id: linked.id, nombre: linked.Usuario };
+}
+
+export async function createPrivateClient() {
+  if (!(await getSesionUsuario())) throw new Error("Inicia sesión para acceder a estos datos.");
+  return createAdminClient();
 }
 
 export async function getSesionUsuario() {

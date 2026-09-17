@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronRight,
@@ -16,7 +16,7 @@ import {
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
-import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
+import { CAJA_FUERTE_FILTERS, REPORT_FILTERS } from "@/lib/revisiones-archive";
 import {
   dayLabel,
   hasRevisionValue,
@@ -157,14 +157,23 @@ export function RevisionesScreen() {
             <button
               key={item.id}
               type="button"
-              aria-pressed={archive.period === item.id}
-              className={archive.period === item.id ? "is-selected" : ""}
+              aria-pressed={!archive.date && archive.period === item.id}
+              className={!archive.date && archive.period === item.id ? "is-selected" : ""}
               onClick={() => archive.setPeriod(item.id)}
             >
               {item.label}
             </button>
           ))}
         </div>
+        {archive.reportFilter && (
+          <button className="active-filter" type="button" onClick={() => archive.setReportFilter(null)}>
+            {REPORT_FILTERS.find((item) => item.id === archive.reportFilter)?.label}
+            <X size={15} /><span className="sr-only">Quitar filtro</span>
+          </button>
+        )}
+        {archive.reportFilter && archive.reportFilter !== "caja_fuerte" && (
+          <p className={styles.filterHint}>Último reporte de cada casita{archive.date || archive.period !== "all" ? " en el período seleccionado" : ""}.</p>
+        )}
         {archive.status ? (
           <button
             className="active-filter"
@@ -309,25 +318,52 @@ export function RevisionesScreen() {
         title="Filtrar revisiones"
       >
         <p className="sheet-description">Encuentra justo lo que necesitas.</p>
-        <h3 className="filter-section-title">Caja fuerte</h3>
+        <div className={styles.dateRow}>
+          <label className={styles.dateField}>
+            <span>Fecha específica</span>
+            <input type="date" value={archive.date} onChange={(event) => archive.setDate(event.target.value)} />
+          </label>
+          {archive.date && <button type="button" className="icon-button" aria-label="Quitar fecha" onClick={() => archive.setDate("")}><X size={18} /></button>}
+        </div>
+        <h3 className="filter-section-title">Tipo de filtro</h3>
         <div className="filter-options">
-          {[null, ...CAJA_FUERTE_FILTERS].map((value) => (
-            <button
-              key={value ?? "all"}
-              type="button"
-              aria-pressed={archive.status === value}
-              className={archive.status === value ? "is-selected" : ""}
-              onClick={() => archive.setStatus(value)}
-            >
-              <span>
-                {value === null
-                  ? "Todos los estados"
-                  : statusAppearance(value).label}
-              </span>
-              <span className="option-check">
-                {archive.status === value ? <Check size={15} /> : null}
-              </span>
-            </button>
+          {[{ id: null, label: "Todos los reportes" }, ...REPORT_FILTERS].map((item) => (
+            <Fragment key={item.id ?? "all"}>
+              <button type="button" aria-pressed={archive.reportFilter === item.id}
+                aria-expanded={item.id === "caja_fuerte" ? archive.reportFilter === "caja_fuerte" : undefined}
+                aria-controls={item.id === "caja_fuerte" && archive.reportFilter === "caja_fuerte" ? "caja-fuerte-options" : undefined}
+                className={archive.reportFilter === item.id ? "is-selected" : ""}
+                onClick={() => archive.setReportFilter(item.id)}>
+                <span>{item.label}</span>
+                <span className="option-check">{archive.reportFilter === item.id ? <Check size={15} /> : null}</span>
+              </button>
+              {item.id === "caja_fuerte" && archive.reportFilter === "caja_fuerte" && (
+                <div id="caja-fuerte-options" className={styles.safeOptions} role="group" aria-label="Estado de caja fuerte">
+                  <h3 className="filter-section-title">Estado de caja fuerte</h3>
+                  <p className="sheet-description">Todos los registros, del más reciente al más antiguo.</p>
+                  <div className="filter-options">
+                    {[null, ...CAJA_FUERTE_FILTERS].map((value) => (
+                      <button
+                        key={value ?? "all"}
+                        type="button"
+                        aria-pressed={archive.status === value}
+                        className={archive.status === value ? "is-selected" : ""}
+                        onClick={() => archive.setStatus(value)}
+                      >
+                        <span>
+                          {value === null
+                            ? "Todos los estados"
+                            : statusAppearance(value).label}
+                        </span>
+                        <span className="option-check">
+                          {archive.status === value ? <Check size={15} /> : null}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Fragment>
           ))}
         </div>
         <div className="sheet-actions">

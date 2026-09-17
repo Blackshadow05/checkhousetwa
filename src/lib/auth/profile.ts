@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { User } from "@supabase/supabase-js";
-import type { createClient } from "@/lib/supabase/server";
+import { createAdminClient, type createClient } from "@/lib/supabase/server";
 
 export const PROFILE_COLUMNS = "id,Usuario,Rol,metodo_login,email,auth_user_id,totp_enrolled";
 
@@ -55,10 +55,10 @@ function emailPattern(email: string): string {
 }
 
 export async function fetchProfileForAuthUser(
-  client: AuthClient,
+  _client: AuthClient,
   authUser: User,
 ): Promise<AuthProfile | null> {
-  const byId = await client
+  const byId = await createAdminClient()
     .from("Usuarios")
     .select(PROFILE_COLUMNS)
     .eq("auth_user_id", authUser.id)
@@ -70,7 +70,7 @@ export async function fetchProfileForAuthUser(
   const email = normalizeEmail(authUser.email);
   if (!email) return null;
 
-  const byEmail = await client
+  const byEmail = await createAdminClient()
     .from("Usuarios")
     .select(PROFILE_COLUMNS)
     .ilike("email", emailPattern(email))
@@ -82,13 +82,13 @@ export async function fetchProfileForAuthUser(
 }
 
 export async function fetchGoogleProfile(
-  client: AuthClient,
+  _client: AuthClient,
   authUser: User,
 ): Promise<AuthProfile | null> {
   const email = normalizeEmail(authUser.email);
   if (!email) return null;
 
-  const { data, error } = await client
+  const { data, error } = await createAdminClient()
     .from("Usuarios")
     .select(PROFILE_COLUMNS)
     .eq("metodo_login", "google")
@@ -101,23 +101,23 @@ export async function fetchGoogleProfile(
 }
 
 export async function fetchAuthorizedProfile(
-  client: AuthClient,
+  _client: AuthClient,
   authUser: User,
 ): Promise<AuthProfile | null> {
   return isGoogleProvider(authUser)
-    ? fetchGoogleProfile(client, authUser)
-    : fetchProfileForAuthUser(client, authUser);
+    ? fetchGoogleProfile(_client, authUser)
+    : fetchProfileForAuthUser(_client, authUser);
 }
 
 export async function linkAuthUserToProfile(
-  client: AuthClient,
+  _client: AuthClient,
   profile: AuthProfile,
   authUser: User,
 ): Promise<AuthProfile> {
   const email = normalizeEmail(authUser.email || profile.email) || null;
   if (profile.auth_user_id === authUser.id && profile.email === email) return profile;
 
-  const { data, error } = await client
+  const { data, error } = await createAdminClient()
     .from("Usuarios")
     .update({ auth_user_id: authUser.id, email })
     .eq("id", profile.id)
@@ -131,12 +131,12 @@ export async function linkAuthUserToProfile(
 }
 
 export async function markTotpEnrolled(
-  client: AuthClient,
+  _client: AuthClient,
   profile: AuthProfile,
 ): Promise<AuthProfile> {
   if (profile.totp_enrolled) return profile;
 
-  const { data, error } = await client
+  const { data, error } = await createAdminClient()
     .from("Usuarios")
     .update({ totp_enrolled: true })
     .eq("id", profile.id)

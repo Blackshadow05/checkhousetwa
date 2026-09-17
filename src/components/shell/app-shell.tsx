@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { currentUsuario, logoutUsuario } from "@/app/actions/usuarios";
+import { PublicInicioScreen } from "@/components/screens/inicio-screen";
 import { BottomNavigation } from "@/components/shell/bottom-navigation";
 import { Fab, NewRevisionFab } from "@/components/shell/fab";
 import { Header } from "@/components/shell/header";
@@ -22,6 +25,7 @@ import type { InicioRevisionRow, MenuDelDia } from "@/types/database";
 import type { RevisionActivity } from "@/lib/casitas-sin-revision";
 
 type AppShellProps = {
+  initialUser?: { id: number; nombre: string } | null;
   initialScreen: ScreenId;
   revisionesInicio: InicioRevisionRow[];
   revisionesError: string | null;
@@ -37,7 +41,9 @@ function AppShellFrame({
   navigation,
   menusInicio,
   menusError,
+  account,
 }: {
+  account: React.ReactNode;
   navigation: ReturnType<typeof useAppNavigation>;
   menusInicio: MenuDelDia[];
   menusError: string | null;
@@ -83,7 +89,7 @@ function AppShellFrame({
   const screens = {
     otros: <OtrosScreen active={navigation.screen === "otros"} />,
     inicio: (
-      <InicioScreen menus={menusInicio} menusError={menusError} />
+      <>{account}<InicioScreen menus={menusInicio} menusError={menusError} /></>
     ),
     revisiones: <RevisionesScreen />,
     sync: <SyncScreen />,
@@ -155,6 +161,7 @@ function AppShellFrame({
 }
 
 export function AppShell({
+  initialUser = null,
   initialScreen,
   revisionesInicio,
   revisionesError,
@@ -166,6 +173,71 @@ export function AppShell({
   initialDay,
 }: AppShellProps) {
   const navigation = useAppNavigation(initialScreen);
+  const router = useRouter();
+  const [user, setUser] = useState(initialUser);
+  const [previousInitialUser, setPreviousInitialUser] = useState(initialUser);
+  const [sessionError, setSessionError] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
+  const sessionGeneration = useRef(0);
+
+  if (previousInitialUser !== initialUser) {
+    setPreviousInitialUser(initialUser);
+    setUser(initialUser);
+  }
+  useEffect(() => {
+    // The initial session was checked on the server. Anonymous polling competes
+    // with login/MFA in Next's sequential Server Action queue.
+    if (!user) return;
+    let live = true;
+    let checking = false;
+    let lastCheck = Date.now();
+    const check = async () => {
+      if (checking || !navigator.onLine || document.visibilityState !== "visible" || Date.now() - lastCheck < 15_000) return;
+      checking = true;
+      lastCheck = Date.now();
+      const generation = sessionGeneration.current;
+      try {
+        const current = await currentUsuario();
+        if (live && navigator.onLine && generation === sessionGeneration.current && !current) setUser(null);
+      } catch {
+        // Transport errors do not confirm a logout. Server actions continue to
+        // enforce authorization; retry the check when connectivity returns.
+      } finally {
+        checking = false;
+      }
+    };
+    const onVisibility = () => { if (document.visibilityState === "visible") void check(); };
+    const onLogout = () => { setUser(null); router.refresh(); };
+    const timer = window.setInterval(() => void check(), 60_000);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("casitas:logout", onLogout);
+    window.addEventListener("online", onVisibility);
+    window.addEventListener("pageshow", onVisibility);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("casitas:logout", onLogout);
+      window.removeEventListener("online", onVisibility);
+      window.removeEventListener("pageshow", onVisibility);
+    };
+  }, [router, user]);
+
+  if (!user) return (
+    <div className="app-shell">
+      <div className="app-shell-frame">
+        <header className="app-header"><div className="header-inner"><p className="brand-name">Casitas</p></div></header>
+        <main className="app-main"><div className="app-screen">
+          <PublicInicioScreen menus={menusInicio} menusError={menusError} today={initialDay} onSuccess={(authenticatedUser) => {
+            sessionGeneration.current += 1;
+            setUser(authenticatedUser);
+            router.refresh();
+          }} />
+        </div></main>
+        <nav className="bottom-navigation" aria-label="Navegación principal"><button type="button" className="primary-button" onClick={() => navigation.navigate("inicio")} aria-current="page">Inicio</button></nav>
+      </div>
+    </div>
+  );
 
   return (
     <AppNavigationProvider value={navigation}>
@@ -178,6 +250,16 @@ export function AppShell({
         initialDay={initialDay}
       >
         <AppShellFrame
+          account={<div className="pantalla-toolbar"><span>Sesión de <strong>{user.nombre}</strong>{sessionError && <span role="alert">{sessionError}</span>}</span><button type="button" className="secondary-button" disabled={loggingOut} onClick={async () => {
+            setLoggingOut(true);
+            setSessionError("");
+            try {
+              await logoutUsuario();
+              setUser(null);
+              router.refresh();
+            } catch { setSessionError("No se pudo cerrar sesión. Vuelve a intentarlo."); }
+            finally { setLoggingOut(false); }
+          }}>Cerrar sesión</button></div>}
           navigation={navigation}
           menusInicio={menusInicio}
           menusError={menusError}

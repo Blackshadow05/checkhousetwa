@@ -369,9 +369,23 @@ export function RevisionesProvider({
       () => setToday(todayKey()),
       60_000,
     );
-    const syncFromUrl = () => {
-      const id = new URL(window.location.href).searchParams.get("r");
+    const syncFromUrl = (fromPop = false) => {
+      const url = new URL(window.location.href);
+      const id = url.searchParams.get("r");
       if (!id) {
+        setSelectedRevision(null);
+        return;
+      }
+      const marked =
+        (window.history.state as { casitaRevision?: string } | null)
+          ?.casitaRevision;
+      if (fromPop && !marked) {
+        url.searchParams.delete("r");
+        window.history.replaceState(
+          { ...window.history.state, casitaRevision: null },
+          "",
+          url.toString(),
+        );
         setSelectedRevision(null);
         return;
       }
@@ -381,7 +395,7 @@ export function RevisionesProvider({
         knownRowsRef.current.get(id);
       if (row) setSelectedRevision(row);
     };
-    window.addEventListener("popstate", syncFromUrl);
+    window.addEventListener("popstate", () => syncFromUrl(true));
     syncFromUrl();
     return () => {
       cancelled = true;
@@ -390,13 +404,23 @@ export function RevisionesProvider({
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener("popstate", syncFromUrl);
+      window.removeEventListener("popstate", () => syncFromUrl(true));
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [persist, refresh]);
 
   useEffect(() => {
     if (!online) return;
+    const initialRefresh = window.setTimeout(() => void refresh({ force: true }), 0);
+    const poll = window.setInterval(() => void refresh({ force: true }), 60_000);
+    return () => {
+      window.clearTimeout(initialRefresh);
+      window.clearInterval(poll);
+    };
+  }, [online, refresh]);
+
+  useEffect(() => {
+    return;
     let cancelled = false;
     let channel: RealtimeChannel | null = null;
     let persistTimer: number | undefined;

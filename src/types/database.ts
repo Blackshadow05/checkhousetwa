@@ -246,6 +246,7 @@ export type RevisionCasitaInicio = Pick<
   | "camas_ordenadas"
   | "cola_caballo"
   | "notas"
+  | "nota_extra"
   | "room_move"
 >;
 
@@ -285,5 +286,6 @@ export type InicioRevisionRow = {
   camas_ordenadas: string | null;
   cola_caballo: string | null;
   notas: string | null;
+  nota_extra?: string | null;
   room_move: string | null;
 };

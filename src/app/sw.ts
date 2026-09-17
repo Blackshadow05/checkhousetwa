@@ -2,7 +2,7 @@
 /// <reference lib="webworker" />
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
-import { CacheFirst, ExpirationPlugin, NetworkFirst, Serwist } from "serwist";
+import { CacheFirst, ExpirationPlugin, NetworkOnly, Serwist } from "serwist";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -32,15 +32,9 @@ const serwist = new Serwist({
       }),
     },
     {
-      matcher: ({ request, sameOrigin }) =>
-        sameOrigin && request.destination === "document",
-      handler: new NetworkFirst({
-        cacheName: "casitas-screens",
-        networkTimeoutSeconds: 3,
-        plugins: [
-          new ExpirationPlugin({ maxEntries: 12, maxAgeSeconds: 86400 }),
-        ],
-      }),
+      matcher: ({ request, sameOrigin, url }) =>
+        sameOrigin && (request.destination === "document" || request.headers.get("RSC") === "1" || url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/") || url.pathname.startsWith("/_next/data/")),
+      handler: new NetworkOnly(),
     },
     ...defaultCache,
   ],

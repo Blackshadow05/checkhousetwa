@@ -7,13 +7,14 @@ export type PantallaReport = {
   destino_ubicacion: string | null; destino_habitacion: string | null;
 };
 export type PantallaInput = Omit<PantallaReport, "id" | "nombre_usuario" | "fecha_hora">;
-export type PantallaStock = { ubicacion: string; habitacion: string; cantidad: number };
+// sinPantalla: the latest report marked "no hay pantalla" for this room, so 0 can be shown as "No tiene".
+export type PantallaStock = { ubicacion: string; habitacion: string; cantidad: number; sinPantalla?: boolean };
 export type PantallaSnapshot = { reports: PantallaReport[]; stock: PantallaStock[]; updatedAt: string };
 export const CASITAS = Array.from({ length: 50 }, (_, i) => String(i + 1));
 export const UBICACIONES = [...CASITAS, "bodega", "casa_verde"];
 const SOLO_LIVING = new Set([5, 6, 16, 17, 18, 19, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 49, 50]);
 const TRES = new Set([1, 2, 3, 4, 7, 8, 9, 10]);
-const LIVING_Y_QUEEN = new Set([15, 20, 21, 22, 23, 24, 25, 38, 39, 40, 43, 46, 47, 48]);
+const LIVING_Y_KING = new Set([15, 20, 21, 22, 23, 24, 25, 38, 39, 40, 43, 46, 47, 48]);
 export function habitaciones(ubicacion: string): string[] {
   if (!CASITAS.includes(ubicacion)) return [];
   const numero = Number(ubicacion);
@@ -21,8 +22,8 @@ export function habitaciones(ubicacion: string): string[] {
     ? ["Living"]
     : TRES.has(numero)
       ? ["Living", "Cuarto Queen", "Cuarto King"]
-      : LIVING_Y_QUEEN.has(numero)
-        ? ["Living", "Cuarto Queen"]
+      : LIVING_Y_KING.has(numero)
+        ? ["Living", "Cuarto King"]
         : ["Living", "Cuarto King"];
 }
 export function ubicacionLabel(value: string | null) {
@@ -71,13 +72,21 @@ export function latestPantallaReports(reports: PantallaReport[]): PantallaReport
 
 export function inventarioPantallas(stock: PantallaStock[], reports: PantallaReport[]): PantallaStock[] {
   const counts = new Map<string, number>();
+  const sinPantalla = new Set<string>();
   const key = (location: string, room: string | null) => `${location}|${room || ""}`;
   if (!reports.length) for (const item of stock) counts.set(key(item.ubicacion, item.habitacion), item.cantidad);
   else for (const row of [...reports].sort((a, b) => a.fecha_hora.replace(" ", "T").localeCompare(b.fecha_hora.replace(" ", "T")) || a.id - b.id)) {
     if (row.tipo === "movimiento") {
-      if (row.origen_ubicacion) { const k = key(row.origen_ubicacion, row.origen_habitacion); counts.set(k, Math.max(0, (counts.get(k) ?? 0) - 1)); }
+      if (row.origen_ubicacion) { const k = key(row.origen_ubicacion, row.origen_habitacion); counts.set(k, Math.max(0, (counts.get(k) ?? 0) - 1)); sinPantalla.delete(k); }
       if (row.destino_ubicacion) { const k = key(row.destino_ubicacion, row.destino_habitacion); counts.set(k, (counts.get(k) ?? 0) + 1); }
-    } else for (const foto of row.fotos ?? []) counts.set(key(String(row.numero_casita), foto.ubicacion), foto.estado === "no hay pantalla" ? 0 : 1);
+    } else for (const foto of row.fotos ?? []) {
+      const k = key(String(row.numero_casita), foto.ubicacion);
+      counts.set(k, foto.estado === "no hay pantalla" ? 0 : 1);
+      if (foto.estado === "no hay pantalla") sinPantalla.add(k); else sinPantalla.delete(k);
+    }
   }
-  return UBICACIONES.flatMap(ubicacion => (habitaciones(ubicacion).length ? habitaciones(ubicacion) : [""]).map(habitacion => ({ ubicacion, habitacion, cantidad: counts.get(key(ubicacion, habitacion)) ?? 0 })));
+  return UBICACIONES.flatMap(ubicacion => (habitaciones(ubicacion).length ? habitaciones(ubicacion) : [""]).map(habitacion => {
+    const k = key(ubicacion, habitacion);
+    return { ubicacion, habitacion, cantidad: counts.get(k) ?? 0, sinPantalla: sinPantalla.has(k) };
+  }));
 }

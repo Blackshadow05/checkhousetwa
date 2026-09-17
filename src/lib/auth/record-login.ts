@@ -1,6 +1,7 @@
 import "server-only";
 
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 type RecordLoginOptions = {
@@ -31,20 +32,29 @@ export async function recordLogin({
       if (value !== null) requestHeaders.set(name, value);
     }
 
-    const response = await fetch(
-      `${url.replace(/\/+$/, "")}/functions/v1/record-login`,
-      {
-        method: "POST",
-        headers: requestHeaders,
-        body: JSON.stringify({ userId, usuario, metodo, userAgent }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(5000),
-      }
-    );
+    // Capture request metadata now; Next keeps this task alive after sending
+    // the login response, including on serverless hosts. Do not await the HTTP
+    // request in the login path or start an untracked fire-and-forget promise.
+    after(async () => {
+      try {
+        const response = await fetch(
+          `${url.replace(/\/+$/, "")}/functions/v1/record-login`,
+          {
+            method: "POST",
+            headers: requestHeaders,
+            body: JSON.stringify({ userId, usuario, metodo, userAgent }),
+            cache: "no-store",
+            signal: AbortSignal.timeout(5000),
+          }
+        );
 
-    if (!response.ok) {
-      console.error("No se pudo registrar el acceso:", response.status);
-    }
+        if (!response.ok) {
+          console.error("No se pudo registrar el acceso:", response.status);
+        }
+      } catch {
+        console.error("No se pudo registrar el acceso.");
+      }
+    });
   } catch {
     console.error("No se pudo registrar el acceso.");
   }

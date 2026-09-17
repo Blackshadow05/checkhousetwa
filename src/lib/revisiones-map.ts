@@ -10,7 +10,7 @@ function formatCreatedAt(value: string | null): string {
   const normalized = value.replace("T", " ");
   const [date, time] = normalized.split(" ");
   if (!date || !time) return value;
-  return `${date} ${time.slice(0, 5)}`;
+  return `${date} ${time}`;
 }
 
 function asText(value: string | null | undefined) {
@@ -46,6 +46,7 @@ export function mapInicioRevision(row: RevisionCasitaInicio): InicioRevisionRow 
     camas_ordenadas: asText(row.camas_ordenadas),
     cola_caballo: asText(row.cola_caballo),
     notas: asText(row.notas),
+    nota_extra: asText(row.nota_extra),
     room_move: asText(row.room_move),
   };
 }

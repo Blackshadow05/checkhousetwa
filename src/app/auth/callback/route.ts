@@ -52,17 +52,14 @@ export async function GET(request: Request) {
     }
 
     const { data, error } = await client.auth.exchangeCodeForSession(code);
-    if (error || !data.session) return await reject("error");
+    if (error || !data.session || !data.user) return await reject("error");
 
-    const { data: userData, error: userError } = await client.auth.getUser();
-    if (userError || !userData.user) return await reject("error");
-
-    const profile = await fetchGoogleProfile(client, userData.user);
+    const profile = await fetchGoogleProfile(client, data.user);
     if (!profile || profile.Rol === "inactivo") {
       return await reject("unauthorized");
     }
 
-    const user = await completeSupabaseSession(profile);
+    const user = await completeSupabaseSession(client, profile, data.user);
     await recordLogin({
       userId: user.id,
       usuario: user.nombre,

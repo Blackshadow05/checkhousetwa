@@ -7,6 +7,21 @@
   padding: 2px 0 8px;
 }
 
+.loginButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
+}
+
 .heading {
   display: grid;
   gap: 4px;
@@ -99,14 +114,25 @@
 
 .pendingGrid li {
   display: grid;
+  min-width: 0;
+}
+
+.pendingGrid .pendingItem {
+  display: grid;
   place-items: center;
+  width: 100%;
   min-height: 48px;
+  padding: 0;
   border-radius: 12px;
   background: var(--amber-bg);
   color: var(--amber-text);
   font-size: 1.0625rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+}
+
+.pendingGrid .pendingItem:disabled {
+  opacity: 0.55;
 }
 
 .showAll {
@@ -125,7 +151,8 @@
   text-align: left;
 }
 
-.screen button:focus-visible {
+.screen button:focus-visible,
+.daysSelect select:focus-visible {
   outline: 3px solid var(--ring);
   outline-offset: 3px;
 }
@@ -226,7 +253,25 @@
     padding: 12px;
   }
 
-  .pendingGrid {
+.daysSelect {
+  display: block;
+  width: fit-content;
+  margin-bottom: 12px;
+}
+
+.daysSelect select {
+  min-width: 96px;
+  min-height: 44px;
+  padding: 8px 34px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.pendingGrid {
     gap: 6px;
   }
 

@@ -15,7 +15,7 @@ export function OtrosScreen({ active }: { active: boolean }) {
   const [loading, setLoading] = useState(false); const fetching = useRef(false);
   const [error, setError] = useState(""); const [message, setMessage] = useState("");
   const [cached, setCached] = useState(true); const [tab, setTab] = useState("historial");
-  const [location, setLocation] = useState(""); const [type, setType] = useState(""); const [search, setSearch] = useState("");
+  const [location, setLocation] = useState(""); const [type, setType] = useState("reporte"); const [search, setSearch] = useState("");
   const [formVisited, setFormVisited] = useState(false); const [formKey, setFormKey] = useState(0);
   const [pdfReports, setPdfReports] = useState<PantallaReport[] | null>(null);
   if (pdfReports && (!active || path !== "/reporte-pantallas")) setPdfReports(null);
@@ -54,7 +54,9 @@ export function OtrosScreen({ active }: { active: boolean }) {
     const timer = setTimeout(() => void refresh(), 0);
     return () => clearTimeout(timer);
   }, [active, path, online, refresh]);
-  const reports = useMemo(() => (snapshot?.reports || []).filter(r => (!type || (r.tipo || "reporte") === type) && (!location || String(r.numero_casita) === location || r.origen_ubicacion === location || r.destino_ubicacion === location) && (!search || `${r.nombre_usuario} ${r.notas || ""} ${r.numero_casita || ""}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()))), [snapshot, type, location, search]);
+  const searchExactCasita = /^\d+$/.test(search.trim());
+  const searchLower = search.trim().toLocaleLowerCase();
+  const reports = useMemo(() => (snapshot?.reports || []).filter(r => (!type || (r.tipo || "reporte") === type) && (!location || String(r.numero_casita) === location || r.origen_ubicacion === location || r.destino_ubicacion === location) && (!search || (searchExactCasita ? String(r.numero_casita) === search.trim() || r.origen_ubicacion === search.trim() || r.destino_ubicacion === search.trim() : `${r.nombre_usuario} ${r.notas || ""}`.toLocaleLowerCase().includes(searchLower)))), [snapshot, type, location, search, searchExactCasita, searchLower]);
   const inventory = useMemo(() => snapshot ? inventarioPantallas(snapshot.stock, snapshot.reports) : [], [snapshot]);
   const pdfCandidates = useMemo(() => {
     const visibleIds = new Set(reports.map(report => report.id));
@@ -75,7 +77,7 @@ export function OtrosScreen({ active }: { active: boolean }) {
       <div className="pantalla-tabs" aria-label="Vista de pantallas">{["historial", "inventario"].map(t => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)}>{t === "historial" ? "Historial" : "Inventario"}</button>)}</div>
       <label>Ubicación<select aria-label="Ubicación" value={location} onChange={e => setLocation(e.target.value)}><option value="">Todas las ubicaciones</option>{UBICACIONES.map(v => <option key={v} value={v}>{ubicacionLabel(v)}</option>)}</select></label>
       {tab === "historial" ? <>
-        <div className="pantalla-filters"><label>Tipo<select aria-label="Tipo" value={type} onChange={e => setType(e.target.value)}><option value="">Todos</option><option value="reporte">Reportes</option><option value="movimiento">Movimientos</option></select></label><label>Buscar<input type="search" placeholder="Usuario, nota o casita" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
+        <div className="pantalla-filters"><label>Tipo<select aria-label="Tipo" value={type} onChange={e => setType(e.target.value)}><option value="reporte">Reportes</option><option value="movimiento">Movimientos</option></select></label><label>Buscar<input type="search" placeholder="Usuario, nota o casita" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
         <div className="pantalla-toolbar"><span>{reports.length} registros</span><button type="button" disabled={!pdfCandidates.length} onClick={() => setPdfReports(pdfCandidates)}><FileDown size={18} aria-hidden /> Crear PDF</button></div>
         {loading && !snapshot && <div className="pantalla-skeleton" aria-label="Cargando registros" />}
         {!loading && !reports.length && <div className="pantalla-card"><h3>{snapshot ? "No hay registros para esta búsqueda" : "Todavía no hay datos disponibles"}</h3><p>{snapshot ? "Prueba otra ubicación o crea el primer reporte." : "Conéctate y pulsa actualizar para cargar el historial."}</p></div>}
@@ -83,7 +85,7 @@ export function OtrosScreen({ active }: { active: boolean }) {
           {row.tipo === "movimiento" ? <p>{movimientoLabel(row)}</p> : <PantallaPhotoGallery photos={row.fotos || []} casita={row.numero_casita} reportId={row.id} active={active && path === "/reporte-pantallas"} />}
           {row.notas && <p className="pantalla-notes">{row.notas}</p>}
         </article>)}
-      </> : <>{snapshot ? <><p className="pantalla-status">{snapshot.reports.length ? "Calculado desde reportes y movimientos en orden de fecha." : "Inventario guardado; todavía no hay historial."}</p><div className="pantalla-inventory">{UBICACIONES.filter(v => !location || v === location).map(v => { const rooms = inventory.filter(item => item.ubicacion === v); return <article className="pantalla-card" key={v}><div className="pantalla-toolbar"><h3>{ubicacionLabel(v)}</h3><strong>{rooms.reduce((sum, r) => sum + r.cantidad, 0)}</strong></div>{rooms.map(r => <div className="pantalla-stock-row" key={r.habitacion}><span>{r.habitacion || "General"}</span><strong>{r.cantidad}</strong></div>)}</article>; })}</div></> : <p>Carga los datos para consultar el inventario.</p>}</>}
+      </> : <>{snapshot ? <><p className="pantalla-status">{snapshot.reports.length ? "Calculado desde reportes y movimientos en orden de fecha." : "Inventario guardado; todavía no hay historial."}</p><div className="pantalla-inventory">{UBICACIONES.filter(v => !location || v === location).map(v => { const rooms = inventory.filter(item => item.ubicacion === v); const total = rooms.reduce((sum, r) => sum + r.cantidad, 0); return <article className="pantalla-card" key={v}><div className="pantalla-toolbar"><h3>{ubicacionLabel(v)}</h3><strong>{total === 0 && rooms.length && rooms.every(r => r.sinPantalla) ? "No tiene" : total}</strong></div>{rooms.map(r => <div className="pantalla-stock-row" key={r.habitacion}><span>{r.habitacion || "General"}</span><strong>{r.cantidad === 0 && r.sinPantalla ? "No tiene" : r.cantidad}</strong></div>)}</article>; })}</div></> : <p>Carga los datos para consultar el inventario.</p>}</>}
     </div>
     {formVisited && <div hidden={path !== "/reporte-pantallas/nuevo"}><PantallaForm key={formKey} onClose={() => navigate("/reporte-pantallas")} onSaved={text => { setMessage(text); setFormKey(k => k + 1); navigate("/reporte-pantallas"); void refresh(); }} /></div>}
     {pdfReports && active && path === "/reporte-pantallas" && <PantallaPdfSheet reports={pdfReports} onClose={() => setPdfReports(null)} />}

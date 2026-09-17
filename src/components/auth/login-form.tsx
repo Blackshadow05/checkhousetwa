@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import { preserveKeyboardFocus } from "@/lib/keyboard-focus";
 import {
   cancelarAuthenticator,
   iniciarLoginGoogle,
@@ -19,6 +21,32 @@ const METODOS: { id: Metodo; etiqueta: string }[] = [
   { id: "authenticator", etiqueta: "Authenticator" },
   { id: "google", etiqueta: "Google" },
 ];
+
+function PasswordField({ label, name, value, busy, onChange }: {
+  label: string;
+  name: string;
+  value: string;
+  busy: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [visible, setVisible] = useState(false);
+  const id = useId();
+  return (
+    <div className="revision-text-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="auth-password">
+        <input id={id} name={name} type={visible ? "text" : "password"}
+          data-login-password autoComplete="current-password" enterKeyHint="go"
+          required readOnly={busy} value={value} onChange={(event) => onChange(event.target.value)} />
+        <button type="button" className="auth-password-toggle" aria-controls={id}
+          aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
+          aria-pressed={visible} disabled={busy} onClick={() => setVisible(!visible)}>
+          {visible ? <EyeOff size={20} aria-hidden="true" /> : <Eye size={20} aria-hidden="true" />}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function LoginForm({
   online,
@@ -42,6 +70,33 @@ export function LoginForm({
   const [aviso, setAviso] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyMessage, setBusyMessage] = useState("");
+  const form = useRef<HTMLFormElement>(null);
+  const pending = useRef(false);
+  const messageId = useId();
+
+  function beginRequest(message: string) {
+    if (pending.current || !online) return false;
+    pending.current = true;
+    setBusy(true);
+    setBusyMessage(message);
+    setError("");
+    const focused = document.activeElement;
+    // Only dismiss after activation/validation, never before the tap's click.
+    if (focused instanceof HTMLInputElement && form.current?.contains(focused)) focused.blur();
+    return true;
+  }
+
+  function finishRequest() {
+    pending.current = false;
+    setBusy(false);
+  }
+
+  function nextPassword(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    form.current?.querySelector<HTMLInputElement>("[data-login-password]")?.focus();
+  }
 
   function limpiarMfa() {
     setPaso("credenciales");
@@ -59,6 +114,8 @@ export function LoginForm({
     setError("");
     setAviso("");
     limpiarMfa();
+    setClaveUsuario("");
+    setClaveAuth("");
     setMetodo(next);
   }
 
@@ -74,21 +131,20 @@ export function LoginForm({
   }
 
   async function ingresarUsuario() {
-    if (busy || !online) return;
-    setBusy(true);
-    setError("");
+    if (!beginRequest("Iniciando sesión…")) return;
     setAviso("");
     try {
       const result = await loginUsuario(usuario, claveUsuario);
-      setClaveUsuario("");
       if (result.error) {
         setError(result.error);
         if (result.useAuthenticator) {
+          setClaveUsuario("");
           setEmail((actual) => actual || usuario.trim());
           setMetodo("authenticator");
           limpiarMfa();
           setAviso("Continúa con tu correo y la contraseña de Auth.");
         } else if (result.useGoogle) {
+          setClaveUsuario("");
           setMetodo("google");
           limpiarMfa();
         }
@@ -102,22 +158,20 @@ export function LoginForm({
     } catch {
       setError("No se pudo conectar. Inténtalo de nuevo.");
     } finally {
-      setBusy(false);
+      finishRequest();
     }
   }
 
   async function ingresarAuthenticator() {
-    if (busy || !online) return;
-    setBusy(true);
-    setError("");
+    if (!beginRequest("Comprobando tus datos…")) return;
     setAviso("");
     try {
       const result = await loginConAuthenticator(email, claveAuth);
-      setClaveAuth("");
       if (result.error) {
         setError(result.error);
         return;
       }
+      setClaveAuth("");
       if ("step" in result && result.step === "challenge") {
         setFactorId(result.factorId);
         setCodigo("");
@@ -140,17 +194,16 @@ export function LoginForm({
     } catch {
       setError("No se pudo conectar. Inténtalo de nuevo.");
     } finally {
-      setBusy(false);
+      finishRequest();
     }
   }
 
   async function verificarCodigo() {
-    if (busy || !online || !factorId || codigo.length !== 6) return;
-    setBusy(true);
-    setError("");
+    if (!factorId || codigo.length !== 6 || !beginRequest("Verificando código…")) return;
     try {
       const result = await verificarCodigoAuthenticator(factorId, codigo);
       if (result.error) {
+        if (result.restartAuthenticator) limpiarMfa();
         setError(result.error);
         return;
       }
@@ -162,17 +215,16 @@ export function LoginForm({
     } catch {
       setError("No se pudo conectar. Inténtalo de nuevo.");
     } finally {
-      setBusy(false);
+      finishRequest();
     }
   }
 
   async function regenerarQr() {
-    if (busy || !online) return;
-    setBusy(true);
-    setError("");
+    if (!beginRequest("Generando un nuevo código QR…")) return;
     try {
       const result = await regenerarQrAuthenticator();
       if (result.error) {
+        if (result.restartAuthenticator) limpiarMfa();
         setError(result.error);
         return;
       }
@@ -194,14 +246,12 @@ export function LoginForm({
     } catch {
       setError("No se pudo conectar. Inténtalo de nuevo.");
     } finally {
-      setBusy(false);
+      finishRequest();
     }
   }
 
   async function entrarGoogle() {
-    if (busy || !online) return;
-    setBusy(true);
-    setError("");
+    if (!beginRequest("Abriendo Google…")) return;
     try {
       const result = await iniciarLoginGoogle();
       if (!result.url) {
@@ -212,7 +262,7 @@ export function LoginForm({
     } catch {
       setError("No se pudo conectar. Inténtalo de nuevo.");
     } finally {
-      setBusy(false);
+      finishRequest();
     }
   }
 
@@ -221,6 +271,10 @@ export function LoginForm({
 
   return (
     <form
+      ref={form}
+      onMouseDown={preserveKeyboardFocus}
+      aria-label="Iniciar sesión"
+      aria-describedby={error ? messageId : undefined}
       className={variant === "card" ? "pantalla-card auth-form" : "revision-edit-form auth-form"}
       onSubmit={(event) => {
         event.preventDefault();
@@ -229,13 +283,12 @@ export function LoginForm({
         else if (metodo === "authenticator") void verificarCodigo();
       }}
     >
-      <div className="auth-tabs" role="tablist" aria-label="Método de acceso">
+      <div className="auth-tabs" role="group" aria-label="Método de acceso">
         {METODOS.map((item) => (
           <button
             key={item.id}
             type="button"
-            role="tab"
-            aria-selected={metodo === item.id}
+            aria-pressed={metodo === item.id}
             className="auth-tab"
             disabled={busy}
             onClick={() => cambiarMetodo(item.id)}
@@ -251,25 +304,23 @@ export function LoginForm({
           <label className="revision-text-field">
             Usuario
             <input
+              name="username"
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="next"
+              onKeyDown={nextPassword}
+              readOnly={busy}
               required
               value={usuario}
               onChange={(event) => setUsuario(event.target.value)}
             />
           </label>
-          <label className="revision-text-field">
-            Contraseña
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={claveUsuario}
-              onChange={(event) => setClaveUsuario(event.target.value)}
-            />
-          </label>
+          <PasswordField label="Contraseña" name="password" value={claveUsuario} busy={busy} onChange={setClaveUsuario} />
           <div className="auth-actions">
             <button className="primary-button" disabled={submitDisabled}>
-              Entrar
+              {busy ? "Entrando…" : "Entrar"}
             </button>
           </div>
         </>
@@ -281,27 +332,25 @@ export function LoginForm({
           <label className="revision-text-field">
             Correo
             <input
+              name="email"
               type="email"
-              autoComplete="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="next"
+              onKeyDown={nextPassword}
+              readOnly={busy}
               inputMode="email"
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
           </label>
-          <label className="revision-text-field">
-            Contraseña de Auth
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={claveAuth}
-              onChange={(event) => setClaveAuth(event.target.value)}
-            />
-          </label>
+          <PasswordField key="auth-password" label="Contraseña de Auth" name="auth-password" value={claveAuth} busy={busy} onChange={setClaveAuth} />
           <div className="auth-actions">
             <button className="primary-button" disabled={submitDisabled}>
-              Continuar
+              {busy ? "Comprobando…" : "Continuar"}
             </button>
           </div>
         </>
@@ -313,9 +362,12 @@ export function LoginForm({
           <label className="revision-text-field">
             Código
             <input
+              name="code"
+              enterKeyHint="go"
+              readOnly={busy}
               inputMode="numeric"
               autoComplete="one-time-code"
-              pattern="[0-9]*"
+              pattern="[0-9]{6}"
               maxLength={6}
               required
               value={codigo}
@@ -327,7 +379,7 @@ export function LoginForm({
               Cancelar
             </button>
             <button className="primary-button" disabled={verificarDisabled}>
-              Verificar
+              {busy ? "Verificando…" : "Verificar"}
             </button>
           </div>
         </>
@@ -344,9 +396,12 @@ export function LoginForm({
           <label className="revision-text-field">
             Código
             <input
+              name="code"
+              enterKeyHint="go"
+              readOnly={busy}
               inputMode="numeric"
               autoComplete="one-time-code"
-              pattern="[0-9]*"
+              pattern="[0-9]{6}"
               maxLength={6}
               required
               value={codigo}
@@ -372,20 +427,23 @@ export function LoginForm({
           <p className="auth-hint">Usa la cuenta de Google que el administrador autorizó para tu usuario.</p>
           <div className="auth-actions">
             <button type="button" className="primary-button" disabled={submitDisabled} onClick={() => void entrarGoogle()}>
-              Continuar con Google
+              {busy ? "Abriendo Google…" : "Continuar con Google"}
             </button>
           </div>
           <p className="auth-hint">La sesión de Google dura 8 horas y el acceso queda registrado.</p>
         </>
       ) : null}
 
+      <div className="auth-status" role="status" aria-live="polite" aria-atomic="true">
+        {!online ? "Sin conexión. Conéctate a internet para iniciar sesión; tus datos se conservan aquí." : busy ? busyMessage : ""}
+      </div>
       {aviso ? (
         <p className="auth-hint" role="status">
           {aviso}
         </p>
       ) : null}
       {error ? (
-        <p className="revision-field-error" role="alert">
+        <p id={messageId} className="revision-field-error" role="alert">
           {error}
         </p>
       ) : null}
