@@ -6,6 +6,7 @@ import type { SlideData } from "photoswipe";
 import "photoswipe/style.css";
 import {
   cloudinaryPreviewUrl,
+  cloudinaryUrl,
   cloudinaryViewerUrl,
 } from "@/lib/cloudinary";
 
@@ -23,6 +24,45 @@ const FALLBACK_SIZE: ImageSize = { width: 1600, height: 1200 };
 const sizeCache = new Map<string, ImageSize>();
 
 const SHARE_ICON = `<svg class="pswp__icn" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>`;
+
+const DOWNLOAD_ICON = '<svg class="pswp__icn" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5v15m-6-6 6 6 6-6M7 22v5h18v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const EXTENSIONS: Record<string, string> = { "image/png": "png", "image/webp": "webp", "image/avif": "avif", "image/heic": "heic", "image/heif": "heif" };
+let downloading = false;
+
+async function downloadSlide(
+  path: string | undefined,
+  index: number,
+  casita: string,
+  statusEl: HTMLElement | null,
+) {
+  if (!path || downloading) return;
+  const setStatus = (message: string) => {
+    if (statusEl) statusEl.textContent = message;
+  };
+  downloading = true;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30000);
+  setStatus("Preparando descarga…");
+  try {
+    const response = await fetch(cloudinaryUrl(path, ""), { signal: controller.signal });
+    if (!response.ok) throw new Error("download");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `casita-${casita}-evidencia-${index + 1}.${EXTENSIONS[blob.type] ?? "jpg"}`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    setStatus("Descarga iniciada.");
+  } catch {
+    setStatus("No se pudo descargar la foto. Revisa la conexión y vuelve a intentarlo.");
+  } finally {
+    window.clearTimeout(timeout);
+    downloading = false;
+  }
+}
 
 function loadImageSize(src: string) {
   const cached = sizeCache.get(src);
@@ -194,6 +234,23 @@ export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
         onInit: (element) => {
           element.className = "evidence-pswp-status";
           element.setAttribute("role", "status");
+        },
+      });
+      pswp.ui.registerElement({
+        name: "download-button",
+        order: 9,
+        isButton: true,
+        title: "Descargar evidencia",
+        ariaLabel: "Descargar evidencia",
+        html: DOWNLOAD_ICON,
+        onClick: (_event, _element, instance) => {
+          const current = instance.currIndex;
+          void downloadSlide(
+            pathsRef.current[current],
+            current,
+            casitaRef.current,
+            instance.element?.querySelector<HTMLElement>(".evidence-pswp-status") ?? null,
+          );
         },
       });
       pswp.ui.registerElement({

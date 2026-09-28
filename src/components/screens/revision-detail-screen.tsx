@@ -1,18 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  ArrowRight,
+  ArrowRightLeft,
+  CalendarDays,
+  Check,
   ChevronLeft,
+  CircleAlert,
+  Clock3,
   Copy,
+  DoorClosed,
   History,
-  House,
   Lock,
+  MessageSquareText,
   NotebookPen,
   Package,
   Pencil,
   Plus,
   ShieldCheck,
   Tv,
+  X,
+  type LucideIcon,
 } from "lucide-react";
 import { EvidenceGallery } from "@/components/screens/evidence-gallery";
 import { RevisionEditSheet } from "@/components/screens/revision-edit-sheet";
@@ -25,6 +34,7 @@ import {
   ELECTRONIC_FIELDS,
   EQUIPMENT_FIELDS,
   initials,
+  normalizeText,
   puertasVentanasOk,
   revisionEvidence,
   shortTime,
@@ -41,16 +51,115 @@ import {
 } from "@/lib/revision-notes";
 import type { InicioRevisionRow } from "@/types/database";
 import { useOnline } from "@/lib/use-online";
+import { dedupeRequest } from "@/lib/dedupe-request";
 
-function FieldValue({ value }: { value: string }) {
-  const normalized = value.trim();
+type ValueKind = "empty" | "yes" | "no" | "count" | "status" | "text";
+
+function describeValue(value: string | null | undefined): { kind: ValueKind; text: string } {
+  const raw = (value ?? "").trim();
+  if (!raw || raw === "—") return { kind: "empty", text: "Sin registro" };
+  const normalized = normalizeText(raw);
+  if (normalized === "si") return { kind: "yes", text: "Sí" };
+  if (normalized === "no") return { kind: "no", text: "No" };
+  if (/^\d+$/.test(raw)) return { kind: "count", text: String(Number(raw)) };
   if (
-    /^(si|sí|no|check in|check out)$/i.test(normalized) ||
-    normalized.toLowerCase().includes("upsell")
+    /^(check inn?|check out|back to back|room move)$/.test(normalized) ||
+    normalized.includes("upsell")
   ) {
-    return <StatusBadge value={value} />;
+    return { kind: "status", text: raw };
   }
-  return <span>{value}</span>;
+  return { kind: "text", text: raw };
+}
+
+function DetailValue({ value }: { value: string | null | undefined }) {
+  const { kind, text } = describeValue(value);
+  if (kind === "status") return <StatusBadge value={text} />;
+  if (kind === "yes" || kind === "no") {
+    const Icon = kind === "yes" ? Check : X;
+    return (
+      <span className={`detail-pill is-${kind}`}>
+        <Icon size={13} strokeWidth={2.6} aria-hidden="true" />
+        {text}
+      </span>
+    );
+  }
+  return <span className={`detail-value is-${kind}`}>{text}</span>;
+}
+
+function DoorsValue({ value }: { value: string | null }) {
+  const text = value?.trim();
+  if (!text) return <span className="detail-value is-empty">Sin registro</span>;
+  const ok = puertasVentanasOk(text);
+  const Icon = ok ? Check : CircleAlert;
+  return (
+    <span className={`detail-pill ${ok ? "is-yes" : "is-no"}`}>
+      <Icon size={13} strokeWidth={2.6} aria-hidden="true" />
+      {text}
+    </span>
+  );
+}
+
+function DetailRow({
+  icon: Icon,
+  label,
+  field,
+  valueText,
+  onEdit,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  field: RevisionEditField;
+  valueText: string;
+  onEdit: (field: RevisionEditField) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="detail-row"
+      aria-label={`${label}: ${valueText}. Editar`}
+      onClick={() => onEdit(field)}
+    >
+      <span className="detail-row-label">
+        <span className="detail-row-icon">
+          <Icon size={16} aria-hidden="true" />
+        </span>
+        {label}
+      </span>
+      <span className="detail-row-value">
+        {children}
+        <Pencil size={15} className="detail-edit-icon" aria-hidden="true" />
+      </span>
+    </button>
+  );
+}
+
+function DetailTile({
+  label,
+  field,
+  value,
+  onEdit,
+}: {
+  label: string;
+  field: RevisionEditField;
+  value: string | null | undefined;
+  onEdit: (field: RevisionEditField) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="detail-tile"
+      aria-label={`${label}: ${describeValue(value).text}. Editar`}
+      onClick={() => onEdit(field)}
+    >
+      <span className="detail-tile-top">
+        <span className="detail-tile-label">{label}</span>
+        <Pencil size={14} className="detail-edit-icon" aria-hidden="true" />
+      </span>
+      <DetailValue value={value} />
+    </button>
+  );
 }
 
 function copyText(row: InicioRevisionRow) {
@@ -80,7 +189,7 @@ function EditButton({
       aria-label={`Editar ${REVISION_EDIT_LABELS[field].toLowerCase()}`}
       onClick={() => onEdit(field)}
     >
-      <Pencil size={16} aria-hidden="true" />
+      <Pencil size={17} aria-hidden="true" />
     </button>
   );
 }
@@ -146,6 +255,12 @@ export function RevisionDetailScreen() {
   }, [selectedRevision?.id]);
 
   useEffect(() => {
+    if (!copyMessage) return;
+    const timer = window.setTimeout(() => setCopyMessage(""), 2400);
+    return () => window.clearTimeout(timer);
+  }, [copyMessage]);
+
+  useEffect(() => {
     if (!noteMessage) return;
     const timer = window.setTimeout(() => setNoteMessage(null), 4000);
     return () => window.clearTimeout(timer);
@@ -155,7 +270,7 @@ export function RevisionDetailScreen() {
     const id = selectedRevision?.id;
     if (!id || !online) return;
     let live = true;
-    void fetchRevisionNotes(id)
+    void dedupeRequest(`notes:${id}`, () => fetchRevisionNotes(id))
       .then((result) => {
         if (!live) return;
         setNotesState((current) => {
@@ -202,7 +317,7 @@ export function RevisionDetailScreen() {
     if (!id) return;
     let live = true;
     setHistoryLoading(true);
-    void fetchRevisionEdits(id)
+    void dedupeRequest(`edits:${id}`, () => fetchRevisionEdits(id))
       .then((result) => {
         if (!live) return;
         if (result.error) {
@@ -333,18 +448,18 @@ export function RevisionDetailScreen() {
             <EvidenceGallery paths={images} casita={row.casita} />
           ) : (
             <>
-              <div className="detail-edit-heading">
-                <h1 id="detail-title">Casita {row.casita}</h1>
+              <h1 id="detail-title">Casita {row.casita}</h1>
+              <div className="detail-actions">
                 <EditButton field="casita" onEdit={setEditingField} />
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Copiar detalle"
+                  onClick={() => void copyRevision()}
+                >
+                  <Copy size={17} />
+                </button>
               </div>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Copiar detalle"
-                onClick={() => void copyRevision()}
-              >
-                <Copy size={18} />
-              </button>
             </>
           )}
         </header>
@@ -352,143 +467,157 @@ export function RevisionDetailScreen() {
         <div className="detail-body">
           {images.length > 0 && (
             <div className="detail-title-row">
-              <div className="detail-edit-heading">
-                <div>
-                  <p className="eyebrow">CASITA</p>
-                  <h1 id="detail-title">Casita {row.casita}</h1>
-                </div>
+              <h1 id="detail-title">Casita {row.casita}</h1>
+              <div className="detail-actions">
                 <EditButton field="casita" onEdit={setEditingField} />
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Copiar detalle"
+                  onClick={() => void copyRevision()}
+                >
+                  <Copy size={17} />
+                </button>
               </div>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Copiar detalle"
-                onClick={() => void copyRevision()}
-              >
-                <Copy size={18} />
-              </button>
             </div>
           )}
 
-          <div className="detail-person-card">
-            <span className="person-initials" aria-hidden="true">
-              {initials(row.quien_revisa)}
-            </span>
-            <div>
-              <p className="eyebrow">REVISÓ</p>
-              <strong>{row.quien_revisa}</strong>
-            </div>
-            <EditButton field="quien_revisa" onEdit={setEditingField} />
+          <div className="detail-summary">
+            <button
+              type="button"
+              className="detail-person"
+              aria-label={`Revisó ${row.quien_revisa}. Editar`}
+              onClick={() => setEditingField("quien_revisa")}
+            >
+              <span className="detail-avatar" aria-hidden="true">
+                {initials(row.quien_revisa)}
+              </span>
+              <span className="detail-person-copy">
+                <span>Revisó</span>
+                <strong>{row.quien_revisa}</strong>
+              </span>
+              <Pencil size={15} className="detail-edit-icon" aria-hidden="true" />
+            </button>
+            <dl className="detail-meta">
+              <div>
+                <dt>
+                  <CalendarDays size={14} aria-hidden="true" />
+                  Fecha
+                </dt>
+                <dd>{dayLabel(row.created_at.slice(0, 10), today)}</dd>
+              </div>
+              <div>
+                <dt>
+                  <Clock3 size={14} aria-hidden="true" />
+                  Hora
+                </dt>
+                <dd>{shortTime(row.created_at)}</dd>
+              </div>
+            </dl>
           </div>
-
-          <dl className="detail-meta">
-            <div>
-              <dt>Fecha</dt>
-              <dd>{dayLabel(row.created_at.slice(0, 10), today)}</dd>
-            </div>
-            <div>
-              <dt>Hora</dt>
-              <dd>{shortTime(row.created_at)}</dd>
-            </div>
-          </dl>
 
           <section className="detail-card" aria-label="Seguridad">
             <div className="detail-card-heading">
               <span className="detail-card-icon">
-                <ShieldCheck size={18} aria-hidden="true" />
+                <ShieldCheck size={17} aria-hidden="true" />
               </span>
               <h2>Seguridad</h2>
             </div>
-            <div className="detail-row">
-              <span>
-                <Lock size={16} aria-hidden="true" />
-                Caja fuerte
-              </span>
-              <div className="detail-row-value">
-                <StatusBadge value={row.caja_fuerte} />
-                <EditButton field="caja_fuerte" onEdit={setEditingField} />
-              </div>
-            </div>
-            <div className="detail-row">
-              <span>
-                <House size={16} aria-hidden="true" />
-                Movimiento
-              </span>
-              <div className="detail-row-value">
-                <strong>{row.room_move || "Sin registro"}</strong>
-                <EditButton field="room_move" onEdit={setEditingField} />
-              </div>
-            </div>
-            <div className="detail-row">
-              <span>Puertas y ventanas</span>
-              <div className="detail-row-value">
-                <strong
-                  className={
-                    puertasVentanasOk(row.puertas_ventanas)
-                      ? "tone-ok"
-                      : "tone-alert"
-                  }
-                >
-                  {row.puertas_ventanas ?? "Sin registro"}
-                </strong>
-                <EditButton field="puertas_ventanas" onEdit={setEditingField} />
-              </div>
+            <div className="detail-rows">
+              <DetailRow
+                icon={Lock}
+                label="Caja fuerte"
+                field="caja_fuerte"
+                valueText={describeValue(row.caja_fuerte).text}
+                onEdit={setEditingField}
+              >
+                {row.caja_fuerte?.trim() ? (
+                  <StatusBadge value={row.caja_fuerte} />
+                ) : (
+                  <span className="detail-value is-empty">Sin registro</span>
+                )}
+              </DetailRow>
+              <DetailRow
+                icon={ArrowRightLeft}
+                label="Movimiento"
+                field="room_move"
+                valueText={describeValue(row.room_move).text}
+                onEdit={setEditingField}
+              >
+                <DetailValue value={row.room_move} />
+              </DetailRow>
+              <DetailRow
+                icon={DoorClosed}
+                label="Puertas y ventanas"
+                field="puertas_ventanas"
+                valueText={describeValue(row.puertas_ventanas).text}
+                onEdit={setEditingField}
+              >
+                <DoorsValue value={row.puertas_ventanas} />
+              </DetailRow>
             </div>
           </section>
 
           <section className="detail-card" aria-label="Electrónicos">
             <div className="detail-card-heading">
               <span className="detail-card-icon">
-                <Tv size={18} aria-hidden="true" />
+                <Tv size={17} aria-hidden="true" />
               </span>
               <h2>Electrónicos</h2>
             </div>
-            {ELECTRONIC_FIELDS.map((field) => (
-              <div className="detail-row" key={field.key}>
-                <span>{field.label}</span>
-                <div className="detail-row-value">
-                  <FieldValue value={row[field.key] || "Sin registro"} />
-                  <EditButton field={field.key} onEdit={setEditingField} />
-                </div>
-              </div>
-            ))}
+            <div className="detail-tiles">
+              {ELECTRONIC_FIELDS.map((field) => (
+                <DetailTile
+                  key={field.key}
+                  label={field.label}
+                  field={field.key}
+                  value={row[field.key]}
+                  onEdit={setEditingField}
+                />
+              ))}
+            </div>
           </section>
 
           <section className="detail-card" aria-label="Equipamiento">
             <div className="detail-card-heading">
               <span className="detail-card-icon">
-                <Package size={18} aria-hidden="true" />
+                <Package size={17} aria-hidden="true" />
               </span>
               <h2>Equipamiento</h2>
             </div>
-            {EQUIPMENT_FIELDS.map((field) => (
-              <div className="detail-row" key={field.key}>
-                <span>{field.label}</span>
-                <div className="detail-row-value">
-                  <FieldValue value={row[field.key] || "Sin registro"} />
-                  <EditButton field={field.key} onEdit={setEditingField} />
-                </div>
-              </div>
-            ))}
+            <div className="detail-tiles">
+              {EQUIPMENT_FIELDS.map((field) => (
+                <DetailTile
+                  key={field.key}
+                  label={field.label}
+                  field={field.key}
+                  value={row[field.key]}
+                  onEdit={setEditingField}
+                />
+              ))}
+            </div>
           </section>
 
           <section className="detail-card" aria-label="Notas">
             <div className="detail-card-heading">
               <span className="detail-card-icon">
-                <NotebookPen size={18} aria-hidden="true" />
+                <NotebookPen size={17} aria-hidden="true" />
               </span>
               <h2>Notas de revisión</h2>
               <EditButton field="notas" onEdit={setEditingField} />
             </div>
-            <p className="detail-notes">{row.notas || "Sin notas"}</p>
+            <p className={`detail-notes${row.notas ? "" : " is-empty"}`}>
+              {row.notas || "Sin notas"}
+            </p>
           </section>
 
           <section className="detail-card" aria-label="Historial de ediciones">
             <div className="detail-card-heading">
               <span className="detail-card-icon">
-                <History size={18} aria-hidden="true" />
+                <History size={17} aria-hidden="true" />
               </span>
               <h2>Historial de ediciones</h2>
+              {history.length > 0 && <span className="detail-card-count">{history.length}</span>}
             </div>
             {historyLoading && history.length === 0 ? (
               <p className="detail-history-status" role="status">Cargando historial…</p>
@@ -508,12 +637,13 @@ export function RevisionDetailScreen() {
                     </p>
                     <p className="detail-history-field">{item.label}</p>
                     <p className="detail-history-change">
-                      <span>
-                        <span className="detail-history-dir">Antes</span>
+                      <span className="is-before">
+                        <span className="sr-only">Antes: </span>
                         {displayAuditValue(item.previous)}
                       </span>
-                      <span>
-                        <span className="detail-history-dir">Ahora</span>
+                      <ArrowRight size={14} className="detail-history-arrow" aria-hidden="true" />
+                      <span className="is-after">
+                        <span className="sr-only">Ahora: </span>
                         {displayAuditValue(item.next)}
                       </span>
                     </p>
@@ -529,9 +659,10 @@ export function RevisionDetailScreen() {
           <section className="detail-card" aria-label="Notas adicionales">
             <div className="detail-card-heading">
               <span className="detail-card-icon">
-                <NotebookPen size={18} aria-hidden="true" />
+                <MessageSquareText size={17} aria-hidden="true" />
               </span>
               <h2>Notas adicionales</h2>
+              {notes.length > 0 && <span className="detail-card-count">{notes.length}</span>}
             </div>
             {notes.length === 0 ? (
               notesError ? null : !online ? (
@@ -549,6 +680,17 @@ export function RevisionDetailScreen() {
               <ol className="detail-notes-list">
                 {notes.map((note) => (
                   <li key={note.id} className="detail-note-item">
+                    <p className="detail-note-meta">
+                      <span className="detail-avatar is-small" aria-hidden="true">
+                        {note.usuario ? initials(note.usuario) : "?"}
+                      </span>
+                      <strong>{note.usuario || "Sin usuario"}</strong>
+                      <span>
+                        {note.createdAt
+                          ? `${dayLabel(note.createdAt.slice(0, 10), today)} · ${shortTime(note.createdAt)}`
+                          : "Sin fecha"}
+                      </span>
+                    </p>
                     <p className="detail-note-text">{note.nota}</p>
                     {note.imagen ? (
                       <div className="detail-note-media">
@@ -558,14 +700,6 @@ export function RevisionDetailScreen() {
                         />
                       </div>
                     ) : null}
-                    <p className="detail-note-meta">
-                      <strong>{note.usuario || "Sin usuario"}</strong>
-                      <span>
-                        {note.createdAt
-                          ? `${dayLabel(note.createdAt.slice(0, 10), today)} · ${shortTime(note.createdAt)}`
-                          : "Sin fecha"}
-                      </span>
-                    </p>
                   </li>
                 ))}
               </ol>
@@ -594,7 +728,7 @@ export function RevisionDetailScreen() {
             ) : null}
             <button
               type="button"
-              className="secondary-button detail-note-add"
+              className="detail-note-add"
               onClick={() => {
                 setNoteMessage(null);
                 setNoteSheetOpen(true);
@@ -604,17 +738,25 @@ export function RevisionDetailScreen() {
               Agregar nota
             </button>
             {noteMessage && noteMessage.revisionId === notesState.revisionId ? (
-              <p className="detail-note-feedback" role="status">{noteMessage.text}</p>
+              <p className="detail-note-feedback" role="status">
+                <Check size={14} strokeWidth={2.6} aria-hidden="true" />
+                {noteMessage.text}
+              </p>
             ) : null}
           </section>
-
-          <p className="copy-feedback" role="status">
-            {copyMessage}
-          </p>
         </div>
       </div>
+      <p className="sr-only" role="status">
+        {copyMessage}
+      </p>
+      {copyMessage ? (
+        <p className="copy-feedback" aria-hidden="true">
+          {copyMessage}
+        </p>
+      ) : null}
       {editingField ? (
         <RevisionEditSheet
+          key={editingField}
           revisionId={row.id}
           field={editingField}
           onClose={() => setEditingField(null)}

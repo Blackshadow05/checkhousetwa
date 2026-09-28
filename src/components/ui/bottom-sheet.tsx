@@ -1,26 +1,57 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { preserveKeyboardFocus } from "@/lib/keyboard-focus";
+
+const EXIT_MS = 260;
 
 export function BottomSheet({
   open,
   onClose,
+  onExited,
   title,
   children,
 }: {
   open: boolean;
   onClose: () => void;
+  onExited?: () => void;
   title: string;
   children: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const exited = useRef(onExited);
+  const [closing, setClosing] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+  const [content, setContent] = useState<ReactNode>(open ? children : null);
+
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    setClosing(!open);
+  }
+  if (open && content !== children) setContent(children);
+
+  useEffect(() => {
+    exited.current = onExited;
+  }, [onExited]);
+
   useEffect(() => {
     const element = dialog.current;
-    if (open && !element?.open) element?.showModal();
-    if (!open && element?.open) element.close();
-  }, [open]);
+    if (!element) return;
+    if (open) {
+      if (!element.open) element.showModal();
+      return;
+    }
+    if (!closing) return;
+    const animate = element.open && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timer = window.setTimeout(() => {
+      if (element.open) element.close();
+      setClosing(false);
+      setContent(null);
+      exited.current?.();
+    }, animate ? EXIT_MS : 0);
+    return () => window.clearTimeout(timer);
+  }, [open, closing]);
 
   useEffect(() => {
     const element = dialog.current;
@@ -85,10 +116,16 @@ export function BottomSheet({
     <dialog
       ref={dialog}
       className="bottom-sheet"
+      data-closing={closing || undefined}
       aria-label={title}
       onMouseDown={preserveKeyboardFocus}
-      onCancel={onClose}
-      onClose={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClose={() => {
+        if (open) onClose();
+      }}
       onClick={(event) => {
         if (event.target !== event.currentTarget) return;
         const bounds = event.currentTarget.getBoundingClientRect();
@@ -112,7 +149,7 @@ export function BottomSheet({
           <X size={21} />
         </button>
       </div>
-      <div className="sheet-body">{children}</div>
+      <div className="sheet-body">{open ? children : content}</div>
     </dialog>
   );
 }

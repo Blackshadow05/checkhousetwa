@@ -1,5 +1,37 @@
-export const ESTADOS_PANTALLA = ["defectuosa", "en buen estado", "no hay pantalla"] as const;
-export type PantallaFoto = { url: string; ubicacion: string; estado: string };
+export const ESTADOS_PANTALLA = ["en buen estado", "moderada", "grave", "defectuosa", "no hay pantalla"] as const;
+export type PantallaEstado = (typeof ESTADOS_PANTALLA)[number];
+export type PantallaFoto = { url: string; ubicacion: string; estado: string; puntos?: number | null };
+export const ESTADO_PANTALLA_LABELS: Record<PantallaEstado, string> = {
+  "en buen estado": "En buen estado",
+  moderada: "Estado moderado",
+  grave: "Estado grave",
+  defectuosa: "Otro daño",
+  "no hay pantalla": "No hay pantalla",
+};
+
+export function estadoPorPuntos(puntos: number): PantallaEstado {
+  return puntos === 0 ? "en buen estado" : puntos <= 8 ? "moderada" : "grave";
+}
+
+type FotoConPuntos = Pick<PantallaFoto, "ubicacion" | "estado" | "puntos">;
+export function notasDePantallas(fotos: FotoConPuntos[]): string {
+  return fotos.filter(f => f.ubicacion && f.estado && f.estado !== "en buen estado" && f.estado !== "no hay pantalla")
+    .map(f => typeof f.puntos === "number" && f.puntos > 0
+      ? `Pantalla ${f.ubicacion} tiene ${f.puntos} ${f.puntos === 1 ? "punto" : "puntos"}`
+      : `Pantalla ${f.ubicacion} tiene daño (${ESTADO_PANTALLA_LABELS[f.estado as PantallaEstado] || f.estado})`)
+    .join(". ");
+}
+
+/** Only replace the generated portion; preserve notes the user has written. */
+export function actualizarNotasPantallas(notas: string, anteriores: FotoConPuntos[], siguientes: FotoConPuntos[]) {
+  const anterior = notasDePantallas(anteriores);
+  const siguiente = notasDePantallas(siguientes);
+  if (anterior === siguiente) return notas;
+  if (!anterior) return [siguiente, notas].filter(Boolean).join("\n");
+  if (notas.includes(anterior)) return notas.replace(anterior, siguiente).trim();
+  // A manually rewritten summary belongs to the user. Do not duplicate or erase it.
+  return notas;
+}
 export type PantallaReport = {
   id: number; nombre_usuario: string; fecha_hora: string; numero_casita: number | null;
   fotos: PantallaFoto[]; notas: string | null; tipo?: "reporte" | "movimiento";
@@ -47,6 +79,7 @@ export function validarPantalla(input: PantallaInput): string | null {
     if (!rooms.length || !input.fotos.length || input.fotos.length > rooms.length) return "Elige una casita y agrega al menos una foto, una por habitación.";
     if (new Set(input.fotos.map(f => f?.ubicacion)).size !== input.fotos.length) return "No repitas habitaciones en las fotos.";
     if (input.fotos.some(f => !f || !rooms.includes(f.ubicacion) || !(ESTADOS_PANTALLA as readonly string[]).includes(f.estado) || typeof f.url !== "string")) return "Elige la habitación y el estado de cada foto.";
+    if (input.fotos.some(f => f.puntos != null && (!Number.isSafeInteger(f.puntos) || f.puntos < 0 || f.puntos > 999))) return "Revisa la cantidad de puntos de cada pantalla.";
   }
   return null;
 }

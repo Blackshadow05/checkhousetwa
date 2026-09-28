@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { discardUpload } from "@/lib/revision-evidence-upload";
-import { newRevisionDraft, type RevisionDraft } from "@/lib/revision-form";
+import { newRevisionDraft, type RevisionDraft, type RevisionMode } from "@/lib/revision-form";
 
 const DRAFT_KEY = "new-revision-draft-v1";
 type Snapshot = { id: typeof DRAFT_KEY; draft: RevisionDraft | null };
@@ -12,7 +12,7 @@ function isFormRoute() {
   return new URLSearchParams(window.location.search).get("nueva") === "1";
 }
 
-export function useRevisionDraft(open: boolean) {
+export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
   const [draft, setDraft] = useState<RevisionDraft | null>(null);
   const [storage, setStorage] = useState<"loading" | "idle" | "saving" | "saved" | "error">("loading");
   const current = useRef<RevisionDraft | null>(null);
@@ -25,6 +25,11 @@ export function useRevisionDraft(open: boolean) {
     restoreOnOpen.current = isFormRoute();
   }
   const wasOpen = useRef(open);
+  const modeRef = useRef(mode);
+
+  useLayoutEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   const persist = useCallback((next: RevisionDraft | null) => {
     if (!storageAvailable.current) {
@@ -52,7 +57,7 @@ export function useRevisionDraft(open: boolean) {
   const beginFresh = useCallback(() => {
     generation.current += 1;
     discardPhotos(current.current?.photos);
-    const next = newRevisionDraft();
+    const next = newRevisionDraft(modeRef.current);
     current.current = next;
     setDraft(next);
     void persist(next);
@@ -78,14 +83,14 @@ export function useRevisionDraft(open: boolean) {
         setStorage("saved");
         return;
       }
-      current.current = newRevisionDraft();
+      current.current = newRevisionDraft(modeRef.current);
       setDraft(current.current);
       setStorage("idle");
       if (saved?.draft) void persist(null);
     }).catch(() => {
       if (cancelled || gen !== generation.current) return;
       storageAvailable.current = false;
-      current.current = newRevisionDraft();
+      current.current = newRevisionDraft(modeRef.current);
       setDraft(current.current);
       setStorage("error");
     });

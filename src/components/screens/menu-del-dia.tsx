@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronRight, UtensilsCrossed } from "lucide-react";
 import { fetchInicioMenus } from "@/app/actions/menus";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -46,6 +46,7 @@ export function MenuDelDia({
       today,
   );
   const persisted = useRef(false);
+  const titleId = useId();
 
   if (previousInitial.menus !== initialMenus || previousInitial.error !== initialError) {
     setPreviousInitial({ menus: initialMenus, error: initialError });
@@ -131,13 +132,17 @@ export function MenuDelDia({
 
   if (menus.length === 0) {
     return (
-      <section className={styles.board} aria-label="Menú del día">
+      <section className={styles.board} aria-labelledby={titleId}>
         <div className={styles.sectionHeading}>
-          <UtensilsCrossed size={20} aria-hidden="true" />
-          <h2>Menú del día</h2>
+          <h2 id={titleId}>Menú del día</h2>
         </div>
         <div className={styles.card}>
-          <div className={styles.empty}><h3>{error ? "Menú no disponible" : "Sin menú para hoy"}</h3></div>
+          <div className={styles.empty}>
+            <span className={styles.emptyIcon}>
+              <UtensilsCrossed size={20} aria-hidden="true" />
+            </span>
+            <p>{error ? "Menú no disponible" : "Sin menú para hoy"}</p>
+          </div>
         </div>
       </section>
     );
@@ -145,26 +150,44 @@ export function MenuDelDia({
 
   const featured = todayMenu ?? upcoming[0] ?? null;
   if (!featured) return null;
+  const dishCount = featured.comidas.length;
 
   return (
-    <>
+    <section className={styles.board} aria-labelledby={titleId}>
+      <div className={styles.sectionHeading}>
+        <h2 id={titleId}>{todayMenu ? "Menú del día" : "Próximo menú"}</h2>
+      </div>
       <button
         type="button"
-        className={`${styles.card} ${styles.menuButton}`}
+        className={`${styles.card} ${styles.menuCard}`}
         onClick={openMenus}
+        aria-haspopup="dialog"
         aria-label={
           todayMenu
             ? `Menú de hoy, ${todayMenu.comidas.join(", ") || "sin platos"}. Ver menús de los siguientes días`
             : `Menú del ${menuDateHeading(featured.fecha)}. Ver menús`
         }
       >
-        <div className={styles.sectionHeading}>
-          <UtensilsCrossed size={20} aria-hidden="true" />
-          <h2>{todayMenu ? "Menú del día" : "Próximo menú"}</h2>
-          <ChevronRight size={19} aria-hidden="true" />
-        </div>
-        {!todayMenu && <h3 className={styles.menuDate}>{menuDateHeading(featured.fecha)}</h3>}
-        <MenuDishes comidas={featured.comidas} />
+        <span className={styles.menuTop}>
+          <span className={styles.iconTile}>
+            <UtensilsCrossed size={20} aria-hidden="true" />
+          </span>
+          <span className={styles.menuTitle}>
+            <strong>{todayMenu ? "Hoy" : menuDateHeading(featured.fecha)}</strong>
+            <span>
+              {dishCount === 0 ? "Sin platos" : dishCount === 1 ? "1 plato" : `${dishCount} platos`}
+              {menus.length > 1 ? " · Ver otros días" : ""}
+            </span>
+          </span>
+          <ChevronRight size={20} className={styles.chevron} aria-hidden="true" />
+        </span>
+        {dishCount > 0 && (
+          <span className={styles.dishes}>
+            {featured.comidas.map((dish) => (
+              <span key={dish}>{dish}</span>
+            ))}
+          </span>
+        )}
       </button>
 
       <BottomSheet
@@ -192,6 +215,6 @@ export function MenuDelDia({
           </div>
         )}
       </BottomSheet>
-    </>
+    </section>
   );
 }

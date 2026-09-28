@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "public/sw.js",
     "public/swe-worker*.js",
+    "public/opencv/**",
+    "public/articulos/**",
+    ".playwright-mcp/**",
+    ".pnpm-store/**",
   ]),
 ]);
 

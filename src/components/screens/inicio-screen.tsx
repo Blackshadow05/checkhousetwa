@@ -1,18 +1,64 @@
 "use client";
 
-import { ChevronRight, Clock3, LogIn } from "lucide-react";
-import { LoginForm } from "@/components/auth/login-form";
-import { useOnline } from "@/lib/use-online";
-import { useEffect, useRef, useState } from "react";
+import {
+  Check,
+  ChevronRight,
+  CloudOff,
+  House,
+  LoaderCircle,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  WifiOff,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fetchLatestRevisionCasita } from "@/app/actions/revisiones";
+import { LoginForm } from "@/components/auth/login-form";
 import { HoyCasitas } from "@/components/screens/hoy-casitas";
 import { MenuDelDia } from "@/components/screens/menu-del-dia";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { casitasSinRevision } from "@/lib/casitas-sin-revision";
-import { casitaNumber } from "@/lib/revisiones-display";
+import { menuDateHeading } from "@/lib/menus";
+import { casitaNumber, groupHoyCasitas, initials } from "@/lib/revisiones-display";
+import { useOnline } from "@/lib/use-online";
+import { usePullToRefresh } from "@/lib/use-pull-to-refresh";
 import type { MenuDelDia as MenuDelDiaRow } from "@/types/database";
 import styles from "./inicio-screen.module.css";
+
+export type InicioAccount = {
+  nombre: string;
+  rol?: string | null;
+  loggingOut: boolean;
+  error: string;
+  onLogout: () => void;
+};
+
+const DAY_OPTIONS = [3, 7];
+
+const ROLE_LABELS: Record<string, string> = {
+  user: "Usuario",
+  admin: "Administrador",
+  SuperAdmin: "Superadministrador",
+};
+
+function subscribeClock(callback: () => void) {
+  const timer = window.setInterval(callback, 60_000);
+  return () => window.clearInterval(timer);
+}
+
+function greetingNow() {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      hourCycle: "h23",
+      timeZone: "America/Costa_Rica",
+    }).format(new Date()),
+  );
+  if (hour >= 5 && hour < 12) return "Buenos días";
+  if (hour >= 12 && hour < 19) return "Buenas tardes";
+  return "Buenas noches";
+}
 
 export function PublicInicioScreen({
   menus, menusError, today, onSuccess,
@@ -24,28 +70,63 @@ export function PublicInicioScreen({
 }) {
   const online = useOnline();
   const [loginOpen, setLoginOpen] = useState(false);
+  const signedIn = useRef<{ id: number; nombre: string } | null>(null);
   return (
-    <section className={styles.screen} aria-label="Inicio">
-      <header className={styles.heading}><h1>Inicio</h1></header>
-      <div className={styles.card}>
-        <p>Consulta el menú sin iniciar sesión. Para ver revisiones y otras herramientas, ingresa a tu cuenta.</p>
+    <>
+      <main className="app-main">
+        <div className="app-screen">
+          <section className={styles.screen} aria-label="Inicio">
+            <header className={`${styles.hero} ${styles.welcome}`}>
+              <span className={styles.welcomeMark} aria-hidden="true">
+                <House size={26} strokeWidth={1.7} />
+              </span>
+              <time dateTime={today}>{menuDateHeading(today)}</time>
+              <h1>Tus casitas, al día</h1>
+              <p>Consulta el menú sin iniciar sesión. Ingresa a tu cuenta para ver las revisiones y las herramientas del equipo.</p>
+            </header>
+            <MenuDelDia initialMenus={menus} initialError={menusError} today={today} online={online} />
+          </section>
+        </div>
+      </main>
+      <div className={styles.actionBar}>
+        {!online && (
+          <p className={styles.actionNote} role="status">
+            <WifiOff size={15} aria-hidden="true" /> Necesitas conexión para iniciar sesión.
+          </p>
+        )}
         <button type="button" className={styles.loginButton} onClick={() => setLoginOpen(true)} aria-haspopup="dialog">
           <LogIn size={20} aria-hidden="true" /> Iniciar sesión
         </button>
-        {!online && <p role="status">Necesitas conexión para iniciar sesión.</p>}
       </div>
-      <MenuDelDia initialMenus={menus} initialError={menusError} today={today} online={online} />
-      <BottomSheet open={loginOpen} onClose={() => setLoginOpen(false)} title="Iniciar sesión">
-        {loginOpen && <LoginForm online={online} variant="sheet" onSuccess={onSuccess} />}
+      <BottomSheet
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        onExited={() => {
+          if (signedIn.current) onSuccess(signedIn.current);
+        }}
+        title="Iniciar sesión"
+      >
+        {loginOpen && (
+          <LoginForm
+            online={online}
+            variant="sheet"
+            onSuccess={(user) => {
+              signedIn.current = user;
+              setLoginOpen(false);
+            }}
+          />
+        )}
       </BottomSheet>
-    </section>
+    </>
   );
 }
 
 export function InicioScreen({
+  account,
   menus = [],
   menusError = null,
 }: {
+  account: InicioAccount;
   menus?: MenuDelDiaRow[];
   menusError?: string | null;
 }) {
@@ -62,12 +143,30 @@ export function InicioScreen({
     selectedRevision,
   } = useRevisiones();
   const [showAll, setShowAll] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [days, setDays] = useState(7);
   const [opening, setOpening] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const openingRef = useRef<number | null>(null);
   const fromSheet = useRef(false);
+  const screenRef = useRef<HTMLElement>(null);
+  const pullRef = useRef<HTMLDivElement>(null);
+  const greeting = useSyncExternalStore(subscribeClock, greetingNow, greetingNow);
+  const groups = useMemo(
+    () => groupHoyCasitas(revisiones, today, upsells),
+    [revisiones, today, upsells],
+  );
+  const totalHoy = groups.reduce((sum, group) => sum + group.rows.length, 0);
   const pendientes = casitasSinRevision(revisionActivity, today, days);
+  const firstName = account.nombre.trim().split(/\s+/)[0] || account.nombre;
+  const rol = account.rol?.trim();
+
+  usePullToRefresh(
+    screenRef,
+    pullRef,
+    useCallback(() => refresh({ force: true }), [refresh]),
+    refreshing,
+  );
 
   useEffect(() => {
     if (selectedRevision || !fromSheet.current) return;
@@ -132,22 +231,40 @@ export function InicioScreen({
           aria-label={`Ver última revisión de Casita ${number}`}
           onClick={() => void openLatestRevision(Number(number))}
         >
-          {number}
+          {opening === Number(number) ? (
+            <LoaderCircle size={18} className="auth-spinner" aria-hidden="true" />
+          ) : (
+            number
+          )}
         </button>
       </li>
     ));
 
   return (
-    <section className={styles.screen} aria-label="Inicio">
-      <header className={styles.heading}>
-        <h1>Inicio</h1>
-        <time dateTime={today}>
-          {new Intl.DateTimeFormat("es-CR", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-          }).format(new Date(`${today}T12:00:00`))}
-        </time>
+    <section ref={screenRef} className={styles.screen} aria-label="Inicio">
+      <div ref={pullRef} className={styles.pull} data-state="idle" aria-hidden="true">
+        <span>
+          <RefreshCw size={18} strokeWidth={2.2} />
+        </span>
+      </div>
+      <header className={styles.hero}>
+        <div className={styles.heroTop}>
+          <div className={styles.heroCopy}>
+            <time dateTime={today}>{menuDateHeading(today)}</time>
+            <h1>
+              {greeting}, {firstName}
+            </h1>
+          </div>
+          <button
+            type="button"
+            className={styles.avatar}
+            onClick={() => setAccountOpen(true)}
+            aria-haspopup="dialog"
+            aria-label={`Cuenta de ${account.nombre}`}
+          >
+            {initials(account.nombre)}
+          </button>
+        </div>
       </header>
       <MenuDelDia
         initialMenus={menus}
@@ -155,46 +272,70 @@ export function InicioScreen({
         today={today}
         online={online}
       />
-      <HoyCasitas />
-      <section className={styles.board} aria-labelledby="pending-casitas-title">
+      <HoyCasitas groups={groups} total={totalHoy} />
+      <section id="pending-casitas" className={styles.board} aria-labelledby="pending-casitas-title">
         <div className={styles.sectionHeading}>
-          <Clock3 size={20} className={styles.pendingIcon} aria-hidden="true" />
-          <h2 id="pending-casitas-title">Más de {days} días sin revisión</h2>
-          {pendientes !== null && <span className={styles.pendingCount}>{pendientes.length}</span>}
+          <h2 id="pending-casitas-title">Sin revisión</h2>
+          <div className={styles.segmented} role="group" aria-label="Días sin revisión">
+            {DAY_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={days === option}
+                onClick={() => setDays(option)}
+              >
+                {option} días
+              </button>
+            ))}
+          </div>
         </div>
         <div className={styles.card}>
-          <label className={styles.daysSelect}>
-            <select
-              aria-label="Días sin revisión"
-              value={days}
-              onChange={(event) => setDays(Number(event.target.value))}
-            >
-              <option value={3}>3 días</option>
-              <option value={7}>7 días</option>
-            </select>
-          </label>
           {pendientes === null ? (
-            <div className={styles.empty} role="status">
-              <h3>{refreshing ? "Actualizando" : online ? "No disponible" : "Sin datos guardados"}</h3>
-              {online && <button className={styles.textButton} type="button" disabled={refreshing} onClick={() => void refresh()}>Reintentar</button>}
-            </div>
+            refreshing ? (
+              <div className={styles.skeletonGrid} role="status" aria-label="Actualizando">
+                {Array.from({ length: 10 }, (_, index) => <span key={index} />)}
+              </div>
+            ) : (
+              <div className={styles.empty} role="status">
+                <span className={styles.emptyIcon}>
+                  <CloudOff size={20} aria-hidden="true" />
+                </span>
+                <p>{online ? "No disponible por ahora" : "Sin datos guardados"}</p>
+                {online && (
+                  <button className={styles.textButton} type="button" onClick={() => void refresh()}>
+                    Reintentar
+                  </button>
+                )}
+              </div>
+            )
           ) : (
             <>
-              {(!online || activityError) && <span className={styles.savedStatus} role="status">Sin actualizar</span>}
+              {(!online || activityError) && (
+                <p className={styles.savedStatus} role="status">Mostrando datos guardados</p>
+              )}
               {pendientes.length === 0 ? (
-                <div className={styles.empty}><h3>Todas al día</h3></div>
+                <div className={styles.empty}>
+                  <span className={`${styles.emptyIcon} ${styles.emptyOk}`}>
+                    <Check size={20} aria-hidden="true" />
+                  </span>
+                  <p>Todas las casitas están al día</p>
+                </div>
               ) : (
                 <>
+                  <p className={styles.hint}>Toca una casita para abrir su última revisión.</p>
                   <ul className={styles.pendingGrid} aria-label="Casitas sin revisión reciente">
                     {pendingItems(pendientes.slice(0, 10))}
                   </ul>
-                  {notice && <span className={styles.savedStatus} role="status">{notice}</span>}
+                  {notice && <p className={styles.notice} role="status">{notice}</p>}
                 </>
               )}
               {pendientes.length > 10 && (
                 <button className={styles.showAll} type="button" aria-haspopup="dialog" onClick={() => setShowAll(true)}>
-                  Ver todas ({pendientes.length})
-                  <ChevronRight size={18} aria-hidden="true" />
+                  Ver todas
+                  <span>
+                    {pendientes.length}
+                    <ChevronRight size={18} aria-hidden="true" />
+                  </span>
                 </button>
               )}
             </>
@@ -207,6 +348,35 @@ export function InicioScreen({
             {pendingItems(pendientes)}
           </ul>
         )}
+      </BottomSheet>
+      <BottomSheet open={accountOpen} onClose={() => setAccountOpen(false)} title="Cuenta">
+        <div className={styles.accountProfile}>
+          <span className={styles.avatarLarge} aria-hidden="true">
+            {initials(account.nombre)}
+          </span>
+          <div>
+            <strong>{account.nombre}</strong>
+            <span>{(rol && ROLE_LABELS[rol]) || "Sesión iniciada"}</span>
+          </div>
+        </div>
+        {account.error && (
+          <p className={`auth-error ${styles.accountError}`} role="alert">
+            {account.error}
+          </p>
+        )}
+        <button
+          type="button"
+          className={styles.logoutButton}
+          disabled={account.loggingOut}
+          onClick={account.onLogout}
+        >
+          {account.loggingOut ? (
+            <LoaderCircle size={19} className="auth-spinner" aria-hidden="true" />
+          ) : (
+            <LogOut size={19} aria-hidden="true" />
+          )}
+          {account.loggingOut ? "Cerrando sesión" : "Cerrar sesión"}
+        </button>
       </BottomSheet>
     </section>
   );

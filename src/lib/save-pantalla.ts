@@ -15,7 +15,7 @@ async function adjust(client: Client, location: string, room: string, quantity: 
   if (write.error) throw write.error;
 }
 export async function savePantalla(client: Client, input: PantallaInput, name: string, time: string): Promise<PantallaSaveResult> {
-  const record: Omit<PantallaReport, "id"> = { tipo: input.tipo, numero_casita: input.numero_casita, fotos: input.fotos.map(f => ({ url: f.url, ubicacion: f.ubicacion, estado: f.estado })), notas: input.notas,
+  const record: Omit<PantallaReport, "id"> = { tipo: input.tipo, numero_casita: input.numero_casita, fotos: input.fotos.map(f => ({ url: f.url, ubicacion: f.ubicacion, estado: f.estado, ...(f.puntos != null ? { puntos: f.puntos } : {}) })), notas: input.notas,
     origen_ubicacion: input.origen_ubicacion, origen_habitacion: input.origen_habitacion, destino_ubicacion: input.destino_ubicacion, destino_habitacion: input.destino_habitacion, nombre_usuario: name, fecha_hora: time };
   if (record.tipo === "movimiento") {
     record.numero_casita = CASITAS.includes(record.origen_ubicacion!) ? Number(record.origen_ubicacion) : CASITAS.includes(record.destino_ubicacion!) ? Number(record.destino_ubicacion) : null;

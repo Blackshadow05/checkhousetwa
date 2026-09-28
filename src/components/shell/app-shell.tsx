@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { currentUsuario, logoutUsuario } from "@/app/actions/usuarios";
-import { PublicInicioScreen } from "@/components/screens/inicio-screen";
+import { House } from "lucide-react";
+import { InicioScreen, PublicInicioScreen, type InicioAccount } from "@/components/screens/inicio-screen";
 import { BottomNavigation } from "@/components/shell/bottom-navigation";
 import { Fab, NewRevisionFab } from "@/components/shell/fab";
 import { Header } from "@/components/shell/header";
 import { AppNavigationProvider } from "@/components/shell/navigation-context";
-import { InicioScreen } from "@/components/screens/inicio-screen";
 import { RevisionDetailScreen } from "@/components/screens/revision-detail-screen";
 import { RevisionFormScreen } from "@/components/screens/revision-form-screen";
 import { RevisionShareSheet } from "@/components/screens/revision-share-sheet";
@@ -21,11 +21,12 @@ import {
 } from "@/components/screens/revisiones-provider";
 import { useAppNavigation } from "@/lib/navigation/use-app-navigation";
 import { SCREEN_ORDER, SCREENS, type ScreenId } from "@/lib/navigation/screens";
-import type { InicioRevisionRow, MenuDelDia } from "@/types/database";
+import type { InicioRevisionRow, MenuDelDia, UsuarioShell } from "@/types/database";
 import type { RevisionActivity } from "@/lib/casitas-sin-revision";
+import type { RevisionMode } from "@/lib/revision-form";
 
 type AppShellProps = {
-  initialUser?: { id: number; nombre: string } | null;
+  initialUser?: UsuarioShell | null;
   initialScreen: ScreenId;
   revisionesInicio: InicioRevisionRow[];
   revisionesError: string | null;
@@ -42,18 +43,29 @@ function AppShellFrame({
   menusInicio,
   menusError,
   account,
+  session,
+  entering,
+  onEntered,
 }: {
-  account: React.ReactNode;
+  entering: boolean;
+  onEntered: () => void;
+  account: InicioAccount;
   navigation: ReturnType<typeof useAppNavigation>;
   menusInicio: MenuDelDia[];
   menusError: string | null;
+  session: UsuarioShell;
 }) {
   const { selectedRevision, acceptRevision } = useRevisiones();
   const [formOpen, setFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<RevisionMode>("manual");
   const [shareEvidence, setShareEvidence] = useState<{ casita: string; files: File[] } | null>(null);
   const formVisible = formOpen && navigation.screen === "revisiones";
   useLayoutEffect(() => {
-    const syncForm = () => setFormOpen(new URL(window.location.href).searchParams.get("nueva") === "1");
+    const syncForm = () => {
+      const params = new URL(window.location.href).searchParams;
+      setFormOpen(params.get("nueva") === "1");
+      setFormMode(params.get("modo") === "reconocimiento" ? "reconocimiento" : "manual");
+    };
     syncForm();
     window.addEventListener("popstate", syncForm);
     window.addEventListener("casitas:navigate", syncForm);
@@ -62,10 +74,13 @@ function AppShellFrame({
       window.removeEventListener("casitas:navigate", syncForm);
     };
   }, [navigation.screen]);
-  const openForm = () => {
+  const openForm = (mode: RevisionMode) => {
     const url = new URL(window.location.href);
     url.searchParams.set("nueva", "1");
+    if (mode === "reconocimiento") url.searchParams.set("modo", mode);
+    else url.searchParams.delete("modo");
     window.history.pushState({ ...window.history.state, casitaForm: true }, "", url);
+    setFormMode(mode);
     setFormOpen(true);
   };
   const closeForm = useCallback(() => {
@@ -75,6 +90,7 @@ function AppShellFrame({
       if (window.history.state?.casitaForm) window.history.back();
       else {
         url.searchParams.delete("nueva");
+        url.searchParams.delete("modo");
         window.history.replaceState(window.history.state, "", url);
       }
     }
@@ -87,9 +103,9 @@ function AppShellFrame({
     {},
   );
   const screens = {
-    otros: <OtrosScreen active={navigation.screen === "otros"} />,
+    otros: <OtrosScreen active={navigation.screen === "otros"} session={session} />,
     inicio: (
-      <>{account}<InicioScreen menus={menusInicio} menusError={menusError} /></>
+      <InicioScreen account={account} menus={menusInicio} menusError={menusError} />
     ),
     revisiones: <RevisionesScreen />,
     sync: <SyncScreen />,
@@ -99,8 +115,11 @@ function AppShellFrame({
   return (
     <div className={`app-shell${formVisible ? " is-creating-revision" : ""}`}>
       <div
-        className="app-shell-frame"
+        className={`app-shell-frame${entering ? " is-session-entering" : ""}`}
         inert={detailOpen ? true : undefined}
+        onAnimationEnd={(event) => {
+          if (event.target === event.currentTarget) onEntered();
+        }}
       >
         <Header />
         <main className="app-main">
@@ -127,12 +146,12 @@ function AppShellFrame({
               {screens[id]}
             </div>
           ))}
-          <RevisionFormScreen open={formVisible} onClose={closeForm} onSaved={(row, files) => {
+          <RevisionFormScreen open={formVisible} mode={formMode} reviewer={session.nombre} onClose={closeForm} onSaved={(row, files) => {
             acceptRevision(row);
             closeForm();
             if (files.length) setShareEvidence({ casita: row.casita, files });
           }} />
-          {navigation.screen === "revisiones" && !formVisible && !detailOpen && <NewRevisionFab onClick={openForm} />}
+          {navigation.screen === "revisiones" && !formVisible && !detailOpen && <NewRevisionFab onSelect={openForm} />}
           {showTop[navigation.screen] && !formVisible && !detailOpen && (
             <Fab
               onClick={() =>
@@ -178,6 +197,7 @@ export function AppShell({
   const [previousInitialUser, setPreviousInitialUser] = useState(initialUser);
   const [sessionError, setSessionError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const [entering, setEntering] = useState(false);
   const sessionGeneration = useRef(0);
 
   if (previousInitialUser !== initialUser) {
@@ -226,15 +246,22 @@ export function AppShell({
   if (!user) return (
     <div className="app-shell">
       <div className="app-shell-frame">
-        <header className="app-header"><div className="header-inner"><p className="brand-name">Casitas</p></div></header>
-        <main className="app-main"><div className="app-screen">
-          <PublicInicioScreen menus={menusInicio} menusError={menusError} today={initialDay} onSuccess={(authenticatedUser) => {
-            sessionGeneration.current += 1;
-            setUser(authenticatedUser);
-            router.refresh();
-          }} />
-        </div></main>
-        <nav className="bottom-navigation" aria-label="Navegación principal"><button type="button" className="primary-button" onClick={() => navigation.navigate("inicio")} aria-current="page">Inicio</button></nav>
+        <header className="app-header">
+          <div className="header-inner">
+            <div className="app-brand">
+              <span className="brand-mark">
+                <House size={23} strokeWidth={1.7} aria-hidden="true" />
+              </span>
+              <p className="brand-name">Casitas</p>
+            </div>
+          </div>
+        </header>
+        <PublicInicioScreen menus={menusInicio} menusError={menusError} today={initialDay} onSuccess={(authenticatedUser) => {
+          sessionGeneration.current += 1;
+          setEntering(true);
+          setUser(authenticatedUser);
+          router.refresh();
+        }} />
       </div>
     </div>
   );
@@ -250,19 +277,28 @@ export function AppShell({
         initialDay={initialDay}
       >
         <AppShellFrame
-          account={<div className="pantalla-toolbar"><span>Sesión de <strong>{user.nombre}</strong>{sessionError && <span role="alert">{sessionError}</span>}</span><button type="button" className="secondary-button" disabled={loggingOut} onClick={async () => {
-            setLoggingOut(true);
-            setSessionError("");
-            try {
-              await logoutUsuario();
-              setUser(null);
-              router.refresh();
-            } catch { setSessionError("No se pudo cerrar sesión. Vuelve a intentarlo."); }
-            finally { setLoggingOut(false); }
-          }}>Cerrar sesión</button></div>}
+          account={{
+            nombre: user.nombre,
+            rol: user.rol,
+            loggingOut,
+            error: sessionError,
+            onLogout: async () => {
+              setLoggingOut(true);
+              setSessionError("");
+              try {
+                await logoutUsuario();
+                setUser(null);
+                router.refresh();
+              } catch { setSessionError("No se pudo cerrar sesión. Vuelve a intentarlo."); }
+              finally { setLoggingOut(false); }
+            },
+          }}
           navigation={navigation}
           menusInicio={menusInicio}
           menusError={menusError}
+          session={user}
+          entering={entering}
+          onEntered={() => setEntering(false)}
         />
       </RevisionesProvider>
     </AppNavigationProvider>

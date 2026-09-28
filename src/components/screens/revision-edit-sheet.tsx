@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { editRevisionField, fetchRevisionRaw } from "@/app/actions/revisiones";
-import { currentUsuario } from "@/app/actions/usuarios";
+import { LoaderCircle } from "lucide-react";
+import { editRevisionField, fetchRevisionEditor } from "@/app/actions/revisiones";
 import { LoginForm } from "@/components/auth/login-form";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { dedupeRequest } from "@/lib/dedupe-request";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import { BOOLEAN_FIELDS, QUANTITY_LIMITS, type InventoryKey } from "@/lib/revision-form";
@@ -20,6 +21,17 @@ import {
 import { useOnline } from "@/lib/use-online";
 import type { RevisionCasitaInicio } from "@/types/database";
 
+function editorText(field: RevisionEditField, value: string | null | undefined) {
+  const text = editorValueFromRaw(value);
+  if (
+    (field === "casita" || QUANTITY_LIMITS[field as keyof typeof QUANTITY_LIMITS] !== undefined) &&
+    /^\d+$/.test(text)
+  ) {
+    return String(Number(text));
+  }
+  return text;
+}
+
 export function RevisionEditSheet({
   revisionId,
   field,
@@ -32,41 +44,46 @@ export function RevisionEditSheet({
   onSaved?: () => void;
 }) {
   const online = useOnline();
-  const { replaceRevision } = useRevisiones();
-  const [user, setUser] = useState<{ id: number; nombre: string } | null>(null);
+  const { replaceRevision, selectedRevision } = useRevisiones();
+  const [initialText] = useState(() => {
+    if (selectedRevision?.id !== revisionId) return null;
+    const local = selectedRevision[field];
+    return editorText(field, field === "caja_fuerte" && local === "—" ? null : local);
+  });
+  const [user, setUser] = useState<{ id: number; nombre: string } | null | undefined>(undefined);
+  const [attempt, setAttempt] = useState(0);
   const [checking, setChecking] = useState(true);
   const [raw, setRaw] = useState<RevisionCasitaInicio | null>(null);
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialText ?? "");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
+  const touched = useRef(false);
   const label = REVISION_EDIT_LABELS[field];
 
   useEffect(() => {
     let live = true;
-    setChecking(true);
-    setError("");
-    setRaw(null);
-    setValue("");
-    void Promise.all([fetchRevisionRaw(revisionId), currentUsuario()])
-      .then(([result, session]) => {
+    void dedupeRequest(`editor:${revisionId}`, () => fetchRevisionEditor(revisionId))
+      .then((result) => {
         if (!live) return;
+        if (!result.user && !result.error) {
+          setUser(null);
+          return;
+        }
+        setUser(result.user);
         if (result.error || !result.row) {
           setError(result.error || "No encontramos esta revisión.");
           return;
         }
-        setRaw(result.row);
-        const rawValue = result.row[field];
-        const text = editorValueFromRaw(rawValue);
-        if (
-          (field === "casita" || QUANTITY_LIMITS[field as keyof typeof QUANTITY_LIMITS] !== undefined) &&
-          /^\d+$/.test(text)
-        ) {
-          setValue(String(Number(text)));
-        } else {
-          setValue(text);
+        const fresh = editorText(field, result.row[field]);
+        if (initialText === null || fresh.trim() !== initialText.trim()) {
+          setValue(fresh);
+          if (initialText !== null && touched.current) {
+            setNotice("Este dato cambió hace un momento. Revisa el valor actual antes de guardar.");
+          }
         }
-        setUser(session);
+        setRaw(result.row);
       })
       .catch(() => {
         if (live) setError("No pudimos conectar para abrir el editor.");
@@ -77,7 +94,7 @@ export function RevisionEditSheet({
     return () => {
       live = false;
     };
-  }, [field, revisionId]);
+  }, [attempt, field, initialText, revisionId]);
 
   const expected = raw ? raw[field] ?? null : null;
 
@@ -101,20 +118,19 @@ export function RevisionEditSheet({
     saving.current = true;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      const session = await currentUsuario();
-      if (!session) {
-        setUser(null);
-        setError("Inicia sesión para guardar este cambio.");
-        return;
-      }
-      setUser(session);
       const result = await editRevisionField({
         id: revisionId,
         campo: field,
         esperado: expected,
         nuevo: persistRevisionFieldValue(field, value),
       });
+      if (result.needsLogin) {
+        setUser(null);
+        setError(result.error ?? "Inicia sesión para guardar este cambio.");
+        return;
+      }
       if (result.error || !result.row) {
         setError(result.error || "No pudimos confirmar el cambio. Conservamos el valor anterior.");
         return;
@@ -132,17 +148,19 @@ export function RevisionEditSheet({
 
   return (
     <BottomSheet open onClose={onClose} title={`Editar ${label.toLowerCase()}`}>
-      {checking ? (
-        <p role="status">Cargando el valor guardado…</p>
-      ) : !user ? (
+      {user === null ? (
         <LoginForm
           online={online}
           variant="sheet"
           onSuccess={(usuario) => {
             setUser(usuario);
             setError("");
+            setChecking(true);
+            setAttempt((current) => current + 1);
           }}
         />
+      ) : initialText === null && checking ? (
+        <p role="status">Cargando el valor guardado…</p>
       ) : (
         <form
           className="revision-edit-form"
@@ -153,16 +171,28 @@ export function RevisionEditSheet({
         >
           <p className="sheet-description">
             {online
-              ? `Sesión de ${user.nombre}. Se envía el valor guardado de este campo, no el texto de la tarjeta.`
+              ? "El cambio quedará registrado en el historial de ediciones."
               : "Sin conexión. El guardado estará disponible cuando vuelvas a conectarte."}
           </p>
-          <FieldControl field={field} label={label} value={value} onChange={setValue} disabled={busy || !raw} />
+          <FieldControl
+            field={field}
+            label={label}
+            value={value}
+            onChange={(next) => {
+              touched.current = true;
+              setNotice("");
+              setValue(next);
+            }}
+            disabled={busy}
+          />
+          {notice ? <p className="auth-notice" role="status">{notice}</p> : null}
           <div className="sheet-actions">
             <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>
               Cancelar
             </button>
-            <button className="primary-button" disabled={busy || !online || !raw}>
-              Guardar
+            <button className="primary-button" disabled={busy || !online || !raw} aria-busy={checking || busy}>
+              {checking || busy ? <LoaderCircle size={17} className="auth-spinner" aria-hidden="true" /> : null}
+              {busy ? "Guardando" : "Guardar"}
             </button>
           </div>
           {error ? <p className="revision-field-error" role="alert">{error}</p> : null}

@@ -147,7 +147,7 @@ export function PantallaPhotoGallery({ photos, casita, reportId, active }: {
         <img ref={(image) => { thumbnails.current[index] = image; }} src={photo.url} alt={`${photo.ubicacion}: ${photo.estado}`} loading="lazy" crossOrigin="anonymous" />
         <span className={styles.expand} aria-hidden="true"><Maximize2 size={16} /></span>
       </button>
-      <figcaption><strong>{photo.ubicacion}</strong><span className={photo.estado === "defectuosa" ? "pantalla-bad" : ""}>{photo.estado}</span></figcaption>
+      <figcaption><strong>{photo.ubicacion}</strong><span className={["defectuosa", "moderada", "grave"].includes(photo.estado) ? "pantalla-bad" : ""}>{photo.estado}{photo.puntos != null && photo.estado !== "no hay pantalla" ? ` · ${photo.puntos} ${photo.puntos === 1 ? "punto" : "puntos"}` : ""}</span></figcaption>
     </figure>)}
   </div>;
 }

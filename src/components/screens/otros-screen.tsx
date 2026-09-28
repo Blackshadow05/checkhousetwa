@@ -2,14 +2,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Monitor, Plus, RefreshCw, FileDown } from "lucide-react";
 import { fetchPantallas } from "@/app/actions/pantallas";
+import { AdminUsuariosFeature, AdminUsuariosScreen } from "@/components/screens/admin-usuarios";
 import { PantallaForm } from "@/components/screens/pantalla-form";
 import { PantallaPhotoGallery } from "@/components/screens/pantalla-photo-gallery";
 import { PantallaPdfSheet } from "@/components/screens/pantalla-pdf-sheet";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { UBICACIONES, inventarioPantallas, latestPantallaReports, movimientoLabel, pantallaTime, ubicacionLabel, type PantallaReport, type PantallaSnapshot } from "@/lib/pantallas";
 import { useOnline } from "@/lib/use-online";
+import { esRolAdmin } from "@/lib/usuarios-admin";
+import type { UsuarioShell } from "@/types/database";
 
-export function OtrosScreen({ active }: { active: boolean }) {
+export function OtrosScreen({ active, session }: { active: boolean; session: UsuarioShell }) {
   const [path, setPath] = useState("/otros");
   const [snapshot, setSnapshot] = useState<PantallaSnapshot | null>(null);
   const [loading, setLoading] = useState(false); const fetching = useRef(false);
@@ -18,19 +21,25 @@ export function OtrosScreen({ active }: { active: boolean }) {
   const [location, setLocation] = useState(""); const [type, setType] = useState("reporte"); const [search, setSearch] = useState("");
   const [formVisited, setFormVisited] = useState(false); const [formKey, setFormKey] = useState(0);
   const [pdfReports, setPdfReports] = useState<PantallaReport[] | null>(null);
+  const [adminVisited, setAdminVisited] = useState(false);
   if (pdfReports && (!active || path !== "/reporte-pantallas")) setPdfReports(null);
   const online = useOnline();
-  const listRef = useRef<HTMLDivElement>(null); const listScroll = useRef(0);
+  const esAdmin = esRolAdmin(session.rol);
+  const listRef = useRef<HTMLDivElement>(null); const adminRef = useRef<HTMLDivElement>(null);
+  const scrollMemory = useRef<Record<string, number>>({});
+  const scrollKey = (target: string) => (target.startsWith("/admin-usuarios/") ? "/admin-usuarios" : target);
+  const scrollerFor = (target: string) => (target.startsWith("/admin-usuarios") ? adminRef : listRef).current?.closest<HTMLElement>(".app-screen") ?? null;
   useEffect(() => {
-    const sync = () => { const next = window.location.pathname.replace(/\/$/, ""); setPath(next); if (next !== "/reporte-pantallas") setPdfReports(null); if (next === "/reporte-pantallas/nuevo") setFormVisited(true); };
+    const sync = () => { const next = window.location.pathname.replace(/\/$/, ""); setPath(next); if (next !== "/reporte-pantallas") setPdfReports(null); if (next === "/reporte-pantallas/nuevo") setFormVisited(true); if (next.startsWith("/admin-usuarios")) setAdminVisited(true); };
     sync(); window.addEventListener("popstate", sync); window.addEventListener("casitas:navigate", sync);
     return () => { window.removeEventListener("popstate", sync); window.removeEventListener("casitas:navigate", sync); };
   }, []);
   const navigate = (next: string) => {
-    if (listRef.current && path === "/reporte-pantallas") listScroll.current = listRef.current.closest(".app-screen")?.scrollTop ?? 0;
+    const current = scrollerFor(path);
+    if (current && (path === "/reporte-pantallas" || path === "/admin-usuarios")) scrollMemory.current[path] = current.scrollTop;
     window.history.pushState({ ...window.history.state, screen: "otros" }, "", next);
     window.dispatchEvent(new Event("casitas:navigate"));
-    requestAnimationFrame(() => { const scroller = listRef.current?.closest(".app-screen"); if (scroller) scroller.scrollTop = next === "/reporte-pantallas" ? listScroll.current : 0; });
+    requestAnimationFrame(() => { const scroller = scrollerFor(next); if (scroller) scroller.scrollTop = next === "/reporte-pantallas/nuevo" ? 0 : scrollMemory.current[scrollKey(next)] ?? 0; });
   };
   const refresh = useCallback(async () => {
     if (fetching.current || !navigator.onLine) return;
@@ -66,6 +75,7 @@ export function OtrosScreen({ active }: { active: boolean }) {
     <div hidden={path !== "/otros"}>
       <p className="pantalla-eyebrow">HERRAMIENTAS</p><h1>Otros</h1>
       <button type="button" className="pantalla-feature" onClick={() => navigate("/reporte-pantallas")}><span className="pantalla-feature-icon"><Monitor size={27} aria-hidden /></span><span><strong>Reporte de pantallas</strong><small>Revisiones, movimientos e inventario</small></span><ArrowRight size={21} aria-hidden /></button>
+      {esAdmin && <AdminUsuariosFeature onOpen={() => navigate("/admin-usuarios")} />}
     </div>
     <div ref={listRef} hidden={path !== "/reporte-pantallas"}>
       <button type="button" onClick={() => navigate("/otros")}>← Otros</button>
@@ -89,5 +99,6 @@ export function OtrosScreen({ active }: { active: boolean }) {
     </div>
     {formVisited && <div hidden={path !== "/reporte-pantallas/nuevo"}><PantallaForm key={formKey} onClose={() => navigate("/reporte-pantallas")} onSaved={text => { setMessage(text); setFormKey(k => k + 1); navigate("/reporte-pantallas"); void refresh(); }} /></div>}
     {pdfReports && active && path === "/reporte-pantallas" && <PantallaPdfSheet reports={pdfReports} onClose={() => setPdfReports(null)} />}
+    {esAdmin && adminVisited && <div ref={adminRef} hidden={!path.startsWith("/admin-usuarios")}><AdminUsuariosScreen visible={active && path.startsWith("/admin-usuarios")} path={path} navigate={navigate} session={session} /></div>}
   </div>;
 }

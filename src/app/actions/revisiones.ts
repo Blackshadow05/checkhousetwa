@@ -2,7 +2,7 @@
 
 import { getArchiveRevisiones, getInicioRevisiones, getLatestRevisionCasita, getRevisionInicioById, listRevisionEdits, listRevisionNotes } from "@/lib/db/revisiones-casitas";
 import type { ArchiveQuery } from "@/lib/revisiones-archive";
-import { createPrivateClient } from "@/lib/auth/session";
+import { createPrivateClient, createPrivateSession } from "@/lib/auth/session";
 import { costaRicaDateTime, revisionInsert, validateRevisionForm, withCurrentRevisionTime, type RevisionFormValues } from "@/lib/revision-form";
 import { isEvidenceCloudinaryPath } from "@/lib/revision-evidence";
 import { isRevisionEditField, persistRevisionFieldValue, validateRevisionField, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
@@ -158,16 +158,22 @@ export async function fetchLatestRevisionCasita(
   }
 }
 
-export async function fetchRevisionRaw(id: string): Promise<{ row: RevisionCasitaInicio | null; error: string | null }> {
+export async function fetchRevisionEditor(id: string): Promise<{
+  row: RevisionCasitaInicio | null;
+  user: { id: number; nombre: string } | null;
+  error: string | null;
+}> {
   try {
-    if (!REVISION_ID.test(id)) return { row: null, error: "No encontramos esta revisión." };
-    const client = await createPrivateClient();
-    const result = await getRevisionInicioById(client, id);
-    if (result.error) return { row: null, error: "No pudimos cargar la revisión. Vuelve a intentarlo." };
-    if (!result.data) return { row: null, error: "No encontramos esta revisión." };
-    return { row: result.data, error: null };
+    if (!REVISION_ID.test(id)) return { row: null, user: null, error: "No encontramos esta revisión." };
+    const session = await createPrivateSession();
+    if (!session) return { row: null, user: null, error: null };
+    const user = { id: session.usuario.id, nombre: session.usuario.nombre };
+    const result = await getRevisionInicioById(session.client, id);
+    if (result.error) return { row: null, user, error: "No pudimos cargar la revisión. Vuelve a intentarlo." };
+    if (!result.data) return { row: null, user, error: "No encontramos esta revisión." };
+    return { row: result.data, user, error: null };
   } catch {
-    return { row: null, error: "No pudimos conectar para abrir el editor." };
+    return { row: null, user: null, error: "No pudimos conectar para abrir el editor." };
   }
 }
 
@@ -176,25 +182,24 @@ export async function editRevisionField(input: {
   campo: string;
   esperado: string | null;
   nuevo: string | null;
-}) {
+}): Promise<{ row: InicioRevisionRow | null; error: string | null; needsLogin?: boolean }> {
   try {
     if (!input || !REVISION_ID.test(input.id) || !isRevisionEditField(input.campo) ||
       (input.esperado !== null && typeof input.esperado !== "string") ||
       (input.nuevo !== null && typeof input.nuevo !== "string")) {
       return { row: null, error: "Revisa los datos e inténtalo de nuevo." };
     }
-    const editor = await getSesionUsuario();
-    if (!editor) return { row: null, error: "Inicia sesión para guardar este cambio." };
+    const session = await createPrivateSession();
+    if (!session) return { row: null, error: "Inicia sesión para guardar este cambio.", needsLogin: true };
     const campo: RevisionEditField = input.campo;
     const fieldError = validateRevisionField(campo, input.nuevo);
     if (fieldError) return { row: null, error: fieldError };
-    const client = await createPrivateClient();
-    return await editRevisionCampo(client, {
+    return await editRevisionCampo(session.client, {
       id: input.id,
       campo,
       esperado: input.esperado,
       nuevo: persistRevisionFieldValue(campo, input.nuevo),
-    }, editor.id);
+    }, session.usuario.id);
   } catch {
     return { row: null, error: "No pudimos conectar para guardar el cambio." };
   }

@@ -1,0 +1,8 @@
+.photoActions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.preview { position: relative; width: 100%; max-width: 440px; margin: 0 auto 12px; overflow: hidden; border-radius: 12px; background: #141414; }
+.preview img { display: block; width: 100%; height: auto; }
+.marker { position: absolute; display: grid; place-items: center; width: 24px; height: 24px; transform: translate(-50%, -50%); border: 2px solid #a3ff89; border-radius: 50%; background: #10251199; color: white; text-shadow: 0 1px 2px black; font-size: 11px; font-weight: 700; pointer-events: none; }
+.dudoso { border-color: #ffb84d; background: #2b1c0599; }
+.statusOptions { grid-template-columns: 1fr 1fr; }
+.statusOptions button:last-child { grid-column: 1 / -1; }
+@media (prefers-reduced-motion: reduce) { .marker { transition: none; } }

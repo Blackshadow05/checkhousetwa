@@ -19,6 +19,14 @@ const serwist = new Serwist({
   navigationPreload: true,
   runtimeCaching: [
     {
+      matcher: ({ sameOrigin, url }) => sameOrigin && url.pathname === "/opencv/opencv-4.12.0.js",
+      handler: new CacheFirst({ cacheName: "pantalla-opencv-4.12.0", plugins: [new ExpirationPlugin({ maxEntries: 1 })] }),
+    },
+    {
+      matcher: ({ sameOrigin, url }) => sameOrigin && url.pathname.startsWith("/articulos/") && /\.(?:onnx|wasm)$/.test(url.pathname),
+      handler: new CacheFirst({ cacheName: "articulos-reconocimiento", plugins: [new ExpirationPlugin({ maxEntries: 4 })] }),
+    },
+    {
       matcher: ({ url }) => url.hostname === "res.cloudinary.com",
       handler: new CacheFirst({
         cacheName: "cloudinary-images",

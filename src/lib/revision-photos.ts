@@ -20,8 +20,8 @@ export async function prepareRevisionPhoto(file: File): Promise<RevisionPhoto> {
     const image = new Image();
     image.src = source;
     await image.decode();
-    const dimensions = revisionPhotoDimensions(image.naturalWidth, image.naturalHeight);
     const encoding = revisionPhotoEncoding(navigator.userAgent);
+    const dimensions = revisionPhotoDimensions(image.naturalWidth, image.naturalHeight, encoding.maxSide);
     const canvas = document.createElement("canvas");
     canvas.width = dimensions.width;
     canvas.height = dimensions.height;

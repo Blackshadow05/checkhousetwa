@@ -5,8 +5,6 @@ import {
   Check,
   ChevronRight,
   ClipboardCheck,
-  Clock3,
-  House,
   MessageSquareText,
   Search,
   SlidersHorizontal,
@@ -20,7 +18,6 @@ import { CAJA_FUERTE_FILTERS, REPORT_FILTERS } from "@/lib/revisiones-archive";
 import {
   dayLabel,
   hasRevisionValue,
-  initials,
   revisionDay,
   revisionKey,
   shortTime,
@@ -68,21 +65,12 @@ export function RevisionesScreen() {
       {!archive.online && (
         <div className="inline-notice" role="status">
           <WifiOff size={17} />
-          <span>
-            {archive.localAvailable
-              ? "Sin conexión. La búsqueda cubre las revisiones guardadas en este dispositivo."
-              : "Sin conexión. Mostramos los datos disponibles en esta sesión."}
-          </span>
+          <span>{archive.localAvailable ? "Sin conexión · datos guardados" : "Sin conexión"}</span>
         </div>
       )}
       {archive.error && archive.online && (
         <div className="inline-notice notice-error" role="status">
-          <span>
-            No pudimos actualizar.{" "}
-            {archive.rows.length
-              ? "Conservamos tus últimas revisiones."
-              : "Vuelve a intentarlo cuando tengas conexión."}
-          </span>
+          <span>No pudimos actualizar</span>
           <button
             className="text-action"
             type="button"
@@ -100,24 +88,23 @@ export function RevisionesScreen() {
       )}
       {archive.storageError && (
         <div className="inline-notice" role="status">
-          No se pudo guardar una copia en este dispositivo. Mantén la app
-          abierta para consultar estos datos.
+          No se guardó copia en el dispositivo
         </div>
       )}
 
-      <div className="revisions-toolbar">
-        <div className="section-title">
-          <h2>Explorar registros</h2>
-          <span className="count-label">{archive.total}</span>
+      <div className={styles.toolbar}>
+        <div className={styles.titleRow}>
+          <h2>Revisiones</h2>
+          <span>{archive.total}</span>
         </div>
-        <div className="search-row">
-          <label className="search-field">
-            <Search size={19} aria-hidden="true" />
+        <div className={styles.searchRow}>
+          <label className={styles.search}>
+            <Search size={18} aria-hidden="true" />
             <input
               type="search"
               value={archive.searchInput}
               onChange={(event) => archive.setSearchInput(event.target.value)}
-              placeholder="Buscar casita o persona"
+              placeholder="Buscar"
               aria-label="Buscar casita o quien revisa"
               autoComplete="off"
               enterKeyHint="search"
@@ -125,66 +112,71 @@ export function RevisionesScreen() {
             {archive.searchInput ? (
               <button
                 type="button"
-                className="search-clear"
+                className={styles.searchClear}
                 aria-label="Limpiar búsqueda"
                 onClick={() => archive.setSearchInput("")}
               >
-                <X size={17} />
+                <X size={14} />
               </button>
             ) : null}
           </label>
           <button
             type="button"
-            className={`filter-button ${archive.filterCount ? "is-filtered" : ""}`}
+            className={styles.filterButton}
+            data-active={archive.filterCount > 0 || undefined}
             onClick={() => setFiltersOpen(true)}
             aria-label={`Filtrar revisiones${archive.filterCount ? `, ${archive.filterCount} filtros activos` : ""}`}
           >
-            <SlidersHorizontal size={20} />
+            <SlidersHorizontal size={19} />
             {archive.filterCount > 0 ? (
-              <span className="filter-dot">{archive.filterCount}</span>
+              <span className={styles.filterDot}>{archive.filterCount}</span>
             ) : null}
           </button>
         </div>
-        <div className={`period-tabs ${styles.periods}`} aria-label="Filtrar por fecha">
+        <div className={styles.segmented} role="group" aria-label="Filtrar por fecha">
           {(
             [
               { id: "all", label: "Todas" },
               { id: "today", label: "Hoy" },
-              { id: "three-days", label: "Últimos 3 días" },
-              { id: "week", label: "Últimos 7 días" },
+              { id: "three-days", label: "3 días" },
+              { id: "week", label: "7 días" },
             ] as const
           ).map((item) => (
             <button
               key={item.id}
               type="button"
               aria-pressed={!archive.date && archive.period === item.id}
-              className={!archive.date && archive.period === item.id ? "is-selected" : ""}
               onClick={() => archive.setPeriod(item.id)}
             >
               {item.label}
             </button>
           ))}
         </div>
-        {archive.reportFilter && (
-          <button className="active-filter" type="button" onClick={() => archive.setReportFilter(null)}>
-            {REPORT_FILTERS.find((item) => item.id === archive.reportFilter)?.label}
-            <X size={15} /><span className="sr-only">Quitar filtro</span>
-          </button>
+        {(archive.reportFilter || archive.status || archive.date) && (
+          <div className={styles.chips}>
+            {archive.date && (
+              <button type="button" onClick={() => archive.setDate("")}>
+                {archive.date}
+                <X size={14} aria-hidden="true" />
+                <span className="sr-only">Quitar fecha</span>
+              </button>
+            )}
+            {archive.reportFilter && (
+              <button type="button" onClick={() => archive.setReportFilter(null)}>
+                {REPORT_FILTERS.find((item) => item.id === archive.reportFilter)?.label}
+                <X size={14} aria-hidden="true" />
+                <span className="sr-only">Quitar filtro</span>
+              </button>
+            )}
+            {archive.status && (
+              <button type="button" onClick={() => archive.setStatus(null)}>
+                {statusAppearance(archive.status).label}
+                <X size={14} aria-hidden="true" />
+                <span className="sr-only">Quitar filtro</span>
+              </button>
+            )}
+          </div>
         )}
-        {archive.reportFilter && archive.reportFilter !== "caja_fuerte" && (
-          <p className={styles.filterHint}>Último reporte de cada casita{archive.date || archive.period !== "all" ? " en el período seleccionado" : ""}.</p>
-        )}
-        {archive.status ? (
-          <button
-            className="active-filter"
-            type="button"
-            onClick={() => archive.setStatus(null)}
-          >
-            Caja fuerte: {statusAppearance(archive.status).label}
-            <X size={15} />
-            <span className="sr-only">Quitar filtro</span>
-          </button>
-        ) : null}
         <span className="sr-only" role="status">
           {archive.loading
             ? "Buscando revisiones"
@@ -194,81 +186,58 @@ export function RevisionesScreen() {
         </span>
       </div>
 
-      <div className="revision-groups" aria-busy={archive.loading || archive.loadingMore}>
-        {archive.loading
-          ? [0, 1, 2].map((item) => (
-              <div
-                key={item}
-                 className={styles.card}
-                aria-hidden="true"
-              >
-                 <div className={`${styles.plaque} skeleton`} />
-                 <div className={styles.content}>
-                   <div className="skeleton" style={{ width: "65%", height: 28 }} />
-                   <div className="skeleton" style={{ width: "85%", height: 32, marginTop: 22 }} />
-                 </div>
+      <div className={styles.groups} aria-busy={archive.loading || archive.loadingMore}>
+        {archive.loading ? (
+          <div className={styles.list} aria-hidden="true">
+            {[0, 1, 2, 3].map((item) => (
+              <div key={item} className={styles.row}>
+                <div className={`${styles.plaque} skeleton`} />
+                <div className={styles.content}>
+                  <div className="skeleton" style={{ width: "40%", height: 16 }} />
+                  <div className="skeleton" style={{ width: "60%", height: 12 }} />
+                </div>
               </div>
-            ))
-          : Array.from(groups, ([day, dayRows]) => (
-              <section
-                key={day}
-                className="revision-group"
-                aria-label={dayLabel(day, archive.today)}
-              >
-                <div className={`group-heading ${styles.dayHeading}`}>
-                  <h3>{dayLabel(day, archive.today)}</h3>
-                  <span>
-                    {dayRows.length}{" "}
-                    {dayRows.length === 1 ? "revisión" : "revisiones"}
-                  </span>
-                </div>
-                <div className="revision-grid">
-                  {dayRows.map((row, index) => (
-                    <button
-                      key={revisionKey(row, index)}
-                       className={styles.card}
-                       data-tone={statusAppearance(row.caja_fuerte).tone}
-                      type="button"
-                      onClick={() => archive.openRevision(row)}
-                      aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${row.created_at}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}
-                    >
-                       <span className={styles.plaque}>
-                         <House size={17} strokeWidth={1.5} aria-hidden="true" />
-                         <span className={styles.casitaLabel}>Casita</span>
-                         <strong className={styles.number}>{row.casita}</strong>
-                       </span>
-                       <span className={styles.content}>
-                         <span className={styles.top}>
-                           <span className={styles.status}>
-                             <span className={styles.safeLabel}>Caja fuerte</span>
-                             <StatusBadge value={row.caja_fuerte} />
-                           </span>
-                           <span className={styles.arrow}>
-                             <ChevronRight size={17} aria-hidden="true" />
-                           </span>
-                         </span>
-                          {hasRevisionValue(row.notas) && (
-                            <span className={styles.note}>
-                              <MessageSquareText size={14} aria-hidden="true" />
-                              <span>{row.notas?.trim()}</span>
-                            </span>
-                          )}
-                          <span className={styles.footer}>
-                           <span className={styles.reviewer}>
-                             <span className={styles.avatar} aria-hidden="true">{initials(row.quien_revisa)}</span>
-                             <span className={styles.name}>{row.quien_revisa}</span>
-                           </span>
-                           <span className={styles.time}>
-                             <Clock3 size={12} aria-hidden="true" />
-                             {shortTime(row.created_at)}
-                           </span>
-                         </span>
-                       </span>
-                    </button>
-                  ))}
-                </div>
-              </section>
             ))}
+          </div>
+        ) : (
+          Array.from(groups, ([day, dayRows]) => (
+            <section key={day} aria-label={dayLabel(day, archive.today)}>
+              <div className={styles.dayHeading}>
+                <h3>{dayLabel(day, archive.today)}</h3>
+                <span>{dayRows.length}</span>
+              </div>
+              <div className={styles.list}>
+                {dayRows.map((row, index) => (
+                  <button
+                    key={revisionKey(row, index)}
+                    className={styles.row}
+                    data-tone={statusAppearance(row.caja_fuerte).tone}
+                    type="button"
+                    onClick={() => archive.openRevision(row)}
+                    aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${row.created_at}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}
+                  >
+                    <span className={styles.plaque}>
+                      <strong className={styles.number}>{row.casita}</strong>
+                    </span>
+                    <span className={styles.content}>
+                      <span className={styles.top}>
+                        <StatusBadge value={row.caja_fuerte} />
+                        {hasRevisionValue(row.notas) && (
+                          <MessageSquareText size={14} className={styles.noteIcon} aria-hidden="true" />
+                        )}
+                      </span>
+                      <span className={styles.name}>{row.quien_revisa}</span>
+                    </span>
+                    <span className={styles.meta}>
+                      <span className={styles.time}>{shortTime(row.created_at)}</span>
+                      <ChevronRight size={18} aria-hidden="true" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))
+        )}
       </div>
       {!archive.loading && archive.rows.length === 0 ? (
         <div className="empty-state">
@@ -281,14 +250,9 @@ export function RevisionesScreen() {
           </div>
           <h3>
             {archive.searchInput || archive.filterCount
-              ? "No encontramos revisiones"
-              : "Todo empieza con una revisión"}
+              ? "Sin resultados"
+              : "Aún no hay revisiones"}
           </h3>
-          <p>
-            {archive.searchInput || archive.filterCount
-              ? "Prueba con el número de casita o el nombre de quien revisa."
-              : "Las revisiones de tu equipo aparecerán aquí cuando estén disponibles."}
-          </p>
           {archive.searchInput || archive.filterCount > 0 ? (
             <button
               className="secondary-button"
@@ -303,31 +267,22 @@ export function RevisionesScreen() {
       <div ref={sentinelRef} className="list-sentinel">
         {archive.loadingMore ? "Cargando más…" : null}
       </div>
-      {archive.rows.length > 0 && !archive.loading ? (
-        <p className="list-footnote">
-          {archive.rows.length} de {archive.total} revisiones
-          {!archive.online && archive.localAvailable
-            ? " · Disponibles sin conexión"
-            : ""}
-        </p>
-      ) : null}
 
       <BottomSheet
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
         title="Filtrar revisiones"
       >
-        <p className="sheet-description">Encuentra justo lo que necesitas.</p>
         <div className={styles.dateRow}>
           <label className={styles.dateField}>
-            <span>Fecha específica</span>
+            <span>Fecha</span>
             <input type="date" value={archive.date} onChange={(event) => archive.setDate(event.target.value)} />
           </label>
           {archive.date && <button type="button" className="icon-button" aria-label="Quitar fecha" onClick={() => archive.setDate("")}><X size={18} /></button>}
         </div>
-        <h3 className="filter-section-title">Tipo de filtro</h3>
+        <h3 className="filter-section-title">Reporte</h3>
         <div className="filter-options">
-          {[{ id: null, label: "Todos los reportes" }, ...REPORT_FILTERS].map((item) => (
+          {[{ id: null, label: "Todos" }, ...REPORT_FILTERS].map((item) => (
             <Fragment key={item.id ?? "all"}>
               <button type="button" aria-pressed={archive.reportFilter === item.id}
                 aria-expanded={item.id === "caja_fuerte" ? archive.reportFilter === "caja_fuerte" : undefined}
@@ -339,8 +294,7 @@ export function RevisionesScreen() {
               </button>
               {item.id === "caja_fuerte" && archive.reportFilter === "caja_fuerte" && (
                 <div id="caja-fuerte-options" className={styles.safeOptions} role="group" aria-label="Estado de caja fuerte">
-                  <h3 className="filter-section-title">Estado de caja fuerte</h3>
-                  <p className="sheet-description">Todos los registros, del más reciente al más antiguo.</p>
+                  <h3 className="filter-section-title">Estado</h3>
                   <div className="filter-options">
                     {[null, ...CAJA_FUERTE_FILTERS].map((value) => (
                       <button
@@ -352,7 +306,7 @@ export function RevisionesScreen() {
                       >
                         <span>
                           {value === null
-                            ? "Todos los estados"
+                            ? "Todos"
                             : statusAppearance(value).label}
                         </span>
                         <span className="option-check">
@@ -379,7 +333,7 @@ export function RevisionesScreen() {
             className="primary-button"
             onClick={() => setFiltersOpen(false)}
           >
-            Ver {archive.total} resultados
+            Ver {archive.total}
           </button>
         </div>
       </BottomSheet>

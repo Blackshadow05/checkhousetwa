@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Camera, ChevronLeft, Maximize2, Pencil, Trash2 } from "lucide-react";
+import { Camera, ChevronLeft, ImagePlus, Maximize2, Pencil, Trash2 } from "lucide-react";
 import PhotoSwipe from "photoswipe";
 import type { SlideData } from "photoswipe";
 import "photoswipe/style.css";
@@ -8,24 +8,24 @@ import { currentUsuario, logoutUsuario } from "@/app/actions/usuarios";
 import { LoginForm } from "@/components/auth/login-form";
 import { createPantalla } from "@/app/actions/pantallas";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import { CASITAS, ESTADOS_PANTALLA, UBICACIONES, habitaciones, ubicacionLabel, validarPantalla, type PantallaInput } from "@/lib/pantallas";
+import { CASITAS, ESTADOS_PANTALLA, ESTADO_PANTALLA_LABELS, UBICACIONES, actualizarNotasPantallas, estadoPorPuntos, habitaciones, ubicacionLabel, validarPantalla, type PantallaEstado, type PantallaInput } from "@/lib/pantallas";
+import { analyzePantalla } from "@/lib/pantalla-analyzer";
+import type { PantallaDetection } from "@/lib/pantalla-detection";
+import { triagePuntosConJev } from "@/lib/pantalla-jev";
+import styles from "./pantalla-form.module.css";
 import { prepareRevisionPhoto } from "@/lib/revision-photos";
 import { uploadPantalla } from "@/lib/pantallas-upload";
 import { useOnline } from "@/lib/use-online";
 
-type PantallaEstado = (typeof ESTADOS_PANTALLA)[number];
-type Photo = { id: string; blob: Blob; preview: string; ubicacion: string; estado: PantallaEstado | ""; url?: string };
+type Photo = { id: string; blob: Blob; preview: string; ubicacion: string; estado: PantallaEstado | ""; puntos: number | null; detection?: PantallaDetection; analysisError?: string; aiNotice?: string; url?: string };
 type ClassificationFlow = {
-  photoId: string;
+  photo: Photo;
   step: "estado" | "habitacion";
   estado: PantallaEstado | "";
   ubicacion: string;
-  isNew: boolean;
-};
-const ESTADO_LABELS: Record<PantallaEstado, string> = {
-  defectuosa: "Defectuosa",
-  "en buen estado": "En buen estado",
-  "no hay pantalla": "No hay pantalla",
+  puntos: string;
+  replaceId?: string;
+  isDraft: boolean;
 };
 const PHOTO_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif";
 const FALLBACK_PHOTO_SIZE = { width: 1600, height: 1200 };
@@ -58,6 +58,15 @@ function safeArea(side: "top" | "right" | "bottom" | "left") {
   return value;
 }
 
+function detectionSummary(detection?: PantallaDetection) {
+  const points = detection?.points ?? [];
+  const seguros = points.filter(point => point.confidence === "seguro").length;
+  const dudosos = points.length - seguros;
+  const conteo = `Se detectaron ${seguros} ${seguros === 1 ? "punto" : "puntos"}.`;
+  if (!dudosos) return `${conteo} Revisa las marcas y corrige el número si hace falta.`;
+  return `${conteo} ${dudosos === 1 ? "La marca ámbar es dudosa y no se contó" : `Las ${dudosos} marcas ámbar son dudosas y no se contaron`}; corrige el número si hace falta.`;
+}
+
 function closePhotoViewer(viewer: PhotoSwipe | null) {
   if (!viewer || viewer.isDestroying) return;
   if (viewer.opener.isOpen) viewer.close();
@@ -70,6 +79,7 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
   const [checking, setChecking] = useState(true);
   const [tipo, setTipo] = useState<"reporte" | "movimiento">("reporte");
   const [casita, setCasita] = useState(""); const [notas, setNotas] = useState("");
+  const [movementNotes, setMovementNotes] = useState("");
   const [origen, setOrigen] = useState(""); const [destino, setDestino] = useState("");
   const [origenRoom, setOrigenRoom] = useState(""); const [destinoRoom, setDestinoRoom] = useState("");
   const [photos, setPhotos] = useState<Photo[]>([]); const photosRef = useRef(photos);
@@ -77,86 +87,128 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
   const [busy, setBusy] = useState(false); const saving = useRef(false);
   const [error, setError] = useState(""); const [progress, setProgress] = useState("");
   const [classification, setClassification] = useState<ClassificationFlow | null>(null);
+  const draftPreview = useRef<string | null>(null);
+  const analysisController = useRef<AbortController | null>(null);
+  const preparing = useRef(false);
   const viewerTriggerRef = useRef<HTMLButtonElement>(null);
   const viewerRef = useRef<PhotoSwipe | null>(null);
   const openingViewerRef = useRef(false);
   const addPhotoInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const replacePhotoInputRef = useRef<HTMLInputElement>(null);
   const replacingPhotoId = useRef<string | null>(null);
   useEffect(() => () => closePhotoViewer(viewerRef.current), []);
   useEffect(() => { let live = true; void currentUsuario().then(value => { if (live) setUser(value); }).catch(() => { if (live) setError("No se pudo comprobar la sesión."); }).finally(() => { if (live) setChecking(false); }); return () => { live = false; }; }, []);
   useEffect(() => () => { for (const photo of photosRef.current) URL.revokeObjectURL(photo.preview); }, []);
+  useEffect(() => () => {
+    analysisController.current?.abort();
+    if (draftPreview.current) URL.revokeObjectURL(draftPreview.current);
+  }, []);
   useEffect(() => {
-    const handler = (event: BeforeUnloadEvent) => { if (photosRef.current.length || notas || saving.current) event.preventDefault(); };
+    const handler = (event: BeforeUnloadEvent) => { if (photosRef.current.length || notas || movementNotes || preparing.current || draftPreview.current || saving.current) event.preventDefault(); };
     window.addEventListener("beforeunload", handler); return () => window.removeEventListener("beforeunload", handler);
-  }, [notas]);
-  const input: PantallaInput = { tipo, numero_casita: casita ? Number(casita) : null, notas: notas.trim() || null,
-    fotos: tipo === "reporte" ? photos.map(p => ({ url: p.url || "", ubicacion: p.ubicacion, estado: p.estado })) : [],
+  }, [notas, movementNotes]);
+  const input: PantallaInput = { tipo, numero_casita: casita ? Number(casita) : null, notas: (tipo === "reporte" ? notas : movementNotes).trim() || null,
+    fotos: tipo === "reporte" ? photos.map(p => ({ url: p.url || "", ubicacion: p.ubicacion, estado: p.estado, puntos: p.puntos })) : [],
     origen_ubicacion: origen || null, origen_habitacion: origenRoom || null, destino_ubicacion: destino || null, destino_habitacion: destinoRoom || null };
-  async function addPhoto(file?: File) {
-    if (!file || busy || photos.length >= habitaciones(casita).length) return;
-    setBusy(true); setError("");
-    try {
-      const prepared = await prepareRevisionPhoto(file);
-      const photo: Photo = { ...prepared, preview: URL.createObjectURL(prepared.blob), ubicacion: "", estado: "" };
-      setPhotos(old => [...old, photo]);
-      setClassification({ photoId: photo.id, step: "estado", estado: "", ubicacion: "", isNew: true });
-    }
-    catch (e) { setError(e instanceof Error ? e.message : "No se pudo preparar la foto."); }
-    finally { setBusy(false); }
+  function updatePhotos(next: Photo[]) {
+    const previous = photosRef.current;
+    setNotas(current => actualizarNotasPantallas(current, previous, next));
+    photosRef.current = next;
+    setPhotos(next);
   }
-  async function replacePhoto(file?: File) {
-    const photoId = replacingPhotoId.current;
-    replacingPhotoId.current = null;
-    if (!file || !photoId || busy) return;
-    setBusy(true); setError("");
+  async function readPhoto(file?: File, previous?: Photo) {
+    if (!file || preparing.current || busy || classification || (!previous && photos.length >= habitaciones(casita).length)) return;
+    preparing.current = true;
+    const controller = new AbortController();
+    analysisController.current = controller;
+    setBusy(true); setError(""); setProgress("Preparando foto…");
     try {
       const prepared = await prepareRevisionPhoto(file);
-      const nextPreview = URL.createObjectURL(prepared.blob);
-      const previous = photosRef.current.find(photo => photo.id === photoId);
-      if (!previous) { URL.revokeObjectURL(nextPreview); return; }
-      setPhotos(old => old.map(photo => photo.id === photoId ? {
-        ...prepared,
-        preview: nextPreview,
-        ubicacion: photo.ubicacion,
-        estado: photo.estado,
-      } : photo));
-      URL.revokeObjectURL(previous.preview);
-    } catch (e) { setError(e instanceof Error ? e.message : "No se pudo cambiar la foto."); }
-    finally { setBusy(false); }
+      controller.signal.throwIfAborted();
+      const photo: Photo = { ...prepared, preview: URL.createObjectURL(prepared.blob), ubicacion: previous?.ubicacion || "", estado: "", puntos: null };
+      draftPreview.current = photo.preview;
+      setProgress("Buscando puntos blancos en la pantalla…");
+      try {
+        // Analyze before upload compression can erase faint spots or create artifacts.
+        photo.detection = await analyzePantalla(file, controller.signal);
+        const dudosos = photo.detection.points.filter(point => point.confidence === "dudoso");
+        photo.puntos = photo.detection.points.length - dudosos.length;
+        if (photo.detection.noScreen) {
+          photo.estado = "no hay pantalla";
+          photo.puntos = null;
+          photo.analysisError = "No encontramos una pantalla en la foto. Si sí hay una, cambia el estado o tómala de frente con toda la pantalla visible.";
+        } else if (photo.detection.screenFound) photo.estado = estadoPorPuntos(photo.puntos);
+        else photo.analysisError = "No pudimos delimitar la pantalla. Revisa las marcas y selecciona el estado, o toma una foto más cercana.";
+        if (dudosos.length && online && !photo.detection.noScreen) {
+          setProgress("La IA está valorando los puntos dudosos…");
+          try {
+            const triage = await triagePuntosConJev(dudosos, controller.signal);
+            if (triage.confirmed.length + triage.uncertain.length) {
+              const confirmed = new Set(triage.confirmed.map(point => `${point.x}:${point.y}`));
+              photo.detection = { ...photo.detection, points: photo.detection.points.map(point => confirmed.has(`${point.x}:${point.y}`) ? { ...point, confidence: "seguro" as const } : point) };
+              photo.puntos = (photo.puntos ?? 0) + triage.confirmed.length;
+              const descartados = triage.uncertain.length;
+              if (descartados > 0) photo.aiNotice = descartados === 1 ? "La IA descartó 1 punto dudoso por su forma o brillo." : `La IA descartó ${descartados} puntos dudosos por su forma o brillo.`;
+              if (photo.detection.screenFound) photo.estado = estadoPorPuntos(photo.puntos);
+            }
+          } catch (e) {
+            controller.signal.throwIfAborted();
+            photo.aiNotice = e instanceof Error ? e.message : "La revisión con IA no estuvo disponible. Se conserva el conteo local.";
+          }
+        }
+      } catch (e) {
+        controller.signal.throwIfAborted();
+        photo.analysisError = e instanceof Error ? e.message : "No pudimos analizar la foto. Clasifícala manualmente.";
+      }
+      controller.signal.throwIfAborted();
+      setClassification({ photo, step: "habitacion", estado: photo.estado, ubicacion: photo.ubicacion, puntos: photo.puntos === null ? "" : String(photo.puntos), replaceId: previous?.id, isDraft: true });
+    } catch (e) {
+      if (draftPreview.current) { URL.revokeObjectURL(draftPreview.current); draftPreview.current = null; }
+      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "No se pudo preparar la foto.");
+    } finally {
+      preparing.current = false;
+      if (!controller.signal.aborted) { setBusy(false); setProgress(""); }
+    }
+  }
+  function replacePhoto(file?: File) {
+    const previous = photosRef.current.find(photo => photo.id === replacingPhotoId.current);
+    replacingPhotoId.current = null;
+    if (previous) void readPhoto(file, previous);
   }
   function removePhoto(photo: Photo) {
     URL.revokeObjectURL(photo.preview);
-    setPhotos(old => old.filter(item => item.id !== photo.id));
-    if (classification?.photoId === photo.id) setClassification(null);
+    updatePhotos(photosRef.current.filter(item => item.id !== photo.id));
   }
   function closeClassification() {
-    if (classification?.isNew) {
-      const photo = photos.find(item => item.id === classification.photoId);
-      if (photo) removePhoto(photo);
-    }
+    if (draftPreview.current) { URL.revokeObjectURL(draftPreview.current); draftPreview.current = null; }
     setClassification(null);
   }
   function editClassification(photo: Photo) {
     setClassification({
-      photoId: photo.id,
+      photo,
       step: "estado",
       estado: photo.estado,
       ubicacion: photo.ubicacion,
-      isNew: false,
+      puntos: photo.puntos === null ? "" : String(photo.puntos),
+      isDraft: false,
     });
   }
-  function chooseEstado(estado: PantallaEstado) {
-    setClassification(current => current ? { ...current, estado, step: "habitacion" } : current);
-  }
   function chooseHabitacion(ubicacion: string) {
-    if (!classification?.estado) return;
-    const { photoId, estado } = classification;
-    setPhotos(old => old.map(photo => photo.id === photoId ? {
-      ...photo,
-      estado,
-      ubicacion,
-    } : photo));
+    setClassification(current => current ? { ...current, ubicacion, step: "estado" } : current);
+  }
+  function confirmClassification() {
+    if (!classification?.estado || !classification.ubicacion) return;
+    const { photo, estado, ubicacion, puntos, replaceId, isDraft } = classification;
+    const count = puntos === "" ? null : Number(puntos);
+    if (count !== null && (!Number.isSafeInteger(count) || count < 0 || count > 999)) return;
+    const updated = { ...photo, estado, ubicacion, puntos: count };
+    const previousId = isDraft ? replaceId : photo.id;
+    if (photosRef.current.some(item => item.id !== previousId && item.ubicacion === ubicacion)) return;
+    const previous = photosRef.current.find(item => item.id === previousId);
+    updatePhotos(previous ? photosRef.current.map(item => item.id === previousId ? updated : item) : [...photosRef.current, updated]);
+    if (isDraft && previous) URL.revokeObjectURL(previous.preview);
+    draftPreview.current = null;
     setClassification(null);
   }
   async function openPhoto(index: number) {
@@ -214,7 +266,7 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
     }
   }
   async function submit() {
-    if (saving.current || busy) return;
+    if (saving.current || busy || classification) return;
     const invalid = validarPantalla(input); if (invalid) { setError(invalid); return; }
     if (!online) { setError("Conéctate a internet para guardar. Puedes seguir completando el formulario."); return; }
     saving.current = true; setBusy(true); setError("");
@@ -226,7 +278,7 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
         setProgress(`Subiendo foto ${index + 1} de ${photos.length}…`);
         const url = photo.url || await uploadPantalla(photo.blob, casita, index + 1);
         setPhotos(old => old.map(p => p.id === photo.id ? { ...p, url } : p));
-        uploaded.push({ url, ubicacion: photo.ubicacion, estado: photo.estado });
+        uploaded.push({ url, ubicacion: photo.ubicacion, estado: photo.estado, puntos: photo.puntos });
       }
       setProgress("Guardando registro…");
       const result = await createPantalla({ ...input, fotos: uploaded });
@@ -242,8 +294,8 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
       {CASITAS.includes(value) && <label>Habitación<select aria-label={`Habitación de ${side}`} required value={room} onChange={e => side === "origen" ? setOrigenRoom(e.target.value) : setDestinoRoom(e.target.value)}><option value="">Selecciona una habitación</option>{habitaciones(value).map(r => <option key={r}>{r}</option>)}</select></label>}
     </div>;
   }
-  const classificationPhoto = classification ? photos.find(photo => photo.id === classification.photoId) : undefined;
-  const classificationIndex = classificationPhoto ? photos.findIndex(photo => photo.id === classificationPhoto.id) : -1;
+  const classificationPhoto = classification?.photo;
+  const validCount = !classification || classification.puntos === "" || (/^\d{1,3}$/.test(classification.puntos));
 
   return <div className="pantalla-form">
     <div className="pantalla-toolbar"><button type="button" disabled={busy} onClick={onClose}>← Volver</button><h2>Nuevo registro</h2></div>
@@ -264,7 +316,8 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
             </button>
             <div className="pantalla-photo-copy">
               <strong>{photo.ubicacion}</strong>
-              <span>{photo.estado ? ESTADO_LABELS[photo.estado] : "Sin clasificar"}</span>
+              <span>{photo.estado ? ESTADO_PANTALLA_LABELS[photo.estado] : "Sin clasificar"}</span>
+              {photo.puntos !== null && photo.estado !== "no hay pantalla" && <span>{photo.puntos} {photo.puntos === 1 ? "punto" : "puntos"}</span>}
             </div>
             <div className="pantalla-photo-item-actions" aria-label={`Acciones de la foto ${index + 1}`}>
               <button type="button" title="Corregir información" aria-label={`Corregir estado o habitación de la foto ${index + 1}`} onClick={() => editClassification(photo)}><Pencil size={17} aria-hidden /></button>
@@ -272,11 +325,19 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
               <button className="pantalla-remove-photo" type="button" title="Quitar foto" aria-label={`Quitar foto ${index + 1}`} onClick={() => removePhoto(photo)}><Trash2 size={18} aria-hidden /></button>
             </div>
           </article>)}</div>}
-          <input ref={addPhotoInputRef} type="file" accept={PHOTO_ACCEPT} capture="environment" hidden onChange={e => { void addPhoto(e.target.files?.[0]); e.target.value = ""; }} />
-          <input ref={replacePhotoInputRef} type="file" accept={PHOTO_ACCEPT} capture="environment" hidden onChange={e => { void replacePhoto(e.target.files?.[0]); e.target.value = ""; }} />
-          {casita && photos.length < habitaciones(casita).length && <button className="pantalla-photo-input" type="button" onClick={() => addPhotoInputRef.current?.click()}><Camera size={20} aria-hidden /> {photos.length ? "Tomar otra foto" : "Tomar primera foto"}</button>}
+          <input ref={addPhotoInputRef} aria-label="Tomar foto de pantalla" type="file" accept={PHOTO_ACCEPT} capture="environment" hidden onChange={e => { void readPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+          <input ref={galleryInputRef} aria-label="Seleccionar foto de pantalla" type="file" accept={PHOTO_ACCEPT} hidden onChange={e => { void readPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+          <input ref={replacePhotoInputRef} aria-label="Cambiar foto de pantalla" type="file" accept={PHOTO_ACCEPT} hidden onChange={e => { replacePhoto(e.target.files?.[0]); e.target.value = ""; }} />
+          {casita && photos.length < habitaciones(casita).length && <>
+            <p className="pantalla-status">Fotografía la pantalla completa, oscura y de frente. Evita luces reflejadas y menús encendidos.</p>
+            <div className={styles.photoActions}>
+              <button className="pantalla-photo-input" type="button" onClick={() => addPhotoInputRef.current?.click()}><Camera size={20} aria-hidden /> Tomar foto</button>
+              <button className="pantalla-photo-input" type="button" onClick={() => galleryInputRef.current?.click()}><ImagePlus size={20} aria-hidden /> Elegir foto</button>
+            </div>
+          </>}
         </> : <>{locationFields("origen")}{locationFields("destino")}</>}
-        <label>Notas <span>(opcional)</span><textarea value={notas} maxLength={4000} rows={3} onChange={e => setNotas(e.target.value)} /></label>
+        <label>Notas <span>(opcional)</span><textarea aria-label="Notas" value={tipo === "reporte" ? notas : movementNotes} maxLength={4000} rows={3} onChange={e => tipo === "reporte" ? setNotas(e.target.value) : setMovementNotes(e.target.value)} /></label>
+        {tipo === "reporte" && <p className="pantalla-status">El resumen incluye solo las pantallas con daño. Puedes editar estas notas.</p>}
         <button className="pantalla-primary" disabled={!online} type="submit">Guardar {tipo === "movimiento" ? "movimiento" : "reporte"}</button>
       </fieldset>
     </form>}
@@ -290,22 +351,35 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
         <div className="pantalla-classification-context">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={classificationPhoto.preview} alt="" />
-          <div><span>Paso {classification.step === "estado" ? "1" : "2"} de 2</span><strong>Foto {classificationIndex + 1}</strong></div>
+          <div><span>Paso {classification.step === "habitacion" ? "1" : "2"} de 2</span><strong>{classification.ubicacion || `Casita ${casita}`}</strong></div>
         </div>
         {classification.step === "estado" ? <>
-          <p className="sheet-description">¿Cómo se encuentra la pantalla en esta foto?</p>
-          <div className="pantalla-modal-options">
-            {ESTADOS_PANTALLA.map(estado => <button className={classification.estado === estado ? "is-selected" : ""} aria-pressed={classification.estado === estado} type="button" key={estado} onClick={() => chooseEstado(estado)}>{ESTADO_LABELS[estado]}</button>)}
+          <div className={styles.preview}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={classificationPhoto.preview} alt={`Pantalla de ${classification.ubicacion}, con ${classificationPhoto.detection?.points.length ?? 0} marcas automáticas`} />
+            {classificationPhoto.detection?.points.map((point, index) => <span key={index} className={`${styles.marker}${point.confidence === "dudoso" ? ` ${styles.dudoso}` : ""}`} style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }} aria-hidden>{index + 1}</span>)}
           </div>
+          {classificationPhoto.analysisError ? <p className="pantalla-notice" role="status">{classificationPhoto.analysisError}</p> : <p className="sheet-description" role="status">{detectionSummary(classificationPhoto.detection)}</p>}
+          {classificationPhoto.aiNotice ? <p className="pantalla-notice" role="status">{classificationPhoto.aiNotice}</p> : null}
+          <label>Puntos blancos<input aria-label="Puntos blancos" type="number" inputMode="numeric" min={0} max={999} step={1} value={classification.puntos} placeholder="Sin contar" onChange={e => {
+            const value = e.target.value;
+            setClassification(current => current ? { ...current, puntos: value, estado: /^\d{1,3}$/.test(value) ? estadoPorPuntos(Number(value)) : "" } : current);
+          }} /></label>
+          {!validCount && <p role="alert">Escribe un número entero entre 0 y 999.</p>}
+          <p className="pantalla-status">0: buen estado · 1–8: moderado · 9 o más: grave. Puedes cambiar el estado sugerido.</p>
+          <div className={`pantalla-modal-options ${styles.statusOptions}`} role="group" aria-label="Estado de la pantalla">
+            {ESTADOS_PANTALLA.map(estado => <button className={classification.estado === estado ? "is-selected" : ""} aria-pressed={classification.estado === estado} type="button" key={estado} onClick={() => setClassification(current => current ? { ...current, estado } : current)}>{ESTADO_PANTALLA_LABELS[estado]}</button>)}
+          </div>
+          <button className="pantalla-modal-back" type="button" onClick={() => setClassification(current => current ? { ...current, step: "habitacion" } : current)}><ChevronLeft size={18} aria-hidden /> Cambiar habitación</button>
+          <button className="pantalla-primary" type="button" disabled={!classification.estado || !validCount} onClick={confirmClassification}>Usar resultado</button>
         </> : <>
           <p className="sheet-description">¿A cuál habitación de la casita {casita} corresponde?</p>
           <div className="pantalla-modal-options">
             {habitaciones(casita).map(room => {
-              const used = photos.some(photo => photo.id !== classification.photoId && photo.ubicacion === room);
+              const used = photos.some(photo => photo.id !== (classification.replaceId || classification.photo.id) && photo.ubicacion === room);
               return <button className={classification.ubicacion === room ? "is-selected" : ""} aria-pressed={classification.ubicacion === room} disabled={used} type="button" key={room} onClick={() => chooseHabitacion(room)}>{room}{used ? <small>Ya registrada</small> : null}</button>;
             })}
           </div>
-          <button className="pantalla-modal-back" type="button" onClick={() => setClassification(current => current ? { ...current, step: "estado" } : current)}><ChevronLeft size={18} aria-hidden /> Cambiar estado</button>
         </>}
       </div>}
     </BottomSheet>

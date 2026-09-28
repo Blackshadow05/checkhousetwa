@@ -74,7 +74,7 @@ export async function getSupabaseUsuario() {
     const profile = await fetchAuthorizedProfile(client, data.user);
     if (!profile || profile.Rol === "inactivo") return null;
     if (!(await hasCompletedAuthentication(client, profile, data.user))) return null;
-    return { id: profile.id, nombre: profile.Usuario };
+    return { id: profile.id, nombre: profile.Usuario, rol: profile.Rol };
   } catch {
     return null;
   }
@@ -90,12 +90,17 @@ export async function completeSupabaseSession(client: AuthClient, profile: AuthP
   const linked = await linkAuthUserToProfile(client, profile, verifiedUser);
   await clearUsuarioSession();
   await setStartedAt();
-  return { id: linked.id, nombre: linked.Usuario };
+  return { id: linked.id, nombre: linked.Usuario, rol: linked.Rol };
 }
 
 export async function createPrivateClient() {
   if (!(await getSesionUsuario())) throw new Error("Inicia sesión para acceder a estos datos.");
   return createAdminClient();
+}
+
+export async function createPrivateSession() {
+  const usuario = await getSesionUsuario();
+  return usuario ? { usuario, client: createAdminClient() } : null;
 }
 
 export async function getSesionUsuario() {

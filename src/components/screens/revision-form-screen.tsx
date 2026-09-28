@@ -1,27 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
-import { Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, LoaderCircle, Minus, Plus, WifiOff } from "lucide-react";
+import { BedDouble, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, LoaderCircle, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
 import { createRevision } from "@/app/actions/revisiones";
 import { useRevisionDraft } from "@/hooks/use-revision-draft";
 import { useDismissKeyboard } from "@/hooks/use-dismiss-keyboard";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import { statusAppearance } from "@/lib/revisiones-display";
-import { BOOLEAN_FIELDS, QUANTITY_LIMITS, evidencePhotoLimit, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionFormErrors, type RevisionFormValues, type RevisionPhoto } from "@/lib/revision-form";
+import { BOOLEAN_FIELDS, CAJA_FUERTE_NO_EVIDENCE, QUANTITY_LIMITS, evidencePhotoLimit, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionFormErrors, type RevisionFormValues, type RevisionMode, type RevisionPhoto } from "@/lib/revision-form";
 import { prepareRevisionPhoto, revisionShareFiles } from "@/lib/revision-photos";
 import { discardUpload, ensureBackgroundUploads, releaseUploads, resolveEvidenciaUrls } from "@/lib/revision-evidence-upload";
 import type { InicioRevisionRow } from "@/types/database";
 import { RevisionPhotoPreview } from "@/components/screens/revision-photo-preview";
+import { RecognitionPhotoSheet, RecognitionResults, RecognitionScanCard, recognitionStyles } from "@/components/screens/revision-recognition";
+import { useInventarioCasitas } from "@/hooks/use-inventario-casitas";
+import { detectarArticulos } from "@/lib/articulos-detector";
+import { INVENTARIO_KEYS, valoresDetectados, type InventarioKey } from "@/lib/inventario-casitas";
 
 function FieldError({ name, errors }: { name: keyof RevisionFormErrors; errors: RevisionFormErrors }) {
   return errors[name] ? <p className="revision-field-error" id={`error-${name}`}>{errors[name]}</p> : null;
 }
 
-function ChoiceField({ name, label, options, value, onChange, errors, numeric = false }: {
+function ChoiceField({ name, label, options, value, onChange, errors, numeric = false, disabledOptions, badge, hint }: {
   name: keyof RevisionFormValues; label: string; options: readonly string[]; value: string;
   onChange: (name: keyof RevisionFormValues, value: string) => void; errors: RevisionFormErrors;
-  numeric?: boolean;
+  numeric?: boolean; disabledOptions?: ReadonlySet<string>; badge?: ReactNode; hint?: ReactNode;
 }) {
   const selected = numeric && /^\d+$/.test(value) ? String(Number(value)) : value;
   const choicesClassName = [
@@ -31,11 +35,12 @@ function ChoiceField({ name, label, options, value, onChange, errors, numeric = 
   ].filter(Boolean).join(" ");
   return (
     <fieldset className="revision-choice-field" data-invalid={Boolean(errors[name])} aria-describedby={errors[name] ? `error-${name}` : undefined}>
-      <legend>{label}</legend>
+      <legend className={badge ? recognitionStyles.legendRow : undefined}>{badge ? <span className={recognitionStyles.legend}><span>{label}</span>{badge}</span> : label}</legend>
+      {hint ? <p className={recognitionStyles.choiceHint}>{hint}</p> : null}
       <div className={choicesClassName}>
         {options.map((option) => (
           <label key={option} className={selected === option ? "is-selected" : ""}>
-            <input type="radio" name={name} value={option} checked={selected === option}
+            <input type="radio" name={name} value={option} checked={selected === option} disabled={disabledOptions?.has(option)}
               onChange={() => onChange(name, option)} aria-describedby={errors[name] ? `error-${name}` : undefined} />
             <span>{numeric ? (option === "0" ? "0" : option.padStart(2, "0")) : option === "Si" ? "Sí" : statusAppearance(option).label}</span>
             {!numeric && selected === option && <Check size={14} aria-hidden="true" />}
@@ -76,10 +81,20 @@ const FORM_INVENTORY_GROUPS = [
   [{ key: "camas_ordenadas", label: "Camas ordenadas" }],
 ] as const satisfies ReadonlyArray<ReadonlyArray<{ key: InventoryKey; label: string }>>;
 
-export function RevisionFormScreen({ open, onClose, onSaved }: {
-  open: boolean; onClose: () => void; onSaved: (row: InicioRevisionRow, files: File[]) => void;
+const FORM_FIELD_BY_KEY = new Map<InventoryKey, { key: InventoryKey; label: string }>(
+  FORM_INVENTORY_GROUPS.flat().map((field) => [field.key, field]),
+);
+const CAMAS_FIELD = { key: "camas_ordenadas", label: "Camas ordenadas" } as const;
+const INVENTARIO_KEY_SET = new Set<string>(INVENTARIO_KEYS);
+
+function withoutInventoryErrors(errors: RevisionFormErrors): RevisionFormErrors {
+  return Object.fromEntries(Object.entries(errors).filter(([key]) => !INVENTARIO_KEY_SET.has(key))) as RevisionFormErrors;
+}
+
+export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, onSaved }: {
+  open: boolean; mode?: RevisionMode; reviewer?: string; onClose: () => void; onSaved: (row: InicioRevisionRow, files: File[]) => void;
 }) {
-  const { draft, storage, update, clear } = useRevisionDraft(open);
+  const { draft, storage, update, clear } = useRevisionDraft(open, mode);
   useDismissKeyboard(open);
   const { online, revisiones } = useRevisiones();
   const [errors, setErrors] = useState<RevisionFormErrors>({});
@@ -91,6 +106,28 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const recognition = draft?.mode === "reconocimiento";
+  const inventario = useInventarioCasitas(open && recognition);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetError, setSheetError] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState("");
+  const [scanError, setScanError] = useState("");
+  const scanAbort = useRef<AbortController | null>(null);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (!open) setSheetOpen(false);
+  }
+
+  useEffect(() => {
+    if (open) return;
+    scanAbort.current?.abort();
+    scanAbort.current = null;
+  }, [open]);
+
+  useEffect(() => () => scanAbort.current?.abort(), []);
 
   useEffect(() => {
     if (open) scrollRef.current?.focus({ preventScroll: true });
@@ -103,6 +140,17 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
     error?.scrollIntoView({ block: "nearest", behavior: "instant" });
   }, [message, open]);
 
+  const prefilledDraft = useRef<string | null>(null);
+  const currentReviewer = draft?.values.quien_revisa;
+  const draftId = draft?.id;
+  useEffect(() => {
+    const name = reviewer?.trim();
+    if (!open || !name || !draftId || currentReviewer === undefined || prefilledDraft.current === draftId) return;
+    prefilledDraft.current = draftId;
+    if (currentReviewer.trim()) return;
+    update((previous) => ({ ...previous, values: { ...previous.values, quien_revisa: name } }));
+  }, [open, reviewer, currentReviewer, draftId, update]);
+
   useEffect(() => {
     if (draft?.photos.length) ensureBackgroundUploads(draft.photos);
   }, [draft?.photos]);
@@ -111,6 +159,8 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
     setErrors({});
     setMessage("");
     setProgress("");
+    setScanError("");
+    setSheetError("");
   }, [draft?.id]);
 
   useEffect(() => {
@@ -119,7 +169,10 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
 
   if (!draft) return open ? <div className="revision-form-screen"><p className="revision-form-loading" role="status">Preparando tu revisión…</p></div> : null;
   const { values, photos } = draft;
-  const busy = pending || preparing;
+  const busy = pending || preparing || scanning;
+  const scan = recognition ? draft.scan ?? null : null;
+  const scanStale = !!scan && (scan.photoIds.length !== photos.length || scan.photoIds.some((id, index) => photos[index]?.id !== id));
+  const casitaInventario = values.casita ? inventario.rows?.find((row) => row.casita === Number(values.casita)) ?? null : null;
   const reviewers = [...new Set(revisiones.map((row) => row.quien_revisa))].sort((a, b) => a.localeCompare(b, "es"));
 
   const change = (name: keyof RevisionFormValues, value: string) => {
@@ -135,6 +188,7 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
     });
     setErrors((previous) => ({ ...previous, [name]: undefined, evidencias: name === "caja_fuerte" ? undefined : previous.evidencias, room_move: name === "caja_fuerte" ? undefined : previous.room_move }));
     setMessage("");
+    if (name === "caja_fuerte") setScanError("");
   };
   const focusError = (nextErrors: RevisionFormErrors) => {
     const first = Object.keys(nextErrors)[0];
@@ -148,26 +202,90 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
   };
   const photoLimit = evidencePhotoLimit(values.caja_fuerte);
   const canAddNextEvidence = photos.length < photoLimit;
+  const appendPhotos = async (selected: File[]) => {
+    setPreparing(true);
+    const prepared: RevisionPhoto[] = [];
+    let failure = "";
+    try {
+      for (const file of selected) {
+        try { prepared.push(await prepareRevisionPhoto(file)); }
+        catch (error) { failure ||= error instanceof Error ? error.message : "No pudimos preparar la foto."; }
+      }
+      if (prepared.length) {
+        const next = [...photos, ...prepared].slice(0, photoLimit);
+        update((previous) => ({ ...previous, photos: [...previous.photos, ...prepared].slice(0, evidencePhotoLimit(previous.values.caja_fuerte)) }));
+        ensureBackgroundUploads(next);
+        setErrors((previous) => ({ ...previous, evidencias: undefined }));
+      }
+    } finally { setPreparing(false); }
+    return failure;
+  };
   const addPhotos = async (files: FileList | null) => {
     if (!files?.length || inFlight.current || preparing || !canAddNextEvidence) return;
     setMessage("");
-    const selected = Array.from(files).slice(0, 1);
-    setPreparing(true);
-    try {
-      const prepared: RevisionPhoto[] = [];
-      for (const file of selected) prepared.push(await prepareRevisionPhoto(file));
-      const next = [...photos, ...prepared].slice(0, photoLimit);
-      update((previous) => ({ ...previous, photos: [...previous.photos, ...prepared].slice(0, evidencePhotoLimit(previous.values.caja_fuerte)) }));
-      ensureBackgroundUploads(next);
-      setErrors((previous) => ({ ...previous, evidencias: undefined }));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No pudimos preparar la foto.");
-    } finally { setPreparing(false); }
+    const failure = await appendPhotos(Array.from(files).slice(0, 1));
+    if (failure) setMessage(failure);
+  };
+  const addScanPhotos = async (files: FileList | null) => {
+    if (!files?.length || inFlight.current || preparing || !canAddNextEvidence) return;
+    setSheetError("");
+    const failure = await appendPhotos(Array.from(files).slice(0, photoLimit - photos.length));
+    if (failure) setSheetError(failure);
+  };
+  const focusScanCard = () => {
+    requestAnimationFrame(() => {
+      const card = scrollRef.current?.querySelector<HTMLElement>("[data-revision-evidencias]");
+      card?.focus({ preventScroll: true });
+      card?.scrollIntoView({ block: "center", behavior: "instant" });
+    });
+  };
+  const runScan = () => {
+    if (scanAbort.current || preparing || !photos.length) return;
+    setSheetOpen(false);
+    setScanError("");
+    const controller = new AbortController();
+    scanAbort.current = controller;
+    const draftId = draft.id;
+    const scannedIds = photos.map((photo) => photo.id);
+    setScanning(true);
+    setScanProgress("Preparando fotos…");
+    void detectarArticulos(photos.map((photo) => photo.blob), { signal: controller.signal, onProgress: setScanProgress })
+      .then((conteo) => {
+        if (controller.signal.aborted) return;
+        update((previous) => previous.id !== draftId ? previous : {
+          ...previous,
+          values: { ...previous.values, ...valoresDetectados(conteo) },
+          scan: { detectados: conteo, photoIds: scannedIds, at: new Date().toISOString() },
+        });
+        setErrors((previous) => withoutInventoryErrors(previous));
+        requestAnimationFrame(() => resultsRef.current?.scrollIntoView({
+          block: "start",
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+        }));
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setScanError(error instanceof Error ? error.message : "No pudimos escanear las fotos. Inténtalo de nuevo.");
+        focusScanCard();
+      })
+      .finally(() => {
+        if (scanAbort.current === controller) scanAbort.current = null;
+        setScanning(false);
+        setScanProgress("");
+      });
   };
   const submit = () => {
     if (inFlight.current) return;
     const stamped = withCurrentRevisionTime(values);
     const nextErrors = validateRevisionForm(stamped, undefined, photos.length);
+    if (recognition && !draft.scan) {
+      const visible = withoutInventoryErrors(nextErrors);
+      setErrors(visible);
+      setScanError("Escanea las fotos para contar los artículos antes de guardar.");
+      if (Object.keys(visible).length) focusError(visible);
+      else focusScanCard();
+      return;
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
       focusError(nextErrors); return;
@@ -210,10 +328,10 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
     update((previous) => ({ ...previous, photos: previous.photos.filter((item) => item.id !== photoId) }));
   };
 
-  const quantity = (field: { key: InventoryKey; label: string }) => (
+  const quantity = (field: { key: InventoryKey; label: string }, extras?: { badge?: ReactNode; hint?: ReactNode }) => (
     <div className="revision-quantity-field" key={field.key}>
-      {BOOLEAN_FIELDS.has(field.key) ? <ChoiceField name={field.key} label={field.label} options={["Si", "No"]} value={values[field.key]} onChange={change} errors={errors} /> : QUANTITY_LIMITS[field.key] !== undefined ?
-        <ChoiceField name={field.key} label={field.label} numeric options={Array.from({ length: QUANTITY_LIMITS[field.key]! + 1 }, (_, index) => String(index))} value={values[field.key]} onChange={change} errors={errors} /> : <>
+      {BOOLEAN_FIELDS.has(field.key) ? <ChoiceField name={field.key} label={field.label} options={["Si", "No"]} value={values[field.key]} onChange={change} errors={errors} badge={extras?.badge} hint={extras?.hint} /> : QUANTITY_LIMITS[field.key] !== undefined ?
+        <ChoiceField name={field.key} label={field.label} numeric options={Array.from({ length: QUANTITY_LIMITS[field.key]! + 1 }, (_, index) => String(index))} value={values[field.key]} onChange={change} errors={errors} badge={extras?.badge} hint={extras?.hint} /> : <>
         <div className="revision-quantity-row">
           <label htmlFor={`revision-${field.key}`}>{field.label}</label>
           <div className="revision-stepper">
@@ -228,11 +346,12 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
   );
 
   return (
-    <section className="revision-form-screen" hidden={!open} aria-label="Nueva revisión" inert={!open ? true : undefined}>
+    <section className="revision-form-screen" hidden={!open} aria-label={recognition ? "Nueva revisión por reconocimiento" : "Nueva revisión"} inert={!open ? true : undefined}>
       <form className="revision-form" noValidate onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <div className="revision-form-scroll" ref={scrollRef} tabIndex={-1}>
           <div className="revision-form-welcome">
             <div className="revision-form-welcome-copy">
+              {recognition && <p className="revision-form-kicker">POR RECONOCIMIENTO</p>}
               <p className="revision-form-welcome-title">{values.casita ? `Casita ${String(Number(values.casita)).padStart(2, "0")}` : "Selecciona una casita"}</p>
             </div>
             <span className="revision-form-welcome-icon" aria-hidden="true"><House size={32} strokeWidth={1.25} /><Check size={14} /></span>
@@ -247,12 +366,30 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
                 <div className="revision-text-field"><label htmlFor="revision-quien_revisa">¿Quién revisa?</label><input id="revision-quien_revisa" name="quien_revisa" list="revision-reviewers" autoComplete="name" maxLength={100} value={values.quien_revisa} onChange={(e) => change("quien_revisa", e.target.value)} aria-invalid={Boolean(errors.quien_revisa)} aria-describedby={errors.quien_revisa ? "error-quien_revisa" : undefined} /><datalist id="revision-reviewers">{reviewers.map((name) => <option key={name} value={name} />)}</datalist><FieldError name="quien_revisa" errors={errors} /></div>
               </FormCard>
               <FormCard>
-                <ChoiceField name="caja_fuerte" label="Caja fuerte" options={CAJA_FUERTE_FILTERS} value={values.caja_fuerte} onChange={change} errors={errors} />
+                <ChoiceField name="caja_fuerte" label="Caja fuerte" options={CAJA_FUERTE_FILTERS} value={values.caja_fuerte} onChange={change} errors={errors}
+                  disabledOptions={recognition ? CAJA_FUERTE_NO_EVIDENCE : undefined}
+                  hint={recognition ? "Si y No no llevan fotos. Para esas opciones usa Ingreso manual." : undefined} />
                 <div className="revision-text-field"><label htmlFor="revision-puertas_ventanas">Puertas y ventanas<small>Ej. Cerradas y en buen estado</small></label><textarea id="revision-puertas_ventanas" name="puertas_ventanas" rows={2} maxLength={500} placeholder="Ej. Cerradas y en buen estado" value={values.puertas_ventanas} onChange={(e) => change("puertas_ventanas", e.target.value)} aria-invalid={Boolean(errors.puertas_ventanas)} aria-describedby={errors.puertas_ventanas ? "error-puertas_ventanas" : undefined} /><FieldError name="puertas_ventanas" errors={errors} /></div>
                 {values.caja_fuerte === "Room Move" && <div className="revision-text-field"><label htmlFor="revision-room_move">Movimiento entre casitas<small>Ej. De casita 12 a casita 24</small></label><input id="revision-room_move" name="room_move" placeholder="Ej. De casita 12 a casita 24" maxLength={120} value={values.room_move} onChange={(e) => change("room_move", e.target.value)} aria-invalid={Boolean(errors.room_move)} aria-describedby={errors.room_move ? "error-room_move" : undefined} /><FieldError name="room_move" errors={errors} /></div>}
               </FormCard>
-              {FORM_INVENTORY_GROUPS.map((fields) => <FormCard key={fields[0].key}>{fields.map(quantity)}</FormCard>)}
-              {photoLimit > 0 && <FormCard icon={<Camera size={18} />} title="Añade imágenes de evidencias">
+              {recognition ? <>
+                <FormCard icon={<ScanSearch size={18} />} title="Reconocimiento de artículos">
+                  <RecognitionScanCard photos={photos} limit={photoLimit} scan={scan} stale={scanStale} scanning={scanning} progress={scanProgress}
+                    error={scanError} disabled={busy} active={open} onOpenSheet={() => { setSheetError(""); setSheetOpen(true); }}
+                    onRescan={runScan} onRemove={removePhoto}>
+                    <FieldError name="evidencias" errors={errors} />
+                  </RecognitionScanCard>
+                </FormCard>
+                {scan && <div ref={resultsRef} className="revision-recognition-results">
+                  <FormCard icon={<ListChecks size={18} />} title="Artículos encontrados">
+                    <RecognitionResults values={values} scan={scan} inventario={casitaInventario} inventarioStatus={inventario.status}
+                      onRetryInventario={() => void inventario.refresh()}
+                      renderField={(key: InventarioKey, extras) => quantity(FORM_FIELD_BY_KEY.get(key) ?? { key, label: key }, extras)} />
+                  </FormCard>
+                </div>}
+                <FormCard icon={<BedDouble size={18} />} title="Habitación">{quantity(CAMAS_FIELD)}</FormCard>
+              </> : FORM_INVENTORY_GROUPS.map((fields) => <FormCard key={fields[0].key}>{fields.map((field) => quantity(field))}</FormCard>)}
+              {!recognition && photoLimit > 0 && <FormCard icon={<Camera size={18} />} title="Añade imágenes de evidencias">
                 <div data-revision-evidencias="" tabIndex={-1}>
                   {photos.length === 0 && <div className="revision-evidence-empty"><ImagePlus size={26} strokeWidth={1.5} aria-hidden="true" /></div>}
                   {photos.length > 0 && <div className="revision-photo-grid">{photos.map((photo, index) => <RevisionPhotoPreview key={photo.id} photo={photo} index={index} disabled={busy} active={open} onRemove={() => removePhoto(photo.id)} />)}</div>}
@@ -275,6 +412,9 @@ export function RevisionFormScreen({ open, onClose, onSaved }: {
           </footer>
         </div>
       </form>
+      {recognition && <RecognitionPhotoSheet open={sheetOpen && open} onClose={() => setSheetOpen(false)} photos={photos} limit={photoLimit}
+        cajaFuerte={values.caja_fuerte} preparing={preparing} error={sheetError} onPick={(files) => void addScanPhotos(files)}
+        onRemove={removePhoto} onScan={runScan} />}
     </section>
   );
 }

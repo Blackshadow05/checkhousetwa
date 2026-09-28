@@ -1,34 +1,38 @@
 "use client";
 
 import { House } from "lucide-react";
-import { useMemo } from "react";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
-import {
-  casitaNumber,
-  groupHoyCasitas,
-} from "@/lib/revisiones-display";
+import { casitaNumber, type groupHoyCasitas } from "@/lib/revisiones-display";
 import styles from "./inicio-screen.module.css";
 
-export function HoyCasitas() {
-  const { revisiones, today, openRevision, upsells } = useRevisiones();
-  const groups = useMemo(
-    () => groupHoyCasitas(revisiones, today, upsells),
-    [revisiones, today, upsells],
-  );
-  const total = groups.reduce((sum, group) => sum + group.rows.length, 0);
+export function HoyCasitas({
+  groups,
+  total,
+}: {
+  groups: ReturnType<typeof groupHoyCasitas>;
+  total: number;
+}) {
+  const { openRevision } = useRevisiones();
 
   return (
-    <section className={styles.board} aria-label="Casitas de hoy">
+    <section id="hoy-casitas" className={styles.board} aria-labelledby="hoy-casitas-title">
       <div className={styles.sectionHeading}>
-        <House size={20} aria-hidden="true" />
-        <h2>Casitas de hoy</h2>
+        <h2 id="hoy-casitas-title">Casitas de hoy</h2>
         <span className={styles.count}>{total}</span>
       </div>
       <div className={styles.card}>
-        {groups.length === 0 && <div className={styles.empty}><h3>Sin movimientos</h3></div>}
+        {groups.length === 0 && (
+          <div className={styles.empty}>
+            <span className={styles.emptyIcon}>
+              <House size={20} aria-hidden="true" />
+            </span>
+            <p>Sin movimientos por ahora</p>
+          </div>
+        )}
         {groups.map((group) => (
           <div key={group.id} className={styles.group}>
             <div className={styles.groupHeading}>
+              <span className={styles.groupDot} data-tone={group.tone} aria-hidden="true" />
               <h3>{group.id === "upsell" ? "Upsells vigentes" : group.label}</h3>
               <span>{group.rows.length}</span>
             </div>

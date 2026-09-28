@@ -41,6 +41,8 @@ yarn-error.log*
 # Serwist
 public/sw.js
 public/swe-worker*
+public/opencv/
+public/articulos/
 
 # vercel
 .vercel

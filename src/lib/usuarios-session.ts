@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/server";
+import type { SesionUsuario } from "@/types/database";
 const COOKIE = "casitas-usuario";
 const MAX_AGE = 6 * 24 * 60 * 60;
 function sign(value: string) {
@@ -14,7 +15,7 @@ export async function setUsuarioSession(id: number) {
   (await cookies()).set(COOKIE, `${value}.${sign(value)}`, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: MAX_AGE });
 }
 export async function clearUsuarioSession() { (await cookies()).delete(COOKIE); }
-export async function getUsuarioSession() {
+export async function getUsuarioSession(): Promise<SesionUsuario | null> {
   try {
     const raw = (await cookies()).get(COOKIE)?.value;
     if (!raw) return null;
@@ -27,6 +28,6 @@ export async function getUsuarioSession() {
     const client = await createAdminClient();
     const { data, error } = await client.from("Usuarios").select("id,Usuario,Rol,metodo_login,totp_enrolled").eq("id", payload.id).single();
     if (error || !data || data.Rol === "inactivo" || data.metodo_login === "google" || data.totp_enrolled) return null;
-    return { id: data.id, nombre: data.Usuario };
+    return { id: data.id, nombre: data.Usuario, rol: data.Rol };
   } catch { return null; }
 }

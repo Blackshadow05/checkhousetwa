@@ -1,6 +1,8 @@
 import type { PantallaReport, PantallaStock } from "@/lib/pantallas";
 type Table<Row, Insert = Partial<Row>> = { Row: Row; Insert: Insert; Update: Partial<Row>; Relationships: [] };
 export type UsuarioProfile = { id: number; Usuario: string; Rol: string | null; metodo_login: string | null; totp_enrolled: boolean; auth_user_id: string | null; email: string | null; ultimo_login_at: string | null; ultimo_login_ip: string | null };
+export type SesionUsuario = { id: number; nombre: string; rol: string | null };
+export type UsuarioShell = { id: number; nombre: string; rol?: string | null };
 export type NotaRevisionCasita = {
   id: string;
   revision_id: string;
@@ -19,6 +21,24 @@ export type NotaRevisionCasitaInsert = {
   hora?: string | null;
   created_at?: string | null;
 };
+export type InventarioCasitaRow = {
+  casita: number;
+  chromecast: number;
+  binoculares: number;
+  trapo_binoculares: number;
+  speaker: number;
+  usb_speaker: number;
+  controles_tv: number;
+  secadora: number;
+  accesorios_secadora: number;
+  steamer: number;
+  bolsa_vapor: number;
+  plancha_cabello: number;
+  bulto: number;
+  sombrero: number;
+  bolso_yute: number;
+  cola_caballo: number;
+};
 export type Json =
   | string
   | number
@@ -32,6 +52,7 @@ export type Database = {
     Tables: {
       reporte_pantallas: Table<PantallaReport, Pick<PantallaReport, "nombre_usuario" | "fecha_hora" | "numero_casita" | "fotos" | "notas"> & Partial<Omit<PantallaReport, "id">>>;
       inventario_pantallas: Table<PantallaStock & { id: number; updated_at: string }>;
+      inventario_casitas: Table<InventarioCasitaRow>;
       Usuarios: Table<UsuarioProfile & { password_hash: string | null }>;
       notas_revisiones_casitas: Table<NotaRevisionCasita, NotaRevisionCasitaInsert>;
       revisiones_casitas: {

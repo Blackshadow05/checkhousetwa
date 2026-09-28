@@ -22,6 +22,7 @@ const nextConfig: NextConfig = {
     "10.*.*.*",
     "172.*.*.*",
     "*.local",
+    "*.trycloudflare.com",
   ],
   // Next's build uses the TS6 compatibility API; `pnpm tsc` still uses TS7.
   experimental: { useTypeScriptCli: false },

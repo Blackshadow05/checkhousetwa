@@ -32,10 +32,18 @@ export type RevisionFormValues = Record<InventoryKey, string> & {
   notas: string;
 };
 export type RevisionPhoto = { id: string; name: string; blob: Blob; url?: string };
+export type RevisionMode = "manual" | "reconocimiento";
+export type RevisionScan = {
+  detectados: Partial<Record<InventoryKey, number>>;
+  photoIds: string[];
+  at: string;
+};
 export type RevisionDraft = {
   id: string;
   values: RevisionFormValues;
   photos: RevisionPhoto[];
+  mode?: RevisionMode;
+  scan?: RevisionScan | null;
 };
 export type RevisionFormErrors = Partial<Record<keyof RevisionFormValues | "evidencias", string>>;
 
@@ -61,9 +69,9 @@ export function formatRevisionDateTime(value: string) {
   }).format(date);
 }
 
-export function newRevisionDraft(): RevisionDraft {
+export function newRevisionDraft(mode: RevisionMode = "manual"): RevisionDraft {
   return {
-    id: createUuid(), photos: [],
+    id: createUuid(), photos: [], mode, scan: null,
     values: {
       ...Object.fromEntries(INVENTORY_FIELDS.map(({ key }) => [key, ""])) as Record<InventoryKey, string>,
       casita: "", quien_revisa: "", created_at: costaRicaDateTime(),
