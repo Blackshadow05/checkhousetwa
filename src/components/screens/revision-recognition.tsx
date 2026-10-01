@@ -3,7 +3,7 @@
 import { useRef, type ReactNode } from "react";
 import { Camera, CircleCheck, Images, LoaderCircle, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import { RevisionPhotoPreview } from "@/components/screens/revision-photo-preview";
+import { RevisionPhotoPreview, type PhotoMark } from "@/components/screens/revision-photo-preview";
 import { statusAppearance } from "@/lib/revisiones-display";
 import { compararInventario, textoCantidad, type ComparacionArticulo, type InventarioCasita, type InventarioKey } from "@/lib/inventario-casitas";
 import type { InventarioStatus } from "@/hooks/use-inventario-casitas";
@@ -76,11 +76,12 @@ export function RecognitionPhotoSheet({ open, onClose, photos, limit, cajaFuerte
   );
 }
 
-export function RecognitionScanCard({ photos, limit, scan, stale, scanning, progress, error, disabled, active, onOpenSheet, onRescan, onRemove, children }: {
+export function RecognitionScanCard({ photos, limit, scan, stale, marks, scanning, progress, error, disabled, active, onOpenSheet, onRescan, onRemove, children }: {
   photos: RevisionPhoto[];
   limit: number;
   scan: RevisionScan | null;
   stale: boolean;
+  marks?: ReadonlyMap<string, PhotoMark[]>;
   scanning: boolean;
   progress: string;
   error: string;
@@ -108,7 +109,7 @@ export function RecognitionScanCard({ photos, limit, scan, stale, scanning, prog
       ) : (
         <div className="revision-photo-grid">
           {photos.map((photo, index) => (
-            <RevisionPhotoPreview key={photo.id} photo={photo} index={index} disabled={disabled} active={active} onRemove={() => onRemove(photo.id)} />
+            <RevisionPhotoPreview key={photo.id} photo={photo} index={index} disabled={disabled} active={active} marks={marks?.get(photo.id)} onRemove={() => onRemove(photo.id)} />
           ))}
         </div>
       )}
@@ -121,7 +122,7 @@ export function RecognitionScanCard({ photos, limit, scan, stale, scanning, prog
         </div>
       )}
       {!scanning && scan && !stale && (
-        <p className={styles.scanMeta}><CircleCheck size={14} aria-hidden="true" />Escaneado con {cantidadFotos(scan.photoIds.length)}. Revisa y corrige los conteos abajo.</p>
+        <p className={styles.scanMeta}><CircleCheck size={14} aria-hidden="true" />Escaneado con {cantidadFotos(scan.photoIds.length)}. {marks?.size ? "En rojo lo detectado que no coincide con el inventario." : "Revisa y corrige los conteos abajo."}</p>
       )}
       {!scanning && stale && (
         <p className={`${styles.notice} ${styles.info}`} role="status"><TriangleAlert size={15} aria-hidden="true" />Las fotos cambiaron después del escaneo. Vuelve a escanear para actualizar los conteos.</p>
@@ -163,17 +164,19 @@ function inventoryText(status: InventarioStatus, casita: string, found: boolean)
   return status === "actualizado" ? `Comparado con el inventario de la casita ${casita}.` : `Comparado con el inventario guardado en este dispositivo (casita ${casita}).`;
 }
 
-export function RecognitionResults({ values, scan, inventario, inventarioStatus, onRetryInventario, renderField }: {
+export function RecognitionResults({ values, scan, inventario, inventarioStatus, onRetryInventario, renderField, renderCamas }: {
   values: RevisionFormValues;
   scan: RevisionScan;
   inventario: InventarioCasita | null;
   inventarioStatus: InventarioStatus;
   onRetryInventario: () => void;
   renderField: (key: InventarioKey, extras: { badge: ReactNode; hint: ReactNode }) => ReactNode;
+  renderCamas: (extras: { badge: ReactNode; hint: ReactNode }) => ReactNode;
 }) {
   const { revisar, coinciden, sinComparar } = compararInventario(values, scan.detectados, inventario);
   const all = [...revisar, ...coinciden];
-  const pendientes = all.filter((item) => item.coincideAhora === false).length;
+  const camasPendientes = values.camas_ordenadas !== "Si" && values.camas_ordenadas !== "No";
+  const pendientes = all.filter((item) => item.coincideAhora === false).length + (camasPendientes ? 1 : 0);
   const casita = values.casita ? String(Number(values.casita)) : "";
   const row = (item: ComparacionArticulo, tone: "alert" | "ok" | "none") => (
     <div key={item.key} className={styles.row} data-tone={tone === "alert" && item.coincideAhora === false ? "alert" : undefined}>
@@ -187,16 +190,24 @@ export function RecognitionResults({ values, scan, inventario, inventarioStatus,
           {pendientes > 0
             ? <span className={styles.badgeAlert}><TriangleAlert size={13} aria-hidden="true" />{pendientes} por revisar</span>
             : <span className={styles.badgeOk}><CircleCheck size={13} aria-hidden="true" />Todo coincide</span>}
-          <span className={styles.badgeOk}>{all.length - pendientes} coinciden</span>
+          <span className={styles.badgeOk}>{all.filter((item) => item.coincideAhora !== false).length} coinciden</span>
         </div>
       )}
       <div className={styles.inventory}>
         <span>{inventoryText(inventarioStatus, casita, inventario !== null)}</span>
         {casita && !inventario && inventarioStatus === "error" && <button type="button" onClick={onRetryInventario}>Reintentar</button>}
       </div>
-      {revisar.length > 0 && (
+      {(revisar.length > 0 || camasPendientes) && (
         <section className={styles.group} aria-label="Artículos por revisar">
           <h3 className={`${styles.groupTitle} ${styles.alert}`}><TriangleAlert size={14} aria-hidden="true" />Revisar</h3>
+          {camasPendientes && (
+            <div className={styles.row} data-tone="alert">
+              {renderCamas({
+                badge: <span className={`${styles.badge} ${styles.badgeAlert}`}><TriangleAlert size={12} aria-hidden="true" />Revisar</span>,
+                hint: "No se reconoce en fotos",
+              })}
+            </div>
+          )}
           {revisar.map((item) => row(item, "alert"))}
         </section>
       )}

@@ -56,6 +56,10 @@ export function valoresDetectados(conteo: ConteoArticulos): Partial<RevisionForm
   return Object.fromEntries(ARTICULOS_CLASES.map((key) => [key, valorDetectado(key, conteo[key] ?? 0)])) as Partial<RevisionFormValues>;
 }
 
+function mismaCantidad(key: InventoryKey, a: number, b: number) {
+  return BOOLEAN_FIELDS.has(key) ? (a > 0) === (b > 0) : a === b;
+}
+
 function coincide(key: InventarioKey, value: string, esperado: number) {
   if (BOOLEAN_FIELDS.has(key)) return (value === "Si") === (esperado > 0);
   return /^\d{1,2}$/.test(value) && Number(value) === esperado;
@@ -84,7 +88,7 @@ export function compararInventario(
   for (const key of INVENTARIO_KEYS) {
     const detectado = isReconocible(key) && typeof detectados[key] === "number" ? detectados[key] : null;
     const esperado = inventario ? inventario.cantidades[key] : null;
-    const escaneoCoincide = esperado !== null && detectado !== null && detectado === esperado;
+    const escaneoCoincide = esperado !== null && detectado !== null && mismaCantidad(key, detectado, esperado);
     const sinCambios = detectado !== null && isReconocible(key) && values[key] === valorDetectado(key, detectado);
     const item: ComparacionArticulo = {
       key,

@@ -16,7 +16,7 @@ import { RevisionPhotoPreview } from "@/components/screens/revision-photo-previe
 import { RecognitionPhotoSheet, RecognitionResults, RecognitionScanCard, recognitionStyles } from "@/components/screens/revision-recognition";
 import { useInventarioCasitas } from "@/hooks/use-inventario-casitas";
 import { detectarArticulos } from "@/lib/articulos-detector";
-import { INVENTARIO_KEYS, valoresDetectados, type InventarioKey } from "@/lib/inventario-casitas";
+import { INVENTARIO_KEYS, compararInventario, valoresDetectados, type InventarioKey } from "@/lib/inventario-casitas";
 
 function FieldError({ name, errors }: { name: keyof RevisionFormErrors; errors: RevisionFormErrors }) {
   return errors[name] ? <p className="revision-field-error" id={`error-${name}`}>{errors[name]}</p> : null;
@@ -173,6 +173,17 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const scan = recognition ? draft.scan ?? null : null;
   const scanStale = !!scan && (scan.photoIds.length !== photos.length || scan.photoIds.some((id, index) => photos[index]?.id !== id));
   const casitaInventario = values.casita ? inventario.rows?.find((row) => row.casita === Number(values.casita)) ?? null : null;
+  const noCoinciden = scan && !scanStale && casitaInventario
+    ? new Set<InventoryKey>(compararInventario(values, scan.detectados, casitaInventario).revisar
+      .filter((item) => item.coincideAhora === false && (item.detectado ?? 0) > 0).map((item) => item.key))
+    : null;
+  const scanMarks = noCoinciden?.size && scan?.cajas
+    ? new Map(scan.photoIds.flatMap((id, index) => {
+      const marks = (scan.cajas?.[index] ?? []).filter((caja) => noCoinciden.has(caja.key))
+        .map((caja) => ({ ...caja, label: FORM_FIELD_BY_KEY.get(caja.key)?.label ?? caja.key }));
+      return marks.length ? [[id, marks] as const] : [];
+    }))
+    : undefined;
   const reviewers = [...new Set(revisiones.map((row) => row.quien_revisa))].sort((a, b) => a.localeCompare(b, "es"));
 
   const change = (name: keyof RevisionFormValues, value: string) => {
@@ -250,12 +261,12 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     setScanning(true);
     setScanProgress("Preparando fotos…");
     void detectarArticulos(photos.map((photo) => photo.blob), { signal: controller.signal, onProgress: setScanProgress })
-      .then((conteo) => {
+      .then(({ conteo, cajas }) => {
         if (controller.signal.aborted) return;
         update((previous) => previous.id !== draftId ? previous : {
           ...previous,
           values: { ...previous.values, ...valoresDetectados(conteo) },
-          scan: { detectados: conteo, photoIds: scannedIds, at: new Date().toISOString() },
+          scan: { detectados: conteo, photoIds: scannedIds, at: new Date().toISOString(), cajas },
         });
         setErrors((previous) => withoutInventoryErrors(previous));
         requestAnimationFrame(() => resultsRef.current?.scrollIntoView({
@@ -279,7 +290,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     const stamped = withCurrentRevisionTime(values);
     const nextErrors = validateRevisionForm(stamped, undefined, photos.length);
     if (recognition && !draft.scan) {
-      const visible = withoutInventoryErrors(nextErrors);
+      const visible = Object.fromEntries(Object.entries(withoutInventoryErrors(nextErrors)).filter(([key]) => key !== "camas_ordenadas")) as RevisionFormErrors;
       setErrors(visible);
       setScanError("Escanea las fotos para contar los artículos antes de guardar.");
       if (Object.keys(visible).length) focusError(visible);
@@ -373,21 +384,22 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
                 {values.caja_fuerte === "Room Move" && <div className="revision-text-field"><label htmlFor="revision-room_move">Movimiento entre casitas<small>Ej. De casita 12 a casita 24</small></label><input id="revision-room_move" name="room_move" placeholder="Ej. De casita 12 a casita 24" maxLength={120} value={values.room_move} onChange={(e) => change("room_move", e.target.value)} aria-invalid={Boolean(errors.room_move)} aria-describedby={errors.room_move ? "error-room_move" : undefined} /><FieldError name="room_move" errors={errors} /></div>}
               </FormCard>
               {recognition ? <>
-                <FormCard icon={<ScanSearch size={18} />} title="Reconocimiento de artículos">
-                  <RecognitionScanCard photos={photos} limit={photoLimit} scan={scan} stale={scanStale} scanning={scanning} progress={scanProgress}
+                {values.casita && <FormCard icon={<ScanSearch size={18} />} title="Reconocimiento de artículos">
+                  <RecognitionScanCard photos={photos} limit={photoLimit} scan={scan} stale={scanStale} marks={scanMarks} scanning={scanning} progress={scanProgress}
                     error={scanError} disabled={busy} active={open} onOpenSheet={() => { setSheetError(""); setSheetOpen(true); }}
                     onRescan={runScan} onRemove={removePhoto}>
                     <FieldError name="evidencias" errors={errors} />
                   </RecognitionScanCard>
-                </FormCard>
+                </FormCard>}
                 {scan && <div ref={resultsRef} className="revision-recognition-results">
                   <FormCard icon={<ListChecks size={18} />} title="Artículos encontrados">
                     <RecognitionResults values={values} scan={scan} inventario={casitaInventario} inventarioStatus={inventario.status}
                       onRetryInventario={() => void inventario.refresh()}
-                      renderField={(key: InventarioKey, extras) => quantity(FORM_FIELD_BY_KEY.get(key) ?? { key, label: key }, extras)} />
+                      renderField={(key: InventarioKey, extras) => quantity(FORM_FIELD_BY_KEY.get(key) ?? { key, label: key }, extras)}
+                      renderCamas={(extras) => quantity(CAMAS_FIELD, extras)} />
                   </FormCard>
                 </div>}
-                <FormCard icon={<BedDouble size={18} />} title="Habitación">{quantity(CAMAS_FIELD)}</FormCard>
+                {scan && (values.camas_ordenadas === "Si" || values.camas_ordenadas === "No") && <FormCard icon={<BedDouble size={18} />} title="Habitación">{quantity(CAMAS_FIELD)}</FormCard>}
               </> : FORM_INVENTORY_GROUPS.map((fields) => <FormCard key={fields[0].key}>{fields.map((field) => quantity(field))}</FormCard>)}
               {!recognition && photoLimit > 0 && <FormCard icon={<Camera size={18} />} title="Añade imágenes de evidencias">
                 <div data-revision-evidencias="" tabIndex={-1}>

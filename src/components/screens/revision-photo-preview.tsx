@@ -15,13 +15,37 @@ function photoSize(bytes: number) {
   return `${format.format(bytes / (1024 * 1024))} MB`;
 }
 
-export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active, label: labelOverride }: {
+export type PhotoMark = { label: string; x: number; y: number; w: number; h: number };
+
+function PhotoMarks({ marks, width, height, fit, labels }: {
+  marks: readonly PhotoMark[]; width: number; height: number; fit: "slice" | "meet"; labels: boolean;
+}) {
+  const font = Math.max(width, height) * 0.028;
+  return (
+    <svg className="revision-photo-marks" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio={`xMidYMid ${fit}`} aria-hidden="true">
+      {marks.map((mark, index) => {
+        const x = mark.x * width;
+        const y = mark.y * height;
+        const top = y - font * 0.4 > font;
+        return (
+          <g key={index}>
+            <rect x={x} y={y} width={mark.w * width} height={mark.h * height} rx={font * 0.2} vectorEffect="non-scaling-stroke" />
+            {labels && <text x={x + font * 0.2} y={top ? y - font * 0.4 : y + font * 1.1} fontSize={font} strokeWidth={font * 0.22}>{mark.label}</text>}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active, label: labelOverride, marks }: {
   photo: RevisionPhoto;
   index: number;
   onRemove: () => void;
   disabled: boolean;
   active: boolean;
   label?: string;
+  marks?: readonly PhotoMark[];
 }) {
   const thumbnailRef = useRef<HTMLImageElement>(null);
   const fullImageRef = useRef<HTMLImageElement>(null);
@@ -29,6 +53,8 @@ export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active,
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [zoomed, setZoomed] = useState(false);
   const [dimensions, setDimensions] = useState("");
+  const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
+  const marked = marks?.length && natural ? marks : null;
   const size = photoSize(photo.blob.size);
   const format = photo.blob.type === "image/webp" ? "WebP" : "JPEG";
   const titleId = `photo-preview-${photo.id}`;
@@ -54,10 +80,14 @@ export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active,
   return <>
     <figure className="revision-photo">
       <button ref={triggerRef} type="button" className="revision-photo-open" disabled={disabled}
-        aria-label={`Abrir ${label}, ${size}`} onClick={() => dialogRef.current?.showModal()}>
+        aria-label={`Abrir ${label}, ${size}${marked ? `, ${marked.length === 1 ? "1 artículo marcado" : `${marked.length} artículos marcados`}` : ""}`} onClick={() => dialogRef.current?.showModal()}>
         {/* Local Blob URLs must bypass the remote image optimizer. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img ref={thumbnailRef} alt={label} />
+        <img ref={thumbnailRef} alt={label} onLoad={(event) => {
+          const image = event.currentTarget;
+          setNatural({ width: image.naturalWidth, height: image.naturalHeight });
+        }} />
+        {marked && natural && <PhotoMarks marks={marked} width={natural.width} height={natural.height} fit="slice" labels={false} />}
         <span className="revision-photo-expand" aria-hidden="true"><Maximize2 size={15} /></span>
       </button>
       <button type="button" className="revision-photo-remove" onClick={onRemove} disabled={disabled} aria-label={`Quitar ${label}`}><X size={17} /></button>
@@ -72,11 +102,14 @@ export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active,
           <button type="button" autoFocus aria-label="Cerrar imagen" onClick={() => dialogRef.current?.close()}><X size={24} /></button>
         </header>
         <div className={`revision-photo-viewer-image${zoomed ? " is-zoomed" : ""}`}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img ref={fullImageRef} alt={label} onLoad={(event) => {
-            const image = event.currentTarget;
-            setDimensions(`${image.naturalWidth} × ${image.naturalHeight} px`);
-          }} />
+          <div className="revision-photo-frame">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img ref={fullImageRef} alt={label} onLoad={(event) => {
+              const image = event.currentTarget;
+              setDimensions(`${image.naturalWidth} × ${image.naturalHeight} px`);
+            }} />
+            {marked && natural && <PhotoMarks marks={marked} width={natural.width} height={natural.height} fit="meet" labels />}
+          </div>
         </div>
         <footer className="revision-photo-viewer-footer">
           <span>{format}{dimensions ? ` · ${dimensions}` : ""}</span>

@@ -40,7 +40,9 @@ function overlap(a: Candidate, b: Candidate) {
   return union > 0 ? intersection / union : 0;
 }
 
-export function contarDetecciones(output: Float32Array, dims: readonly number[]): number[] {
+export type CajaDetectada = Omit<Candidate, "score">;
+
+export function detectarCajas(output: Float32Array, dims: readonly number[]): CajaDetectada[] {
   const channels = dims[1];
   const anchors = dims[2];
   const classes = channels - 4;
@@ -71,8 +73,12 @@ export function contarDetecciones(output: Float32Array, dims: readonly number[])
     if (kept.some((other) => other.cls === candidate.cls && overlap(other, candidate) > NMS_IOU)) continue;
     kept.push(candidate);
   }
-  const counts = new Array<number>(classes).fill(0);
-  for (const detection of kept) counts[detection.cls] += 1;
+  return kept.map(({ cls, x1, y1, x2, y2 }) => ({ cls, x1, y1, x2, y2 }));
+}
+
+export function contarCajas(cajas: readonly CajaDetectada[]): number[] {
+  const counts = new Array<number>(ARTICULOS_CLASES.length).fill(0);
+  for (const caja of cajas) counts[caja.cls] += 1;
   return counts;
 }
 

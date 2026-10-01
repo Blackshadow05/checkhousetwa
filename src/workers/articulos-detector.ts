@@ -1,5 +1,5 @@
 import * as ort from "onnxruntime-web/wasm";
-import { contarDetecciones } from "../lib/articulos-model";
+import { contarCajas, detectarCajas, type CajaDetectada } from "../lib/articulos-model";
 
 declare const self: DedicatedWorkerGlobalScope;
 declare const __ORT_WASM_URL__: string;
@@ -58,9 +58,9 @@ async function runImage(model: ort.InferenceSession, image: ImageData) {
     const output = await model.run({ [model.inputNames[0]]: input });
     const tensor = output[model.outputNames[0]];
     const data = tensor.location === "cpu" ? tensor.data as Float32Array : await tensor.getData() as Float32Array;
-    const counts = contarDetecciones(data, tensor.dims);
+    const boxes = detectarCajas(data, tensor.dims);
     tensor.dispose();
-    return counts;
+    return boxes;
   } finally {
     input.dispose();
   }
@@ -76,10 +76,10 @@ self.onmessage = async ({ data }: MessageEvent<DetectRequest>) => {
     return;
   }
   try {
-    const counts: number[][] = [];
+    const boxes: CajaDetectada[][] = [];
     for (const [index, image] of data.images.entries()) {
       try {
-        counts.push(await runImage(loaded.model, image));
+        boxes.push(await runImage(loaded.model, image));
       } catch (error) {
         if (loaded.motor !== "gpu") throw error;
         self.postMessage({ fallback: `GPU falló al escanear: ${error instanceof Error ? error.message.slice(0, 120) : "desconocido"}` });
@@ -87,11 +87,11 @@ self.onmessage = async ({ data }: MessageEvent<DetectRequest>) => {
         loaded = { model: await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"], graphOptimizationLevel: "all" }), motor: "cpu" };
         session = Promise.resolve(loaded);
         self.postMessage({ motor: "cpu" });
-        counts.push(await runImage(loaded.model, image));
+        boxes.push(await runImage(loaded.model, image));
       }
       self.postMessage({ progress: index + 1 });
     }
-    self.postMessage({ counts });
+    self.postMessage({ counts: boxes.map(contarCajas), boxes });
   } catch {
     self.postMessage({ error: "No pudimos reconocer los artículos de estas fotos. Puedes completarlos manualmente." });
   }

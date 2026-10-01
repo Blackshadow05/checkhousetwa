@@ -2790,8 +2790,12 @@ svg {
 .revision-photo-viewer-header p { margin-top: 5px; color: #becbc3; font-size: .8125rem; }
 .revision-photo-viewer button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; min-width: 48px; border-radius: 12px; background: #ffffff12; padding: 10px; }
 .revision-photo-viewer-image { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; touch-action: pan-x pan-y pinch-zoom; }
+.revision-photo-frame { position: relative; width: 100%; height: 100%; }
+.revision-photo-viewer-image.is-zoomed .revision-photo-frame { width: 200%; height: 200%; }
 .revision-photo-viewer-image img { display: block; width: 100%; height: 100%; max-width: none; object-fit: contain; }
-.revision-photo-viewer-image.is-zoomed img { width: 200%; height: 200%; }
+.revision-photo-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.revision-photo-marks rect { fill: #ff3b301f; stroke: #ff3b30; stroke-width: 2.5px; }
+.revision-photo-marks text { fill: #fff; stroke: #b3140c; paint-order: stroke; font-weight: 700; stroke-linejoin: round; }
 .revision-photo-viewer-footer { color: #becbc3; font-size: .75rem; }
 .revision-photo-viewer-footer button { color: #f4f7f1; font-size: .8125rem; }
 .revision-photo-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

@@ -33,10 +33,12 @@ export type RevisionFormValues = Record<InventoryKey, string> & {
 };
 export type RevisionPhoto = { id: string; name: string; blob: Blob; url?: string };
 export type RevisionMode = "manual" | "reconocimiento";
+export type RevisionScanBox = { key: InventoryKey; x: number; y: number; w: number; h: number };
 export type RevisionScan = {
   detectados: Partial<Record<InventoryKey, number>>;
   photoIds: string[];
   at: string;
+  cajas?: RevisionScanBox[][];
 };
 export type RevisionDraft = {
   id: string;
