@@ -3,6 +3,7 @@
 import { SerwistProvider, useSerwist } from "@serwist/next/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { InstalledGate } from "@/components/pwa/installed-gate";
 
 function UpdateNotice() {
   const { serwist } = useSerwist();
@@ -61,15 +62,17 @@ function UpdateNotice() {
   );
 }
 
-export function PwaProvider({ children }: { children: ReactNode }) {
+export function PwaProvider({ restrict, children }: { restrict: boolean; children: ReactNode }) {
   return (
     <SerwistProvider
       swUrl="/sw.js"
       disable={process.env.NODE_ENV === "development"}
       reloadOnOnline={false}
     >
-      {children}
-      <UpdateNotice />
+      <InstalledGate restrict={restrict}>
+        {children}
+        <UpdateNotice />
+      </InstalledGate>
     </SerwistProvider>
   );
 }

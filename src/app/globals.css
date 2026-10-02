@@ -1166,7 +1166,7 @@ svg {
   margin: 0 auto;
   width: 100%;
   max-width: 540px;
-  max-height: calc(var(--sheet-viewport-height, 100dvh) - env(safe-area-inset-top) - 24px);
+  max-height: calc(min(100dvh, var(--sheet-viewport-height, 100dvh)) - env(safe-area-inset-top) - 24px);
   scroll-padding-block: 20px;
   padding: 8px max(22px, env(safe-area-inset-right))
     max(20px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
@@ -1181,6 +1181,15 @@ svg {
 }
 .bottom-sheet[open] {
   animation: sheet-enter 440ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.bottom-sheet[open]:has(.login-form):not([data-closing]) {
+  animation-duration: 260ms;
+}
+.bottom-sheet:has(.login-form) {
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+.bottom-sheet:has(.login-form) .sheet-handle {
+  margin-bottom: 8px;
 }
 .bottom-sheet::backdrop {
   background: #0b201859;
@@ -1215,6 +1224,7 @@ svg {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scroll-padding-block: 12px;
+  scroll-behavior: auto;
   padding: 4px;
   margin-inline: -4px;
 }
@@ -2410,6 +2420,35 @@ svg {
 .update-toast > span {
   flex: 1;
 }
+.installed-gate-app {
+  display: contents;
+}
+.installed-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  background: var(--background);
+  color: var(--foreground);
+  text-align: center;
+}
+.installed-gate-card {
+  max-width: 340px;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+.installed-gate-card h1 {
+  margin-top: 12px;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.installed-gate-card p {
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
 .skeleton {
   background: var(--muted);
   border-radius: 12px;
@@ -2873,6 +2912,7 @@ div.revision-photo-open { background-position: center; background-size: cover; }
 }
 .login-form .auth-tab:not([aria-pressed="true"]) > svg:not(.lucide) { filter: grayscale(1); opacity: .65; }
 .auth-panel { display: grid; gap: 16px; min-width: 0; animation: auth-panel-in 320ms cubic-bezier(0.32, 0.72, 0, 1); }
+.login-form .auth-panel { animation: auth-panel-fade 160ms ease-out; }
 .login-form .revision-text-field { gap: 8px; font-size: .8125rem; font-weight: 600; color: var(--foreground); }
 .auth-input { position: relative; display: block; min-width: 0; }
 .auth-input-icon {
@@ -2903,6 +2943,13 @@ div.revision-photo-open { background-position: center; background-size: cover; }
 .login-form .auth-submit { width: 100%; margin-top: 4px; }
 .login-form .auth-actions { gap: 8px; }
 .login-form .auth-actions .secondary-button { min-height: 48px; border-radius: 14px; }
+.bottom-sheet .login-form { gap: 12px; }
+.bottom-sheet .login-form .auth-panel { gap: 12px; }
+.bottom-sheet .login-form .auth-tab { min-height: 48px; gap: 3px; padding-block: 4px; }
+.bottom-sheet .login-form .revision-text-field { gap: 6px; }
+.bottom-sheet .login-form .auth-input input { min-height: 48px; padding-block: 10px; }
+.bottom-sheet .login-form .auth-password-toggle { inset: 2px 2px 2px auto; }
+.bottom-sheet .login-form .auth-submit { min-height: 48px; margin-top: 0; }
 .login-form button { transition: transform 120ms ease, opacity 160ms ease, background-color 220ms ease, color 220ms ease, box-shadow 220ms ease; }
 .login-form button:active:not(:disabled) { transform: scale(.98); }
 .auth-spinner { flex-shrink: 0; animation: revision-spin 800ms linear infinite; }
@@ -2937,6 +2984,9 @@ div.revision-photo-open { background-position: center; background-size: cover; }
 .app-shell-frame.is-session-entering { animation: session-enter 420ms cubic-bezier(0.32, 0.72, 0, 1); }
 @keyframes auth-panel-in {
   from { opacity: 0; transform: translateY(8px); }
+}
+@keyframes auth-panel-fade {
+  from { opacity: 0; }
 }
 @keyframes session-enter {
   from { opacity: 0; transform: scale(.985); }

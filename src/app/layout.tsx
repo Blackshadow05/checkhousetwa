@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import { HideKeyboardOnTapOutside } from "@/components/hide-keyboard-on-tap-outside";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
 import { startupImages } from "@/lib/pwa-startup-images";
 import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from "@/lib/constants";
@@ -65,7 +66,8 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background font-sans text-foreground">
-        <PwaProvider>{children}</PwaProvider>
+        <HideKeyboardOnTapOutside />
+        <PwaProvider restrict={process.env.VERCEL_ENV === "production"}>{children}</PwaProvider>
       </body>
     </html>
   );
