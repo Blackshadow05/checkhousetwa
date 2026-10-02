@@ -1,6 +1,7 @@
 import { ELECTRONIC_FIELDS, EQUIPMENT_FIELDS } from "@/lib/revisiones-display";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import type { RevisionCasitaInsert } from "@/types/database";
+import type { RegistroReconocimiento } from "@/lib/revision-recognition-log";
 import { createUuid } from "@/lib/uuid";
 
 export const INVENTORY_FIELDS = [...ELECTRONIC_FIELDS, ...EQUIPMENT_FIELDS];
@@ -38,14 +39,17 @@ export type RevisionScan = {
   detectados: Partial<Record<InventoryKey, number>>;
   photoIds: string[];
   at: string;
+  model?: string;
   cajas?: RevisionScanBox[][];
 };
+export type RevisionPhotoScan = { counts: number[]; cajas: RevisionScanBox[]; at: string; model: string };
 export type RevisionDraft = {
   id: string;
   values: RevisionFormValues;
   photos: RevisionPhoto[];
   mode?: RevisionMode;
   scan?: RevisionScan | null;
+  escaneos?: Record<string, RevisionPhotoScan>;
 };
 export type RevisionFormErrors = Partial<Record<keyof RevisionFormValues | "evidencias", string>>;
 
@@ -97,7 +101,7 @@ export function validateRevisionForm(values: RevisionFormValues, step?: number, 
     if (!(CAJA_FUERTE_FILTERS as readonly string[]).includes(values.caja_fuerte))
       errors.caja_fuerte = "Selecciona el estado de la caja fuerte.";
     if (!values.puertas_ventanas?.trim() || values.puertas_ventanas.length > 500)
-      errors.puertas_ventanas = "Describe el estado de puertas y ventanas (máximo 500 caracteres).";
+      errors.puertas_ventanas = "Selecciona el estado de puertas y ventanas.";
     if (values.caja_fuerte === "Room Move") {
       if (!values.room_move?.trim() || values.room_move.length > 120)
         errors.room_move = "Indica el movimiento entre casitas (máximo 120 caracteres).";
@@ -127,7 +131,7 @@ export function validateRevisionForm(values: RevisionFormValues, step?: number, 
 }
 
 // Only these fields may cross the write boundary. Never spread a client payload.
-export function revisionInsert(id: string, values: RevisionFormValues, photos: string[]): RevisionCasitaInsert {
+export function revisionInsert(id: string, values: RevisionFormValues, photos: string[], registro: RegistroReconocimiento | null = null): RevisionCasitaInsert {
   const inventory = Object.fromEntries(INVENTORY_FIELDS.map(({ key }) => [key,
     BOOLEAN_FIELDS.has(key) ? values[key] : String(Number(values[key])),
   ]));
@@ -137,5 +141,6 @@ export function revisionInsert(id: string, values: RevisionFormValues, photos: s
     caja_fuerte: values.caja_fuerte, puertas_ventanas: values.puertas_ventanas.trim(),
     room_move: values.room_move.trim() || null, notas: values.notas.trim() || null,
     evidencia_01: photos[0] ?? null, evidencia_02: photos[1] ?? null, evidencia_03: photos[2] ?? null,
+    registro_reconocimiento: registro,
   };
 }

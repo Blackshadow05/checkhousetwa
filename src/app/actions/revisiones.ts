@@ -11,6 +11,8 @@ import { saveRevision, saveNotaRevision, editRevisionCampo, type SaveNoteResult 
 import { getSesionUsuario } from "@/lib/auth/session";
 import { mapInicioRevision } from "@/lib/revisiones-map";
 import type { InicioRevisionRow, RevisionCasitaInicio } from "@/types/database";
+import { INVENTARIO_COLUMNS, mapInventarioCasita } from "@/lib/inventario-casitas";
+import { parseRevisionRecognition, registroReconocimiento, type RegistroReconocimiento, type RevisionRecognitionInput } from "@/lib/revision-recognition-log";
 
 export async function fetchInicioRevisiones() {
   return getInicioRevisiones();
@@ -20,7 +22,7 @@ export async function fetchArchiveRevisiones(input: ArchiveQuery) {
   return getArchiveRevisiones(input);
 }
 
-export async function createRevision(input: { id: string; values: RevisionFormValues; photos: string[] }) {
+export async function createRevision(input: { id: string; values: RevisionFormValues; photos: string[]; reconocimiento?: RevisionRecognitionInput | null }) {
   try {
     if (!input || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.id) ||
       !input.values || Object.values(input.values).some((value) => typeof value !== "string") ||
@@ -33,10 +35,20 @@ export async function createRevision(input: { id: string; values: RevisionFormVa
     if (input.photos.some((path) => typeof path !== "string" || !isEvidenceCloudinaryPath(path))) {
       return { row: null, error: "Una fotografía no se cargó correctamente. Vuelve a intentarlo." };
     }
+    const recognition = input.reconocimiento == null ? null : parseRevisionRecognition(input.reconocimiento);
+    if (input.reconocimiento != null && (!recognition || !input.photos.length)) {
+      return { row: null, error: "No pudimos validar el escaneo. Vuelve a escanear las fotos antes de guardar." };
+    }
     // Use the request's publishable client and session: the existing RLS policies
     // authorize this app's public insert flow. No privileged key or policy change.
     const client = await createPrivateClient();
-    return await saveRevision(client, revisionInsert(input.id, values, input.photos));
+    let registro: RegistroReconocimiento | null = null;
+    if (recognition) {
+      const inventory = await client.from("inventario_casitas").select(INVENTARIO_COLUMNS).eq("casita", Number(values.casita)).maybeSingle();
+      if (inventory.error) return { row: null, error: "No pudimos comprobar el reconocimiento. Conservamos el borrador; vuelve a intentarlo." };
+      registro = registroReconocimiento(values, recognition, inventory.data ? mapInventarioCasita(inventory.data) : null);
+    }
+    return await saveRevision(client, revisionInsert(input.id, values, input.photos, registro));
   } catch {
     return { row: null, error: "No pudimos conectar para guardar. Tu borrador sigue disponible." };
   }

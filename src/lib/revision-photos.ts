@@ -11,6 +11,10 @@ export function revisionShareFiles(photos: RevisionPhoto[], casita: string) {
 }
 
 export async function prepareRevisionPhoto(file: File): Promise<RevisionPhoto> {
+  return (await prepareRevisionPhotoWith(file, () => null)).photo;
+}
+
+export async function prepareRevisionPhotoWith<T>(file: File, extra: (image: HTMLImageElement) => T): Promise<{ photo: RevisionPhoto; extra: T | null }> {
   if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(file.type))
     throw new Error("Elige una foto JPG, PNG, WebP o una foto de tu cámara.");
   if (file.size > 20 * 1024 * 1024)
@@ -20,6 +24,8 @@ export async function prepareRevisionPhoto(file: File): Promise<RevisionPhoto> {
     const image = new Image();
     image.src = source;
     await image.decode();
+    let value: T | null = null;
+    try { value = extra(image); } catch { value = null; }
     const encoding = revisionPhotoEncoding(navigator.userAgent);
     const dimensions = revisionPhotoDimensions(image.naturalWidth, image.naturalHeight, encoding.maxSide);
     const canvas = document.createElement("canvas");
@@ -36,7 +42,7 @@ export async function prepareRevisionPhoto(file: File): Promise<RevisionPhoto> {
     // Unsupported encoders can silently produce PNG; never mislabel those bytes.
     if (blob.type !== encoding.type) throw new Error("photo-format");
     if (blob.size > MAX_PHOTO_BYTES) throw new Error("photo-size");
-    return { id: createUuid(), name: file.name, blob };
+    return { photo: { id: createUuid(), name: file.name, blob }, extra: value };
   } catch {
     throw new Error("No pudimos preparar esta foto. Prueba con una imagen JPG o PNG.");
   } finally {

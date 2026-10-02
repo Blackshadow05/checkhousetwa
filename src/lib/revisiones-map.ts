@@ -1,4 +1,5 @@
 import { INICIO_LIST_LIMIT, casitaNumber, hoyBoardGroup } from "@/lib/revisiones-display";
+import { recognitionDetailItems } from "@/lib/revision-recognition-detail";
 import type {
   InicioRevisionRow,
   RevisionCasita,
@@ -48,6 +49,7 @@ export function mapInicioRevision(row: RevisionCasitaInicio): InicioRevisionRow 
     notas: asText(row.notas),
     nota_extra: asText(row.nota_extra),
     room_move: asText(row.room_move),
+    reconocimiento: recognitionDetailItems(row.registro_reconocimiento),
   };
 }
 

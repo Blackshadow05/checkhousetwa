@@ -1,34 +1,42 @@
 import * as ort from "onnxruntime-web/wasm";
-import { contarCajas, detectarCajas, type CajaDetectada } from "../lib/articulos-model";
+import { detectarCajas } from "../lib/articulos-model";
 
 declare const self: DedicatedWorkerGlobalScope;
 declare const __ORT_WASM_URL__: string;
 declare const __USE_WEBGPU__: boolean;
 
-type DetectRequest = { modelUrl: string; images: ImageData[] };
+type Mensaje =
+  | { type: "cargar"; modelUrl: string }
+  | { type: "escanear"; id: number; modelUrl: string; image: ImageData };
 type Motor = "gpu" | "cpu";
+type Sesion = { model: ort.InferenceSession; motor: Motor };
 
-let session: Promise<{ model: ort.InferenceSession; motor: Motor }> | null = null;
+let session: Promise<Sesion> | null = null;
+let cola: Promise<void> = Promise.resolve();
 
-async function createSession(modelUrl: string) {
+async function modelBytes(modelUrl: string) {
+  const url = new URL(modelUrl, self.location.origin).href;
+  return new Uint8Array(await (await fetch(url)).arrayBuffer());
+}
+
+async function createSession(modelUrl: string): Promise<Sesion> {
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.proxy = false;
   ort.env.wasm.wasmPaths = { wasm: new URL(__ORT_WASM_URL__, self.location.origin).href };
-  const url = new URL(modelUrl, self.location.origin).href;
-  const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+  const bytes = await modelBytes(modelUrl);
   if (__USE_WEBGPU__) {
     if (!("gpu" in self.navigator)) self.postMessage({ fallback: "WebGPU no disponible en el worker" });
     else {
       try {
         const model = await ort.InferenceSession.create(bytes, { executionProviders: ["webgpu"], graphOptimizationLevel: "all" });
-        return { model, motor: "gpu" as Motor };
+        return { model, motor: "gpu" };
       } catch (error) {
         self.postMessage({ fallback: `GPU falló: ${error instanceof Error ? error.message.slice(0, 120) : "desconocido"}` });
       }
     }
   }
   const model = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
-  return { model, motor: "cpu" as Motor };
+  return { model, motor: "cpu" };
 }
 
 function loadSession(modelUrl: string) {
@@ -66,33 +74,34 @@ async function runImage(model: ort.InferenceSession, image: ImageData) {
   }
 }
 
-self.onmessage = async ({ data }: MessageEvent<DetectRequest>) => {
-  let loaded: { model: ort.InferenceSession; motor: Motor };
+async function scan(modelUrl: string, image: ImageData) {
+  const loaded = await loadSession(modelUrl);
   try {
-    loaded = await loadSession(data.modelUrl);
-    self.postMessage({ ready: true, motor: loaded.motor });
-  } catch {
-    self.postMessage({ error: "No pudimos cargar el modelo de reconocimiento. Conéctate e inténtalo de nuevo." });
+    return await runImage(loaded.model, image);
+  } catch (error) {
+    if (loaded.motor !== "gpu") throw error;
+    self.postMessage({ fallback: `GPU falló al escanear: ${error instanceof Error ? error.message.slice(0, 120) : "desconocido"}` });
+    const model = await ort.InferenceSession.create(await modelBytes(modelUrl), { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+    session = Promise.resolve({ model, motor: "cpu" });
+    self.postMessage({ motor: "cpu" });
+    return await runImage(model, image);
+  }
+}
+
+self.onmessage = ({ data }: MessageEvent<Mensaje>) => {
+  if (data.type === "cargar") {
+    loadSession(data.modelUrl).then(
+      (loaded) => self.postMessage({ type: "listo", motor: loaded.motor }),
+      () => self.postMessage({ type: "error-carga", error: "No pudimos cargar el reconocimiento. Conéctate e inténtalo de nuevo." }),
+    );
     return;
   }
-  try {
-    const boxes: CajaDetectada[][] = [];
-    for (const [index, image] of data.images.entries()) {
-      try {
-        boxes.push(await runImage(loaded.model, image));
-      } catch (error) {
-        if (loaded.motor !== "gpu") throw error;
-        self.postMessage({ fallback: `GPU falló al escanear: ${error instanceof Error ? error.message.slice(0, 120) : "desconocido"}` });
-        const bytes = new Uint8Array(await (await fetch(new URL(data.modelUrl, self.location.origin).href)).arrayBuffer());
-        loaded = { model: await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"], graphOptimizationLevel: "all" }), motor: "cpu" };
-        session = Promise.resolve(loaded);
-        self.postMessage({ motor: "cpu" });
-        boxes.push(await runImage(loaded.model, image));
-      }
-      self.postMessage({ progress: index + 1 });
+  const { id, modelUrl, image } = data;
+  cola = cola.then(async () => {
+    try {
+      self.postMessage({ type: "resultado", id, cajas: await scan(modelUrl, image) });
+    } catch {
+      self.postMessage({ type: "error", id, error: "No pudimos reconocer los artículos de esta foto." });
     }
-    self.postMessage({ counts: boxes.map(contarCajas), boxes });
-  } catch {
-    self.postMessage({ error: "No pudimos reconocer los artículos de estas fotos. Puedes completarlos manualmente." });
-  }
+  });
 };

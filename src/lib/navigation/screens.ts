@@ -27,6 +27,7 @@ export function isScreenId(value: string): value is ScreenId {
 
 export function screenFromPath(pathname: string): ScreenId {
   const normalized = pathname.replace(/\/+$/, "") || "/";
+  if (normalized === "/reportes" || normalized === "/reportes/revision-casitas") return "otros";
   if (normalized === "/horarios") return "otros";
   if (normalized === "/otros" || normalized === "/reporte-pantallas" || normalized === "/reporte-pantallas/nuevo") return "otros";
   if (normalized === "/admin-usuarios" || normalized === "/admin-usuarios/nuevo" || normalized === "/admin-usuarios/editar") return "otros";
@@ -48,6 +49,7 @@ export function screenFromSlug(slug: string[] | undefined): ScreenId {
   }
 
   const [first] = slug;
+  if (first === "reportes" && (slug.length === 1 || slug.length === 2 && slug[1] === "revision-casitas")) return "otros";
   if (first === "horarios" && slug.length === 1) return "otros";
   if (first === "reporte-pantallas" && (slug.length === 1 || slug.length === 2 && slug[1] === "nuevo")) return "otros";
   if (first === "admin-usuarios" && (slug.length === 1 || slug.length === 2 && (slug[1] === "nuevo" || slug[1] === "editar"))) return "otros";

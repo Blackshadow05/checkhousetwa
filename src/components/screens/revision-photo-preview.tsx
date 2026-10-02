@@ -16,6 +16,7 @@ function photoSize(bytes: number) {
 }
 
 export type PhotoMark = { label: string; x: number; y: number; w: number; h: number };
+export type PhotoStatus = { text: string; tone?: "busy" | "done" | "error" };
 
 function PhotoMarks({ marks, width, height, fit, labels }: {
   marks: readonly PhotoMark[]; width: number; height: number; fit: "slice" | "meet"; labels: boolean;
@@ -38,7 +39,7 @@ function PhotoMarks({ marks, width, height, fit, labels }: {
   );
 }
 
-export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active, label: labelOverride, marks }: {
+export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active, label: labelOverride, marks, status }: {
   photo: RevisionPhoto;
   index: number;
   onRemove: () => void;
@@ -46,6 +47,7 @@ export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active,
   active: boolean;
   label?: string;
   marks?: readonly PhotoMark[];
+  status?: PhotoStatus;
 }) {
   const thumbnailRef = useRef<HTMLImageElement>(null);
   const fullImageRef = useRef<HTMLImageElement>(null);
@@ -78,9 +80,9 @@ export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active,
   const label = labelOverride ?? evidenceLabel(index);
 
   return <>
-    <figure className="revision-photo">
+    <figure className="revision-photo" data-state={status?.tone}>
       <button ref={triggerRef} type="button" className="revision-photo-open" disabled={disabled}
-        aria-label={`Abrir ${label}, ${size}${marked ? `, ${marked.length === 1 ? "1 artículo marcado" : `${marked.length} artículos marcados`}` : ""}`} onClick={() => dialogRef.current?.showModal()}>
+        aria-label={`Abrir ${label}, ${status?.text ?? size}${marked ? `, ${marked.length === 1 ? "1 artículo marcado" : `${marked.length} artículos marcados`}` : ""}`} onClick={() => dialogRef.current?.showModal()}>
         {/* Local Blob URLs must bypass the remote image optimizer. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img ref={thumbnailRef} alt={label} onLoad={(event) => {
@@ -91,7 +93,7 @@ export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active,
         <span className="revision-photo-expand" aria-hidden="true"><Maximize2 size={15} /></span>
       </button>
       <button type="button" className="revision-photo-remove" onClick={onRemove} disabled={disabled} aria-label={`Quitar ${label}`}><X size={17} /></button>
-      <figcaption><strong>{label}</strong><span>{size}</span></figcaption>
+      <figcaption><strong>{label}</strong><span>{status?.text ?? size}</span></figcaption>
     </figure>
 
     <dialog ref={dialogRef} className="revision-photo-viewer" aria-labelledby={titleId}

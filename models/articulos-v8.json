@@ -1,0 +1,46 @@
+{
+  "architecture": "YOLO26n",
+  "datasetVersion": 8,
+  "sourceCheckpoint": "C:\\Users\\Esteban\\Downloads\\datasets\\runs\\v8\\weights\\best.pt",
+  "sourceSha256": "24375c517a28c6ce65c03dae63230d56881cd55e536336245c41d1762001e871",
+  "modelSha256": "4034ff024a15de5b466089599fff1bbb1c54393fec12f0b0cd338e4c82110fe3",
+  "ultralyticsVersion": "8.4.162",
+  "inputShape": [
+    1,
+    3,
+    640,
+    640
+  ],
+  "outputShape": [
+    1,
+    18,
+    8400
+  ],
+  "opset": 17,
+  "exportArgs": {
+    "data": null,
+    "batch": 1,
+    "fraction": 1.0,
+    "quantize": null,
+    "nms": null,
+    "dynamic": false,
+    "simplify": true,
+    "opset": 17
+  },
+  "classes": [
+    "Accesorios_secadora",
+    "Binocular",
+    "Bulto",
+    "Chromecast",
+    "Cola_caballo",
+    "Control_tv",
+    "Plancha_cabello",
+    "Secadora",
+    "Sombrero",
+    "Speaker",
+    "Steamer",
+    "Steamer_bag",
+    "Trapo_binocular",
+    "Yute"
+  ]
+}

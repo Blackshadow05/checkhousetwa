@@ -26,6 +26,7 @@ import {
 import { EvidenceGallery } from "@/components/screens/evidence-gallery";
 import { RevisionEditSheet } from "@/components/screens/revision-edit-sheet";
 import { RevisionNoteSheet } from "@/components/screens/revision-note-sheet";
+import { RevisionRecognitionDetail } from "@/components/screens/revision-recognition-detail";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { fetchRevisionEdits, fetchRevisionNotes } from "@/app/actions/revisiones";
@@ -744,6 +745,7 @@ export function RevisionDetailScreen() {
               </p>
             ) : null}
           </section>
+          <RevisionRecognitionDetail items={row.reconocimiento} />
         </div>
       </div>
       <p className="sr-only" role="status">

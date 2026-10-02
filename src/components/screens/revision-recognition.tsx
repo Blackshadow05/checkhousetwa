@@ -1,16 +1,16 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { Camera, CircleCheck, Images, LoaderCircle, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
-import { BottomSheet } from "@/components/ui/bottom-sheet";
-import { RevisionPhotoPreview, type PhotoMark } from "@/components/screens/revision-photo-preview";
-import { statusAppearance } from "@/lib/revisiones-display";
-import { compararInventario, textoCantidad, type ComparacionArticulo, type InventarioCasita, type InventarioKey } from "@/lib/inventario-casitas";
+import { Camera, CircleCheck, Images, LoaderCircle, ScanSearch, TriangleAlert } from "lucide-react";
+import { RevisionPhotoPreview, type PhotoMark, type PhotoStatus } from "@/components/screens/revision-photo-preview";
+import { compararInventario, isReconocible, textoCantidad, valorDetectado, type ComparacionArticulo, type InventarioCasita, type InventarioKey } from "@/lib/inventario-casitas";
 import type { InventarioStatus } from "@/hooks/use-inventario-casitas";
 import type { RevisionFormValues, RevisionPhoto, RevisionScan } from "@/lib/revision-form";
 import styles from "./revision-recognition.module.css";
 
 export { styles as recognitionStyles };
+
+export type FotoPrevia = { id: string; url: string };
 
 function photoLabel(index: number) {
   return `Foto ${String(index + 1).padStart(2, "0")}`;
@@ -20,140 +20,107 @@ function cantidadFotos(count: number) {
   return count === 1 ? "1 foto" : `${count} fotos`;
 }
 
-export function RecognitionPhotoSheet({ open, onClose, photos, limit, cajaFuerte, preparing, error, onPick, onRemove, onScan }: {
-  open: boolean;
-  onClose: () => void;
-  photos: RevisionPhoto[];
-  limit: number;
-  cajaFuerte: string;
-  preparing: boolean;
-  error: string;
-  onPick: (files: FileList | null) => void;
-  onRemove: (photoId: string) => void;
-  onScan: () => void;
-}) {
-  const cameraRef = useRef<HTMLInputElement>(null);
-  const libraryRef = useRef<HTMLInputElement>(null);
-  const full = photos.length >= limit;
+function FotoPreparando({ url, label }: { url: string; label: string }) {
   return (
-    <BottomSheet open={open} onClose={onClose} title="Fotos para escanear">
-      <div className={styles.recognition}>
-        <p className="sheet-description">
-          Con {statusAppearance(cajaFuerte).label} puedes usar hasta {cantidadFotos(limit)}. Se comprimen antes de escanear y quedan como evidencia.
-        </p>
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => { onPick(event.target.files); event.target.value = ""; }} />
-        <input ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple={limit - photos.length > 1} hidden onChange={(event) => { onPick(event.target.files); event.target.value = ""; }} />
-        <div className={styles.sources}>
-          <button type="button" disabled={full || preparing} onClick={() => cameraRef.current?.click()}>
-            <Camera aria-hidden="true" />
-            <strong>Cámara</strong>
-            <small>Tomar una foto ahora</small>
-          </button>
-          <button type="button" disabled={full || preparing} onClick={() => libraryRef.current?.click()}>
-            <Images aria-hidden="true" />
-            <strong>Galería</strong>
-            <small>Elegir fotos guardadas</small>
-          </button>
-        </div>
-        <p className={styles.counter} aria-live="polite">{photos.length} de {cantidadFotos(limit)}{full ? " · Límite alcanzado" : ""}</p>
-        {photos.length > 0 && (
-          <div className="revision-photo-grid">
-            {photos.map((photo, index) => (
-              <RevisionPhotoPreview key={photo.id} photo={photo} index={index} label={photoLabel(index)} disabled={preparing} active={open} onRemove={() => onRemove(photo.id)} />
-            ))}
-          </div>
-        )}
-        {preparing && <p className={styles.status} role="status">Comprimiendo fotos…</p>}
-        {error && <p className={styles.notice} role="alert"><TriangleAlert size={15} aria-hidden="true" />{error}</p>}
-        <div className={`sheet-actions ${styles.sheetActions}`}>
-          <button type="button" className={`secondary-button ${styles.secondary}`} onClick={onClose}>Cancelar</button>
-          <button type="button" className={`primary-button ${styles.primary}`} disabled={!photos.length || preparing} onClick={onScan}>
-            <ScanSearch size={17} aria-hidden="true" />{photos.length ? `Escanear ${cantidadFotos(photos.length)}` : "Escanear"}
-          </button>
-        </div>
-      </div>
-    </BottomSheet>
+    <figure className="revision-photo" data-state="busy">
+      <div className="revision-photo-open" style={{ backgroundImage: `url("${url}")` }} role="img" aria-label={`${label}, preparando`} />
+      <figcaption><strong>{label}</strong><span>Preparando…</span></figcaption>
+    </figure>
   );
 }
 
-export function RecognitionScanCard({ photos, limit, scan, stale, marks, scanning, progress, error, disabled, active, onOpenSheet, onRescan, onRemove, children }: {
+export function RecognitionScanCard({ photos, previas, limit, scan, status, marks, error, disabled, active, onPick, onRemove, onRetry, children }: {
   photos: RevisionPhoto[];
+  previas: FotoPrevia[];
   limit: number;
   scan: RevisionScan | null;
-  stale: boolean;
+  status: (photoId: string) => PhotoStatus;
   marks?: ReadonlyMap<string, PhotoMark[]>;
-  scanning: boolean;
-  progress: string;
   error: string;
   disabled: boolean;
   active: boolean;
-  onOpenSheet: () => void;
-  onRescan: () => void;
+  onPick: (files: FileList | null) => void;
   onRemove: (photoId: string) => void;
+  onRetry?: () => void;
   children?: ReactNode;
 }) {
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const libraryRef = useRef<HTMLInputElement>(null);
+  const total = photos.length + previas.length;
+  const restantes = limit - total;
+  const trabajando = previas.length > 0 || photos.some((photo) => status(photo.id).tone === "busy");
+  const listo = !trabajando && !error && scan && scan.photoIds.length === photos.length;
   return (
     <div className={styles.recognition} data-revision-evidencias="" tabIndex={-1}>
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => { onPick(event.target.files); event.target.value = ""; }} />
+      <input ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple={restantes > 1} hidden onChange={(event) => { onPick(event.target.files); event.target.value = ""; }} />
       {limit === 0 ? (
         <div className={styles.empty}>
           <ScanSearch size={26} strokeWidth={1.5} aria-hidden="true" />
           <strong>Elige el estado de la caja fuerte</strong>
-          <p>La cantidad de fotos que puedes escanear depende de esa opción.</p>
+          <p>La cantidad de fotos depende de esa opción.</p>
         </div>
-      ) : photos.length === 0 && !scanning ? (
+      ) : total === 0 ? (
         <div className={styles.empty}>
           <ScanSearch size={26} strokeWidth={1.5} aria-hidden="true" />
-          <strong>Escanea hasta {cantidadFotos(limit)}</strong>
-          <p>Toma o elige fotos donde se vean los artículos de la casita.</p>
+          <strong>Fotografía los artículos</strong>
+          <p>Hasta {cantidadFotos(limit)}. Se cuentan solos.</p>
         </div>
       ) : (
         <div className="revision-photo-grid">
           {photos.map((photo, index) => (
-            <RevisionPhotoPreview key={photo.id} photo={photo} index={index} disabled={disabled} active={active} marks={marks?.get(photo.id)} onRemove={() => onRemove(photo.id)} />
+            <RevisionPhotoPreview key={photo.id} photo={photo} index={index} label={photoLabel(index)} disabled={disabled} active={active}
+              marks={marks?.get(photo.id)} status={status(photo.id)} onRemove={() => onRemove(photo.id)} />
           ))}
+          {previas.map((previa, index) => <FotoPreparando key={previa.id} url={previa.url} label={photoLabel(photos.length + index)} />)}
         </div>
       )}
-      {scanning && (
-        <div className={styles.scanning} role="status" aria-live="polite">
-          <span className={styles.scanningLabel}><LoaderCircle size={16} className="revision-spinner" aria-hidden="true" />{progress || "Escaneando…"}</span>
-          <span className={styles.skeleton} aria-hidden="true" />
-          <span className={styles.skeleton} aria-hidden="true" />
-          <span className={styles.skeleton} aria-hidden="true" />
+      <p className={trabajando || listo ? styles.scanMeta : "sr-only"} aria-live="polite">
+        {trabajando
+          ? <><LoaderCircle size={14} className="revision-spinner" aria-hidden="true" />Contando artículos…</>
+          : listo
+            ? <><CircleCheck size={14} aria-hidden="true" />{marks?.size ? "En rojo los artículos por revisar." : "Revisa y corrige los conteos abajo."}</>
+            : null}
+      </p>
+      {error && (
+        <div className={styles.notice} role="alert">
+          <TriangleAlert size={15} aria-hidden="true" />
+          <span>{error}</span>
+          {onRetry && <button type="button" onClick={onRetry}>Reintentar</button>}
         </div>
       )}
-      {!scanning && scan && !stale && (
-        <p className={styles.scanMeta}><CircleCheck size={14} aria-hidden="true" />Escaneado con {cantidadFotos(scan.photoIds.length)}. {marks?.size ? "En rojo lo detectado que no coincide con el inventario." : "Revisa y corrige los conteos abajo."}</p>
-      )}
-      {!scanning && stale && (
-        <p className={`${styles.notice} ${styles.info}`} role="status"><TriangleAlert size={15} aria-hidden="true" />Las fotos cambiaron después del escaneo. Vuelve a escanear para actualizar los conteos.</p>
-      )}
-      {error && <p className={styles.notice} role="alert"><TriangleAlert size={15} aria-hidden="true" />{error}</p>}
       {children}
-      {limit > 0 && !scanning && (
+      {limit > 0 && restantes > 0 && (
+        <ul className={styles.tips} aria-label="Para una buena foto">
+          <li>No coloques objetos encima de otros.</li>
+          <li>Foto clara y con buena iluminación.</li>
+          <li>Separa los objetos; no hechos una pelota.</li>
+        </ul>
+      )}
+      {limit > 0 && restantes > 0 && (
         <div className={styles.actions}>
-          <button type="button" className="secondary-button" disabled={disabled} onClick={onOpenSheet}>
-            <Camera size={17} aria-hidden="true" />{photos.length ? "Cambiar fotos" : "Elegir fotos"}
+          <button type="button" className="primary-button" disabled={disabled} onClick={() => cameraRef.current?.click()}>
+            <Camera size={17} aria-hidden="true" />Tomar foto
           </button>
-          {photos.length > 0 && (
-            <button type="button" className="primary-button" disabled={disabled} onClick={onRescan}>
-              {scan ? <RefreshCw size={17} aria-hidden="true" /> : <ScanSearch size={17} aria-hidden="true" />}{scan ? "Volver a escanear" : "Escanear"}
-            </button>
-          )}
+          <button type="button" className="secondary-button" disabled={disabled} onClick={() => libraryRef.current?.click()}>
+            <Images size={17} aria-hidden="true" />Galería
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-function hintText(item: ComparacionArticulo) {
-  const detectado = item.detectado === null ? "No se reconoce en fotos" : `Detectado ${textoCantidad(item.key, item.detectado)}`;
-  return item.esperado === null ? detectado : `${detectado} · Inventario ${textoCantidad(item.key, item.esperado)}`;
+function hintText(item: ComparacionArticulo, values: RevisionFormValues) {
+  if (item.detectado === null) return "No se reconoce en fotos";
+  const changed = isReconocible(item.key) && values[item.key] !== valorDetectado(item.key, item.detectado);
+  return `Detectado ${textoCantidad(item.key, item.detectado)}${changed ? " · Modificado manualmente" : ""}`;
 }
 
 function badgeFor(item: ComparacionArticulo) {
   if (item.coincideAhora === null) return null;
   return item.coincideAhora
-    ? <span className={`${styles.badge} ${styles.badgeOk}`}><CircleCheck size={12} aria-hidden="true" />Coincide</span>
+    ? <span className={`${styles.badge} ${styles.badgeOk}`}><CircleCheck size={12} aria-hidden="true" />Identificado</span>
     : <span className={`${styles.badge} ${styles.badgeAlert}`}><TriangleAlert size={12} aria-hidden="true" />Revisar</span>;
 }
 
@@ -180,7 +147,7 @@ export function RecognitionResults({ values, scan, inventario, inventarioStatus,
   const casita = values.casita ? String(Number(values.casita)) : "";
   const row = (item: ComparacionArticulo, tone: "alert" | "ok" | "none") => (
     <div key={item.key} className={styles.row} data-tone={tone === "alert" && item.coincideAhora === false ? "alert" : undefined}>
-      {renderField(item.key, { badge: badgeFor(item), hint: hintText(item) })}
+      {renderField(item.key, { badge: badgeFor(item), hint: hintText(item, values) })}
     </div>
   );
   return (
@@ -189,8 +156,8 @@ export function RecognitionResults({ values, scan, inventario, inventarioStatus,
         <div className={styles.summary} aria-live="polite">
           {pendientes > 0
             ? <span className={styles.badgeAlert}><TriangleAlert size={13} aria-hidden="true" />{pendientes} por revisar</span>
-            : <span className={styles.badgeOk}><CircleCheck size={13} aria-hidden="true" />Todo coincide</span>}
-          <span className={styles.badgeOk}>{all.filter((item) => item.coincideAhora !== false).length} coinciden</span>
+            : <span className={styles.badgeOk}><CircleCheck size={13} aria-hidden="true" />Todo identificado</span>}
+          <span className={styles.badgeOk}>Identificado · {all.filter((item) => item.coincideAhora !== false).length}</span>
         </div>
       )}
       <div className={styles.inventory}>
@@ -212,8 +179,8 @@ export function RecognitionResults({ values, scan, inventario, inventarioStatus,
         </section>
       )}
       {coinciden.length > 0 && (
-        <section className={styles.group} aria-label="Artículos que coinciden">
-          <h3 className={`${styles.groupTitle} ${styles.ok}`}><CircleCheck size={14} aria-hidden="true" />Coinciden</h3>
+        <section className={styles.group} aria-label="Artículos identificados">
+          <h3 className={`${styles.groupTitle} ${styles.ok}`}><CircleCheck size={14} aria-hidden="true" />Identificado</h3>
           {coinciden.map((item) => row(item, "ok"))}
         </section>
       )}

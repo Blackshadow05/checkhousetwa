@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CalendarDays, Monitor, Plus, RefreshCw, FileDown } from "lucide-react";
+import { ArrowRight, CalendarDays, Monitor, Plus, RefreshCw, FileDown, Files } from "lucide-react";
 import { fetchPantallas } from "@/app/actions/pantallas";
 import { AdminUsuariosFeature, AdminUsuariosScreen } from "@/components/screens/admin-usuarios";
 import { HorariosScreen } from "@/components/screens/horarios-screen";
+import { ReportesScreen } from "@/components/screens/reportes-screen";
 import { PantallaForm } from "@/components/screens/pantalla-form";
 import { PantallaPhotoGallery } from "@/components/screens/pantalla-photo-gallery";
 import { PantallaPdfSheet } from "@/components/screens/pantalla-pdf-sheet";
@@ -24,18 +25,24 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
   const [pdfReports, setPdfReports] = useState<PantallaReport[] | null>(null);
   const [adminVisited, setAdminVisited] = useState(false);
   const [horariosVisited, setHorariosVisited] = useState(false);
+  const [reportesVisited, setReportesVisited] = useState(false);
   if (pdfReports && (!active || path !== "/reporte-pantallas")) setPdfReports(null);
   const online = useOnline();
   const esAdmin = esRolAdmin(session.rol);
-  const listRef = useRef<HTMLDivElement>(null); const adminRef = useRef<HTMLDivElement>(null); const horariosRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null); const adminRef = useRef<HTMLDivElement>(null); const horariosRef = useRef<HTMLDivElement>(null); const reportesRef = useRef<HTMLDivElement>(null);
   const scrollMemory = useRef<Record<string, number>>({});
   const lastPath = useRef("/otros");
   const scrollKey = (target: string) => (target.startsWith("/admin-usuarios/") ? "/admin-usuarios" : target);
-  const scrollerFor = (target: string) => (target === "/horarios" ? horariosRef : target.startsWith("/admin-usuarios") ? adminRef : listRef).current?.closest<HTMLElement>(".app-screen") ?? null;
+  const scrollerFor = (target: string) => (target.startsWith("/reportes") ? reportesRef : target === "/horarios" ? horariosRef : target.startsWith("/admin-usuarios") ? adminRef : listRef).current?.closest<HTMLElement>(".app-screen") ?? null;
   useEffect(() => {
     const sync = () => {
       const next = window.location.pathname.replace(/\/$/, "") || "/";
       const fromHorarios = lastPath.current === "/horarios";
+      const fromReportes = lastPath.current.startsWith("/reportes");
+      if (fromReportes && next !== lastPath.current) {
+        const scroller = scrollerFor(lastPath.current);
+        if (scroller) scrollMemory.current[lastPath.current] = scroller.scrollTop;
+      }
       if (fromHorarios && next !== "/horarios") {
         const scroller = scrollerFor("/horarios");
         if (scroller) scrollMemory.current["/horarios"] = scroller.scrollTop;
@@ -46,7 +53,8 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
       if (next === "/reporte-pantallas/nuevo") setFormVisited(true);
       if (next.startsWith("/admin-usuarios")) setAdminVisited(true);
       if (next === "/horarios") setHorariosVisited(true);
-      if (next === "/horarios" || fromHorarios && next === "/otros") requestAnimationFrame(() => {
+      if (next.startsWith("/reportes")) setReportesVisited(true);
+      if (next === "/horarios" || next.startsWith("/reportes") || (fromHorarios || fromReportes) && next === "/otros") requestAnimationFrame(() => {
         if ((window.location.pathname.replace(/\/$/, "") || "/") !== next) return;
         const scroller = scrollerFor(next);
         if (scroller) scroller.scrollTop = scrollMemory.current[next] ?? 0;
@@ -57,7 +65,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
   }, []);
   const navigate = (next: string) => {
     const current = scrollerFor(path);
-    if (current && (path === "/reporte-pantallas" || path === "/admin-usuarios" || path === "/horarios" || path === "/otros")) scrollMemory.current[path] = current.scrollTop;
+    if (current && (path.startsWith("/reportes") || path === "/reporte-pantallas" || path === "/admin-usuarios" || path === "/horarios" || path === "/otros")) scrollMemory.current[path] = current.scrollTop;
     window.history.pushState({ ...window.history.state, screen: "otros" }, "", next);
     window.dispatchEvent(new Event("casitas:navigate"));
     requestAnimationFrame(() => { const scroller = scrollerFor(next); if (scroller) scroller.scrollTop = next === "/reporte-pantallas/nuevo" ? 0 : scrollMemory.current[scrollKey(next)] ?? 0; });
@@ -95,6 +103,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
   return <div className="otros-screen">
     <div hidden={path !== "/otros"}>
       <p className="pantalla-eyebrow">HERRAMIENTAS</p><h1>Otros</h1>
+      <button type="button" className="pantalla-feature" onClick={() => navigate("/reportes")}><span className="pantalla-feature-icon"><Files size={27} aria-hidden /></span><span><strong>Reportes</strong></span><ArrowRight size={21} aria-hidden /></button>
       <button type="button" className="pantalla-feature" onClick={() => navigate("/horarios")}><span className="pantalla-feature-icon"><CalendarDays size={27} aria-hidden /></span><span><strong>Horario laboral</strong><small>Turnos, vacaciones, horas extras y feriados</small></span><ArrowRight size={21} aria-hidden /></button>
       <button type="button" className="pantalla-feature" onClick={() => navigate("/reporte-pantallas")}><span className="pantalla-feature-icon"><Monitor size={27} aria-hidden /></span><span><strong>Reporte de pantallas</strong><small>Revisiones, movimientos e inventario</small></span><ArrowRight size={21} aria-hidden /></button>
       {esAdmin && <AdminUsuariosFeature onOpen={() => navigate("/admin-usuarios")} />}
@@ -122,6 +131,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
     {formVisited && <div hidden={path !== "/reporte-pantallas/nuevo"}><PantallaForm key={formKey} onClose={() => navigate("/reporte-pantallas")} onSaved={text => { setMessage(text); setFormKey(k => k + 1); navigate("/reporte-pantallas"); void refresh(); }} /></div>}
     {pdfReports && active && path === "/reporte-pantallas" && <PantallaPdfSheet reports={pdfReports} onClose={() => setPdfReports(null)} />}
     {horariosVisited && <div ref={horariosRef} hidden={path !== "/horarios"}><HorariosScreen key={session.id} visible={active && path === "/horarios"} session={session} onBack={() => navigate("/otros")} /></div>}
+    {reportesVisited && <div ref={reportesRef} hidden={!path.startsWith("/reportes")}><ReportesScreen key={session.id} path={path} visible={active && path.startsWith("/reportes")} usuarioId={session.id} navigate={navigate} /></div>}
     {esAdmin && adminVisited && <div ref={adminRef} hidden={!path.startsWith("/admin-usuarios")}><AdminUsuariosScreen visible={active && path.startsWith("/admin-usuarios")} path={path} navigate={navigate} session={session} /></div>}
   </div>;
 }

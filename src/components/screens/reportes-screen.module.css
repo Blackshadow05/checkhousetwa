@@ -1,0 +1,41 @@
+.screen { max-width: 560px; min-width: 0; margin-inline: auto; }
+.screen .back { justify-content: flex-start; padding-left: 0; color: var(--muted-foreground); }
+.screen h1:focus { outline: none; }
+.heading { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.screen .heading h1 { flex: 1; margin-bottom: 0; }
+.format { flex-shrink: 0; border-radius: 8px; padding: 5px 9px; color: var(--primary); background: var(--secondary); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+.screen .reportCard { display: flex; align-items: center; justify-content: flex-start; gap: 14px; width: 100%; margin-top: 22px; padding: 20px 16px; border-radius: 20px; border: 1px solid var(--border); background: var(--card); text-align: left; }
+.icon, .resultIcon { display: grid; place-items: center; flex-shrink: 0; width: 50px; height: 50px; color: var(--primary); background: var(--secondary); border-radius: 15px; }
+.reportName { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.reportName strong { font-size: 16px; }
+.reportName small { font-size: 12px; font-weight: 400; color: var(--muted-foreground); }
+.reportCard > svg { flex-shrink: 0; color: var(--muted-foreground); }
+.form { padding: 20px 16px 16px; border: 1px solid var(--border); border-radius: 22px; background: var(--card); }
+.sectionTitle { display: flex; align-items: center; gap: 9px; color: var(--primary); margin-bottom: 16px; }
+.screen .sectionTitle h2, .screen .result h2 { color: var(--foreground); font-size: 16px; line-height: 1.4; }
+.presets { display: grid; grid-template-columns: minmax(48px, .65fr) minmax(0, 1.3fr) minmax(0, 1.05fr); gap: 6px; padding: 4px; background: var(--secondary); border-radius: 15px; }
+.screen .presets button { font-size: 13px; padding-inline: 4px; color: var(--muted-foreground); }
+.screen .presets button[aria-pressed=true] { color: var(--primary); background: var(--card); box-shadow: 0 1px 5px #0000000b; }
+.dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-block: 6px 10px; }
+.screen .dates label { font-size: 12px; }
+.screen .dates input { background: var(--background); padding: 12px 9px; }
+.screen .primary, .download { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 52px; padding: 12px; border-radius: 14px; font-size: 14px; font-weight: 650; text-decoration: none; }
+.screen .primary { background: var(--primary); color: var(--primary-foreground); }
+.download { color: var(--primary-foreground); background: var(--primary); margin-top: 18px; }
+.download:focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; }
+.screen .error { padding: 12px 14px; border-radius: 12px; color: var(--rose-text); background: var(--rose-bg); font-size: 13px; overflow-wrap: anywhere; }
+.screen .offline { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted-foreground); }
+.offline svg { flex-shrink: 0; }
+.result { padding: 18px 16px 16px; margin-top: 18px; border-radius: 22px; border: 1px solid var(--border); background: var(--card); }
+.resultHeading { display: flex; align-items: center; gap: 12px; }
+.resultIcon { width: 44px; height: 44px; border-radius: 14px; }
+.screen .resultHeading p { margin: 3px 0 0; font-size: 13px; color: var(--muted-foreground); }
+.screen .range { font-size: 13px; margin: 14px 0 0; }
+.screen .meta { font-size: 11px; color: var(--muted-foreground); line-height: 1.6; margin-bottom: 0; }
+.progress { margin-top: 18px; font-size: 12px; color: var(--muted-foreground); }
+.skeleton { height: 110px; margin-top: 10px; border-radius: 20px; background: var(--secondary); animation: pulse 1.2s ease-in-out infinite alternate; }
+.spinner { animation: spin 1s linear infinite; }
+@keyframes pulse { to { opacity: .45; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 380px) { .dates { grid-template-columns: minmax(0, 1fr); gap: 0; } .screen .dates label { margin-block: 12px 4px; } }
+@media (prefers-reduced-motion: reduce) { .spinner, .skeleton { animation: none; } }

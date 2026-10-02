@@ -91,6 +91,7 @@ export type Database = {
           nota_extra: string | null;
           usuario_nota: string | null;
           se_movio: Json | null;
+          registro_reconocimiento: Json | null;
           imagen_nota: string | null;
           hora_nota: string | null;
           update_at: string | null;
@@ -129,6 +130,7 @@ export type Database = {
           nota_extra?: string | null;
           usuario_nota?: string | null;
           se_movio?: Json | null;
+          registro_reconocimiento?: Json | null;
           imagen_nota?: string | null;
           hora_nota?: string | null;
           update_at?: string | null;
@@ -167,6 +169,7 @@ export type Database = {
           nota_extra?: string | null;
           usuario_nota?: string | null;
           se_movio?: Json | null;
+          registro_reconocimiento?: Json | null;
           imagen_nota?: string | null;
           hora_nota?: string | null;
           update_at?: string | null;
@@ -271,7 +274,7 @@ export type RevisionCasitaInicio = Pick<
   | "notas"
   | "nota_extra"
   | "room_move"
->;
+> & Partial<Pick<RevisionCasita, "registro_reconocimiento">>;
 
 export type MenuRow = Database["public"]["Tables"]["menus"]["Row"];
 
@@ -283,6 +286,7 @@ export type MenuDelDia = {
 };
 
 export type InicioRevisionRow = {
+  reconocimiento?: import("@/lib/revision-recognition-detail").RecognitionDetailItem[];
   id: string;
   casita: string;
   quien_revisa: string;
