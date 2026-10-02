@@ -5,7 +5,6 @@ import { flushSync } from "react-dom";
 import { BedDouble, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, LoaderCircle, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
 import { createRevision } from "@/app/actions/revisiones";
 import { useRevisionDraft } from "@/hooks/use-revision-draft";
-import { useDismissKeyboard } from "@/hooks/use-dismiss-keyboard";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import { statusAppearance } from "@/lib/revisiones-display";
@@ -102,7 +101,6 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   open: boolean; mode?: RevisionMode; reviewer?: string; onClose: () => void; onSaved: (row: InicioRevisionRow, files: File[]) => void;
 }) {
   const { draft, storage, update, clear } = useRevisionDraft(open, mode);
-  useDismissKeyboard(open);
   const { online, revisiones } = useRevisiones();
   const [errors, setErrors] = useState<RevisionFormErrors>({});
   const [message, setMessage] = useState("");

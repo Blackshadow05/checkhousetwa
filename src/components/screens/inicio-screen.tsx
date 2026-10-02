@@ -4,7 +4,6 @@ import {
   Check,
   ChevronRight,
   CloudOff,
-  House,
   LoaderCircle,
   LogIn,
   LogOut,
@@ -14,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fetchLatestRevisionCasita } from "@/app/actions/revisiones";
 import { LoginForm } from "@/components/auth/login-form";
+import { ConsejoDelDia } from "@/components/screens/consejo-del-dia";
 import { HoyCasitas } from "@/components/screens/hoy-casitas";
 import { MenuDelDia } from "@/components/screens/menu-del-dia";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
@@ -76,14 +76,7 @@ export function PublicInicioScreen({
       <main className="app-main">
         <div className="app-screen">
           <section className={styles.screen} aria-label="Inicio">
-            <header className={`${styles.hero} ${styles.welcome}`}>
-              <span className={styles.welcomeMark} aria-hidden="true">
-                <House size={26} strokeWidth={1.7} />
-              </span>
-              <time dateTime={today}>{menuDateHeading(today)}</time>
-              <h1>Tus casitas, al día</h1>
-              <p>Consulta el menú sin iniciar sesión. Ingresa a tu cuenta para ver las revisiones y las herramientas del equipo.</p>
-            </header>
+            <ConsejoDelDia initialDay={today} online={online} />
             <MenuDelDia initialMenus={menus} initialError={menusError} today={today} online={online} />
           </section>
         </div>
@@ -266,6 +259,7 @@ export function InicioScreen({
           </button>
         </div>
       </header>
+      <ConsejoDelDia initialDay={today} online={online} headingLevel={2} />
       <MenuDelDia
         initialMenus={menus}
         initialError={menusError}

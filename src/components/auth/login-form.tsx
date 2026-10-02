@@ -120,7 +120,7 @@ export function LoginForm({
   function nextPassword(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
     event.preventDefault();
-    form.current?.querySelector<HTMLInputElement>("[data-login-password]")?.focus();
+    form.current?.querySelector<HTMLInputElement>("[data-login-password]")?.focus({ preventScroll: variant === "sheet" });
   }
 
   function limpiarMfa() {
@@ -396,7 +396,7 @@ export function LoginForm({
                 enterKeyHint="go"
                 readOnly={busy}
                 type="text"
-                inputMode="text"
+                inputMode="numeric"
                 autoComplete="one-time-code"
                 required
                 placeholder="000000"
@@ -431,7 +431,7 @@ export function LoginForm({
                 enterKeyHint="go"
                 readOnly={busy}
                 type="text"
-                inputMode="text"
+                inputMode="numeric"
                 autoComplete="one-time-code"
                 required
                 placeholder="000000"

@@ -1,5 +1,6 @@
 import type { PantallaReport, PantallaStock } from "@/lib/pantallas";
 import type { HorarioRow } from "@/lib/horarios";
+import type { ConsejoDiario } from "@/lib/consejos-diarios";
 type Table<Row, Insert = Partial<Row>> = { Row: Row; Insert: Insert; Update: Partial<Row>; Relationships: [] };
 export type UsuarioProfile = { id: number; Usuario: string; Rol: string | null; metodo_login: string | null; totp_enrolled: boolean; auth_user_id: string | null; email: string | null; ultimo_login_at: string | null; ultimo_login_ip: string | null };
 export type SesionUsuario = { id: number; nombre: string; rol: string | null };
@@ -51,11 +52,13 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      consejos_diarios: Table<ConsejoDiario>;
       horarios: Table<HorarioRow & { created_at: string | null }>;
       reporte_pantallas: Table<PantallaReport, Pick<PantallaReport, "nombre_usuario" | "fecha_hora" | "numero_casita" | "fotos" | "notas"> & Partial<Omit<PantallaReport, "id">>>;
       inventario_pantallas: Table<PantallaStock & { id: number; updated_at: string }>;
       inventario_casitas: Table<InventarioCasitaRow>;
       Usuarios: Table<UsuarioProfile & { password_hash: string | null }>;
+      login_logs: Table<{ id: string; user_id: number; usuario: string; ip_address: string | null; user_agent: string | null; metodo: string; logged_at: string }>;
       notas_revisiones_casitas: Table<NotaRevisionCasita, NotaRevisionCasitaInsert>;
       revisiones_casitas: {
         Row: {
@@ -228,6 +231,7 @@ export type Database = {
       set_inventario_pantalla: { Args: { p_ubicacion: string; p_habitacion: string; p_cantidad: number }; Returns: undefined };
       registrar_movimiento_pantalla: { Args: { p_nombre_usuario: string; p_fecha_hora: string; p_notas: string; p_origen_ubicacion: string; p_origen_habitacion: string; p_destino_ubicacion: string; p_destino_habitacion: string }; Returns: PantallaReport };
       editar_campo_revision_casita: { Args: { p_id: string; p_editor_id: number; p_campo: string; p_esperado: string | null; p_nuevo: string | null }; Returns: RevisionCasita };
+      verificar_credenciales_usuario: { Args: { p_usuario: string; p_password: string; p_ip?: string | null }; Returns: Json };
     };
     Enums: {
       [_ in never]: never;
