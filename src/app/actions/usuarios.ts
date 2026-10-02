@@ -146,8 +146,7 @@ export async function loginUsuario(username: string, password: string): Promise<
     await clearStartedAt();
     await recordLogin({ userId: data.id, usuario: data.Usuario, metodo: "password" });
     return { error: null, user: { id: data.id, nombre: data.Usuario } };
-  } catch (error) {
-    console.error("loginUsuario", error);
+  } catch {
     return { error: LOGIN_ERROR, user: null };
   }
 }
@@ -187,8 +186,7 @@ export async function loginConAuthenticator(email: string, password: string): Pr
 
     await removeUnverifiedTotpFactors(client, factors);
     return enrollmentResult(await enrollTotpFactor(client));
-  } catch (error) {
-    console.error("loginConAuthenticator", error);
+  } catch {
     if (client) return await rejectAuthSession(client, LOGIN_ERROR);
     return { error: LOGIN_ERROR, user: null };
   }
