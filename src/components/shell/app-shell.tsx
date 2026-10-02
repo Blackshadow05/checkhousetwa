@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useRouter } from "next/navigation";
 import { currentUsuario, logoutUsuario } from "@/app/actions/usuarios";
 import { House } from "lucide-react";
+import type { RetornoGoogle } from "@/components/auth/login-form";
 import { InicioScreen, PublicInicioScreen, type InicioAccount } from "@/components/screens/inicio-screen";
 import { BottomNavigation } from "@/components/shell/bottom-navigation";
 import { Fab, NewRevisionFab } from "@/components/shell/fab";
@@ -36,6 +37,7 @@ type AppShellProps = {
   menusInicio: MenuDelDia[];
   menusError: string | null;
   initialDay: string;
+  retornoGoogle?: RetornoGoogle;
 };
 
 function AppShellFrame({
@@ -190,6 +192,7 @@ export function AppShell({
   menusInicio,
   menusError,
   initialDay,
+  retornoGoogle,
 }: AppShellProps) {
   const navigation = useAppNavigation(initialScreen);
   const router = useRouter();
@@ -256,7 +259,7 @@ export function AppShell({
             </div>
           </div>
         </header>
-        <PublicInicioScreen menus={menusInicio} menusError={menusError} today={initialDay} onSuccess={(authenticatedUser) => {
+        <PublicInicioScreen menus={menusInicio} menusError={menusError} today={initialDay} retornoGoogle={retornoGoogle} onSuccess={(authenticatedUser) => {
           sessionGeneration.current += 1;
           setEntering(true);
           setUser(authenticatedUser);

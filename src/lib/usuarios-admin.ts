@@ -3,7 +3,7 @@ export class UsuarioAdminError extends Error {}
 export const ROLES_ADMIN = ["user", "admin", "SuperAdmin", "inactivo"] as const;
 export type RolAdmin = (typeof ROLES_ADMIN)[number];
 
-export const METODOS_ADMIN = ["usuario", "correo", "google"] as const;
+export const METODOS_ADMIN = ["usuario", "correo", "google", "ambos"] as const;
 export type MetodoAdmin = (typeof METODOS_ADMIN)[number];
 
 export const ROL_LABELS: Record<string, string> = {
@@ -17,18 +17,21 @@ export const METODO_LABELS: Record<MetodoAdmin, string> = {
   usuario: "Usuario y contraseña",
   correo: "Correo y contraseña",
   google: "Google",
+  ambos: "Correo o Google",
 };
 
 export const METODO_CORTOS: Record<MetodoAdmin, string> = {
   usuario: "Usuario",
   correo: "Correo",
   google: "Google",
+  ambos: "Ambos",
 };
 
 export const METODO_HINTS: Record<MetodoAdmin, string> = {
   usuario: "Entra con su usuario y contraseña.",
   correo: "Entra con correo y contraseña, y configura Google Authenticator al entrar.",
-  google: "Entra con la cuenta de Google de ese correo.",
+  google: "Entra con la cuenta de Google de ese correo, y configura Google Authenticator al entrar.",
+  ambos: "Entra con correo y contraseña o con la cuenta de Google de ese correo. Siempre pide Google Authenticator.",
 };
 
 export const ADMIN_ROLES = ["admin", "SuperAdmin"] as const;
@@ -61,8 +64,10 @@ export function metodoAdminDe(row: {
   metodo_login: string | null;
   auth_user_id: string | null;
   totp_enrolled: boolean;
+  permite_google?: boolean | null;
 }): MetodoAdmin {
   if (row.metodo_login === "google") return "google";
+  if (row.permite_google) return "ambos";
   if (row.auth_user_id || row.totp_enrolled) return "correo";
   return "usuario";
 }

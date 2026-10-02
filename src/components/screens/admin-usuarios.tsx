@@ -13,6 +13,7 @@ import {
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useOnline } from "@/lib/use-online";
 import {
+  METODO_CORTOS,
   METODO_HINTS,
   METODO_LABELS,
   METODOS_ADMIN,
@@ -186,7 +187,7 @@ export function AdminUsuariosScreen({
     setRol(usuario.rol);
     setMetodo(usuario.metodo);
     setEmail(usuario.email ?? "");
-    if (usuario.metodo === "correo") cargarFactor(usuario);
+    if (usuario.metodo !== "usuario") cargarFactor(usuario);
     setNotice("");
     navigate("/admin-usuarios/editar");
   }
@@ -397,7 +398,7 @@ export function AdminUsuariosScreen({
                     disabled={busy || esYo}
                     onClick={() => cambiarMetodo(item)}
                   >
-                    {item === "usuario" ? "Usuario" : item === "correo" ? "Correo" : "Google"}
+                    {METODO_CORTOS[item]}
                   </button>
                 ))}
               </div>
@@ -424,7 +425,7 @@ export function AdminUsuariosScreen({
             )}
             {metodo !== "google" && (
               <PasswordInput
-                label={metodo === "correo" ? "Contraseña de Auth" : "Contraseña"}
+                label={metodo === "usuario" ? "Contraseña" : "Contraseña de Auth"}
                 value={password}
                 placeholder={editando ? "Dejar en blanco para mantener" : ""}
                 busy={busy}
@@ -452,7 +453,7 @@ export function AdminUsuariosScreen({
             {formError && <p className="pantalla-error" role="alert">{formError}</p>}
             {editando && (
               <div className="admin-actions">
-                {editando.metodo === "correo" && (
+                {editando.metodo !== "usuario" && (
                   <div className="admin-section">
                     <div className="admin-section-head">
                       <strong>Authenticator</strong>
@@ -464,7 +465,7 @@ export function AdminUsuariosScreen({
                             : factorEstado === "cargando"
                               ? "Comprobando…"
                               : factorEstado === "sin-auth"
-                                ? "Sin cuenta de correo"
+                                ? "Aún no ha entrado"
                                 : ""}
                       </span>
                     </div>

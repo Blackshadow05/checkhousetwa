@@ -2,7 +2,7 @@ import type { PantallaReport, PantallaStock } from "@/lib/pantallas";
 import type { HorarioRow } from "@/lib/horarios";
 import type { ConsejoDiario } from "@/lib/consejos-diarios";
 type Table<Row, Insert = Partial<Row>> = { Row: Row; Insert: Insert; Update: Partial<Row>; Relationships: [] };
-export type UsuarioProfile = { id: number; Usuario: string; Rol: string | null; metodo_login: string | null; totp_enrolled: boolean; auth_user_id: string | null; email: string | null; ultimo_login_at: string | null; ultimo_login_ip: string | null };
+export type UsuarioProfile = { id: number; Usuario: string; Rol: string | null; metodo_login: string | null; totp_enrolled: boolean; permite_google: boolean; auth_user_id: string | null; email: string | null; ultimo_login_at: string | null; ultimo_login_ip: string | null };
 export type SesionUsuario = { id: number; nombre: string; rol: string | null };
 export type UsuarioShell = { id: number; nombre: string; rol?: string | null };
 export type NotaRevisionCasita = {

@@ -3,7 +3,7 @@ import "server-only";
 import type { User } from "@supabase/supabase-js";
 import { createAdminClient, type createClient } from "@/lib/supabase/server";
 
-export const PROFILE_COLUMNS = "id,Usuario,Rol,metodo_login,email,auth_user_id,totp_enrolled";
+export const PROFILE_COLUMNS = "id,Usuario,Rol,metodo_login,email,auth_user_id,totp_enrolled,permite_google";
 
 export type AuthProfile = {
   id: number;
@@ -13,6 +13,7 @@ export type AuthProfile = {
   email: string | null;
   auth_user_id: string | null;
   totp_enrolled: boolean;
+  permite_google: boolean;
 };
 
 type AuthClient = Awaited<ReturnType<typeof createClient>>;
@@ -42,7 +43,12 @@ export function toProfile(row: unknown): AuthProfile | null {
       ? row.auth_user_id
       : null,
     totp_enrolled: "totp_enrolled" in row && row.totp_enrolled === true,
+    permite_google: "permite_google" in row && row.permite_google === true,
   };
+}
+
+export function permiteGoogle(profile: AuthProfile): boolean {
+  return profile.metodo_login === "google" || profile.permite_google;
 }
 
 export function isGoogleProvider(authUser: User): boolean {
@@ -54,18 +60,23 @@ function emailPattern(email: string): string {
   return email.replace(/[\\%_]/g, "\\$&");
 }
 
-export async function fetchProfileForAuthUser(
-  _client: AuthClient,
-  authUser: User,
-): Promise<AuthProfile | null> {
-  const byId = await createAdminClient()
+async function fetchLinkedProfile(authUser: User): Promise<AuthProfile | null> {
+  const { data, error } = await createAdminClient()
     .from("Usuarios")
     .select(PROFILE_COLUMNS)
     .eq("auth_user_id", authUser.id)
     .maybeSingle();
 
-  if (byId.error) throw byId.error;
-  if (byId.data) return toProfile(byId.data);
+  if (error) throw error;
+  return toProfile(data);
+}
+
+export async function fetchProfileForAuthUser(
+  _client: AuthClient,
+  authUser: User,
+): Promise<AuthProfile | null> {
+  const linked = await fetchLinkedProfile(authUser);
+  if (linked) return linked;
 
   const email = normalizeEmail(authUser.email);
   if (!email) return null;
@@ -91,7 +102,7 @@ export async function fetchGoogleProfile(
   const { data, error } = await createAdminClient()
     .from("Usuarios")
     .select(PROFILE_COLUMNS)
-    .eq("metodo_login", "google")
+    .or("metodo_login.eq.google,permite_google.is.true")
     .ilike("email", emailPattern(email))
     .maybeSingle();
 
@@ -104,6 +115,8 @@ export async function fetchAuthorizedProfile(
   _client: AuthClient,
   authUser: User,
 ): Promise<AuthProfile | null> {
+  const linked = await fetchLinkedProfile(authUser);
+  if (linked) return linked;
   return isGoogleProvider(authUser)
     ? fetchGoogleProfile(_client, authUser)
     : fetchProfileForAuthUser(_client, authUser);

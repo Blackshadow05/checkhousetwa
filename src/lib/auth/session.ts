@@ -7,6 +7,7 @@ import {
   fetchAuthorizedProfile,
   isGoogleProvider,
   linkAuthUserToProfile,
+  permiteGoogle,
   type AuthProfile,
 } from "@/lib/auth/profile";
 import type { AMREntry, User } from "@supabase/supabase-js";
@@ -55,11 +56,27 @@ function isSessionExpired(data: AssuranceLevel) {
   return age < -60_000 || age >= MAX_AGE_MS;
 }
 
+function usesGoogleSession(data: AssuranceLevel) {
+  return data.currentAuthenticationMethods.some((entry) => (typeof entry === "string" ? entry : entry.method) === "oauth");
+}
+
+function sessionMethodAllowed(data: AssuranceLevel, profile: AuthProfile, user: User) {
+  return usesGoogleSession(data)
+    ? permiteGoogle(profile) && isGoogleProvider(user)
+    : profile.metodo_login !== "google";
+}
+
 function hasCompletedAuthentication(data: AssuranceLevel, profile: AuthProfile, user: User) {
-  if (profile.metodo_login === "google") {
-    return isGoogleProvider(user) && data.currentAuthenticationMethods.some((entry) => (typeof entry === "string" ? entry : entry.method) === "oauth");
-  }
-  return data.currentLevel === "aal2";
+  return data.currentLevel === "aal2" && sessionMethodAllowed(data, profile, user);
+}
+
+export async function getPendingSession(client: AuthClient, profile: AuthProfile, user: User) {
+  const assurance = await getAssuranceLevel(client);
+  if (!assurance || isSessionExpired(assurance)) return null;
+  return {
+    metodo: usesGoogleSession(assurance) ? "google" as const : "correo" as const,
+    permitido: sessionMethodAllowed(assurance, profile, user),
+  };
 }
 
 export async function getSupabaseUsuario() {

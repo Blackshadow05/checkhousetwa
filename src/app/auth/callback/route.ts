@@ -1,34 +1,8 @@
 import { NextResponse } from "next/server";
-import { fetchGoogleProfile } from "@/lib/auth/profile";
-import { recordLogin } from "@/lib/auth/record-login";
-import {
-  clearStartedAt,
-  completeSupabaseSession,
-  signOutLocal,
-} from "@/lib/auth/session";
+import { fetchGoogleProfile, linkAuthUserToProfile } from "@/lib/auth/profile";
+import { clearStartedAt, signOutLocal } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-
-function destinationUrl(next: string | null, origin: string): URL {
-  const fallback = new URL("/", origin);
-  if (
-    !next?.startsWith("/") ||
-    next.startsWith("//") ||
-    next.includes("\\") ||
-    Array.from(next).some((character) => {
-      const code = character.charCodeAt(0);
-      return code < 32 || code === 127;
-    })
-  ) {
-    return fallback;
-  }
-
-  try {
-    const destination = new URL(next, origin);
-    return destination.origin === origin ? destination : fallback;
-  } catch {
-    return fallback;
-  }
-}
+import { clearUsuarioSession } from "@/lib/usuarios-session";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
@@ -59,17 +33,11 @@ export async function GET(request: Request) {
       return await reject("unauthorized");
     }
 
-    const user = await completeSupabaseSession(client, profile, data.user);
-    await recordLogin({
-      userId: user.id,
-      usuario: user.nombre,
-      metodo: "google",
-      accessToken: data.session.access_token,
-    });
+    await linkAuthUserToProfile(client, profile, data.user);
+    await clearUsuarioSession();
+    await clearStartedAt();
 
-    return NextResponse.redirect(
-      destinationUrl(requestUrl.searchParams.get("next"), requestUrl.origin)
-    );
+    return NextResponse.redirect(new URL("/?auth=authenticator", requestUrl.origin));
   } catch {
     console.error("No se pudo completar el acceso con Google.");
     return await reject("error");

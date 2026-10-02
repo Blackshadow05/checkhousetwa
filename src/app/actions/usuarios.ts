@@ -1,7 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
-import { isAuthError, isAuthSessionMissingError } from "@supabase/supabase-js";
+import { isAuthError, isAuthSessionMissingError, type User } from "@supabase/supabase-js";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { clearUsuarioSession, setUsuarioSession } from "@/lib/usuarios-session";
 import {
@@ -10,11 +10,13 @@ import {
   linkAuthUserToProfile,
   markTotpEnrolled,
   normalizeEmail,
+  type AuthProfile,
 } from "@/lib/auth/profile";
 import {
   clearStartedAt,
   clearSupabaseSession,
   completeSupabaseSession,
+  getPendingSession,
   getSesionUsuario,
   signOutLocal,
 } from "@/lib/auth/session";
@@ -33,6 +35,8 @@ const DEFAULT_TOTP_NAME = "Google Authenticator";
 const UNAUTHORIZED = "Tu correo no está autorizado. Contacte al administrador.";
 const INACTIVE = "Usuario inactivo. Contacte al administrador.";
 const GOOGLE_ONLY = "Esta cuenta entra con Google. Usa el botón de Google.";
+const GOOGLE_NOT_ALLOWED = "Tu cuenta no tiene permitido entrar con Google. Contacte al administrador.";
+const SESSION_EXPIRED = "La sesión venció. Vuelve a iniciar sesión.";
 const LOGIN_ERROR = "No se pudo iniciar sesión. Revisa tu conexión o la configuración de acceso.";
 const TOO_MANY_ATTEMPTS = "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.";
 
@@ -204,18 +208,34 @@ export async function loginConAuthenticator(email: string, password: string): Pr
   }
 }
 
+async function checkPendingSession(
+  client: AuthClient,
+  profile: AuthProfile,
+  user: User,
+): Promise<{ metodo: "google" | "correo" } | { failure: LoginResult }> {
+  const pending = await getPendingSession(client, profile, user);
+  if (!pending) {
+    return { failure: { ...await rejectAuthSession(client, SESSION_EXPIRED), restartAuthenticator: true } };
+  }
+  if (!pending.permitido) {
+    return { failure: await rejectAuthSession(client, pending.metodo === "google" ? GOOGLE_NOT_ALLOWED : GOOGLE_ONLY) };
+  }
+  return { metodo: pending.metodo };
+}
+
 export async function regenerarQrAuthenticator(): Promise<AuthenticatorResult> {
   let client: AuthClient | undefined;
   try {
     client = await createClient();
     const { data, error } = await client.auth.getUser();
     if (error || !data.user) {
-      return { error: "Vuelve a entrar con Authenticator para generar un QR nuevo.", user: null };
+      return { error: "Vuelve a iniciar sesión para continuar.", user: null, restartAuthenticator: true };
     }
     const profile = await fetchAuthorizedProfile(client, data.user);
     if (!profile) return await rejectAuthSession(client, UNAUTHORIZED);
     if (profile.Rol === "inactivo") return await rejectAuthSession(client, INACTIVE);
-    if (profile.metodo_login === "google") return await rejectAuthSession(client, GOOGLE_ONLY);
+    const pending = await checkPendingSession(client, profile, data.user);
+    if ("failure" in pending) return pending.failure;
     await linkAuthUserToProfile(client, profile, data.user);
     const factors = data.user.factors?.filter((factor) => factor.factor_type === "totp")
       ?? await listTotpFactors(client);
@@ -233,13 +253,13 @@ export async function verificarCodigoAuthenticator(factorId: string, codigo: str
     return { error: "El código debe tener 6 dígitos", user: null };
   }
   if (typeof factorId !== "string" || !factorId) {
-    return { error: "Vuelve a ingresar con tu correo y contraseña de Auth para verificar el código.", user: null, restartAuthenticator: true };
+    return { error: "Vuelve a iniciar sesión para verificar el código.", user: null, restartAuthenticator: true };
   }
   try {
     const client = await createClient();
     const factors = await listTotpFactors(client);
     if (!factors.some((factor) => factor.id === factorId)) {
-      return { error: "El Authenticator seleccionado ya no está disponible. Vuelve a ingresar con tu correo y contraseña de Auth.", user: null, restartAuthenticator: true };
+      return { error: "El Authenticator seleccionado ya no está disponible. Vuelve a iniciar sesión.", user: null, restartAuthenticator: true };
     }
     const challenge = await client.auth.mfa.challenge({ factorId });
     if (challenge.error) throw challenge.error;
@@ -251,10 +271,16 @@ export async function verificarCodigoAuthenticator(factorId: string, codigo: str
     let profile = await fetchAuthorizedProfile(client, verifiedUser);
     if (!profile) return await rejectAuthSession(client, UNAUTHORIZED);
     if (profile.Rol === "inactivo") return await rejectAuthSession(client, INACTIVE);
-    if (profile.metodo_login === "google") return await rejectAuthSession(client, GOOGLE_ONLY);
+    const pending = await checkPendingSession(client, profile, verifiedUser);
+    if ("failure" in pending) return pending.failure;
     profile = await markTotpEnrolled(client, profile);
     const user = await completeSupabaseSession(client, profile, verifiedUser);
-    await recordLogin({ userId: user.id, usuario: user.nombre, metodo: "authenticator", accessToken: verify.data.access_token });
+    await recordLogin({
+      userId: user.id,
+      usuario: user.nombre,
+      metodo: pending.metodo === "google" ? "google" : "authenticator",
+      accessToken: verify.data.access_token,
+    });
     return { error: null, user };
   } catch (error) {
     return authenticatorFailure(error);

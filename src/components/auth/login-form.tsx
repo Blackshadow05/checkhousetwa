@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
 import {
   CircleAlert,
   CircleCheck,
@@ -27,6 +27,12 @@ import {
 type SesionUsuario = { id: number; nombre: string };
 type Metodo = "usuario" | "authenticator" | "google";
 type Paso = "credenciales" | "codigo" | "enroll";
+export type RetornoGoogle = "continuar" | "unauthorized" | "error";
+
+const GOOGLE_ERRORES: Record<Exclude<RetornoGoogle, "continuar">, string> = {
+  unauthorized: "Esa cuenta de Google no está autorizada. Contacte al administrador.",
+  error: "No se pudo completar el acceso con Google. Inténtalo de nuevo.",
+};
 
 const METODOS: { id: Metodo; etiqueta: string; Icon: ComponentType<{ size?: number }> }[] = [
   { id: "usuario", etiqueta: "Usuario", Icon: UserRound },
@@ -71,12 +77,14 @@ export function LoginForm({
   online,
   variant,
   onSuccess,
+  retornoGoogle,
 }: {
   online: boolean;
   variant: "card" | "sheet";
   onSuccess: (user: SesionUsuario) => void;
+  retornoGoogle?: RetornoGoogle;
 }) {
-  const [metodo, setMetodo] = useState<Metodo>("usuario");
+  const [metodo, setMetodo] = useState<Metodo>(retornoGoogle ? "google" : "usuario");
   const [paso, setPaso] = useState<Paso>("credenciales");
   const [usuario, setUsuario] = useState("");
   const [claveUsuario, setClaveUsuario] = useState("");
@@ -87,12 +95,13 @@ export function LoginForm({
   const [secret, setSecret] = useState("");
   const [codigo, setCodigo] = useState("");
   const [aviso, setAviso] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(retornoGoogle && retornoGoogle !== "continuar" ? GOOGLE_ERRORES[retornoGoogle] : "");
   const [busy, setBusy] = useState(false);
   const [busyMessage, setBusyMessage] = useState("");
   const [done, setDone] = useState(false);
   const form = useRef<HTMLFormElement>(null);
   const pending = useRef(false);
+  const googleContinuado = useRef(false);
   const messageId = useId();
 
   function beginRequest(message: string) {
@@ -133,7 +142,7 @@ export function LoginForm({
 
   function cambiarMetodo(next: Metodo) {
     if (busy || next === metodo) return;
-    if (metodo === "authenticator" && paso !== "credenciales") {
+    if (paso !== "credenciales") {
       void cancelarAuthenticator().catch(() => null);
     }
     setError("");
@@ -244,8 +253,8 @@ export function LoginForm({
     }
   }
 
-  async function regenerarQr() {
-    if (!beginRequest("Generando un nuevo código QR…")) return;
+  async function prepararAuthenticator(mensaje: string) {
+    if (!beginRequest(mensaje)) return;
     try {
       const result = await regenerarQrAuthenticator();
       if (result.error) {
@@ -267,13 +276,19 @@ export function LoginForm({
         setPaso("codigo");
         return;
       }
-      setError("No se pudo generar un QR nuevo.");
+      setError("No se pudo preparar Google Authenticator.");
     } catch {
       setError("No se pudo conectar. Inténtalo de nuevo.");
     } finally {
       finishRequest();
     }
   }
+
+  useEffect(() => {
+    if (retornoGoogle !== "continuar" || googleContinuado.current) return;
+    googleContinuado.current = true;
+    void prepararAuthenticator("Preparando Google Authenticator…");
+  });
 
   async function entrarGoogle() {
     if (!beginRequest("Abriendo Google…")) return;
@@ -304,8 +319,8 @@ export function LoginForm({
       onSubmit={(event) => {
         event.preventDefault();
         if (metodo === "usuario") void ingresarUsuario();
-        else if (metodo === "authenticator" && paso === "credenciales") void ingresarAuthenticator();
-        else if (metodo === "authenticator") void verificarCodigo();
+        else if (paso !== "credenciales") void verificarCodigo();
+        else if (metodo === "authenticator") void ingresarAuthenticator();
       }}
     >
       <div className="auth-tabs" role="group" aria-label="Método de acceso">
@@ -384,7 +399,7 @@ export function LoginForm({
           </>
         ) : null}
 
-        {metodo === "authenticator" && paso === "codigo" ? (
+        {paso === "codigo" ? (
           <>
             <div className="auth-step-icon" aria-hidden="true"><ShieldCheck size={26} /></div>
             <p className="auth-hint auth-center">Código de 6 dígitos de Google Authenticator</p>
@@ -415,7 +430,7 @@ export function LoginForm({
           </>
         ) : null}
 
-        {metodo === "authenticator" && paso === "enroll" ? (
+        {paso === "enroll" ? (
           <>
             <p className="auth-hint auth-center">Escanea el QR con Google Authenticator</p>
             {qrCode ? (
@@ -446,17 +461,17 @@ export function LoginForm({
               <button type="button" className="secondary-button" disabled={busy || done} onClick={cancelarMfa}>
                 Cancelar
               </button>
-              <button type="button" className="secondary-button" disabled={submitDisabled || done} onClick={() => void regenerarQr()}>
+              <button type="button" className="secondary-button" disabled={submitDisabled || done} onClick={() => void prepararAuthenticator("Generando un nuevo código QR…")}>
                 Nuevo QR
               </button>
             </div>
           </>
         ) : null}
 
-        {metodo === "google" ? (
+        {metodo === "google" && paso === "credenciales" ? (
           <>
             <div className="auth-google-mark" aria-hidden="true"><GoogleIcon size={30} /></div>
-            <p className="auth-hint auth-center">Usa la cuenta autorizada por el administrador</p>
+            <p className="auth-hint auth-center">Usa la cuenta autorizada por el administrador. Luego te pediremos el código de Google Authenticator.</p>
             <button type="button" className="auth-google-button" disabled={submitDisabled} onClick={() => void entrarGoogle()}>
               {busy ? <LoaderCircle size={19} className="auth-spinner" aria-hidden="true" /> : <GoogleIcon size={19} />}
               {busy ? "Abriendo Google…" : "Continuar con Google"}

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fetchLatestRevisionCasita } from "@/app/actions/revisiones";
-import { LoginForm } from "@/components/auth/login-form";
+import { LoginForm, type RetornoGoogle } from "@/components/auth/login-form";
 import { ConsejoDelDia } from "@/components/screens/consejo-del-dia";
 import { HoyCasitas } from "@/components/screens/hoy-casitas";
 import { MenuDelDia } from "@/components/screens/menu-del-dia";
@@ -61,16 +61,26 @@ function greetingNow() {
 }
 
 export function PublicInicioScreen({
-  menus, menusError, today, onSuccess,
+  menus, menusError, today, retornoGoogle: retornoInicial, onSuccess,
 }: {
   menus: MenuDelDiaRow[];
   menusError: string | null;
   today: string;
+  retornoGoogle?: RetornoGoogle;
   onSuccess: (user: { id: number; nombre: string }) => void;
 }) {
   const online = useOnline();
-  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(Boolean(retornoInicial));
+  const [retornoGoogle, setRetornoGoogle] = useState(retornoInicial);
   const signedIn = useRef<{ id: number; nombre: string } | null>(null);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("auth")) return;
+    url.searchParams.delete("auth");
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
+
   return (
     <>
       <main className="app-main">
@@ -95,6 +105,7 @@ export function PublicInicioScreen({
         open={loginOpen}
         onClose={() => setLoginOpen(false)}
         onExited={() => {
+          setRetornoGoogle(undefined);
           if (signedIn.current) onSuccess(signedIn.current);
         }}
         title="Iniciar sesión"
@@ -103,6 +114,7 @@ export function PublicInicioScreen({
           <LoginForm
             online={online}
             variant="sheet"
+            retornoGoogle={retornoGoogle}
             onSuccess={(user) => {
               signedIn.current = user;
               setLoginOpen(false);

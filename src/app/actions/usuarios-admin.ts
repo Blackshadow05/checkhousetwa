@@ -17,7 +17,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { esRolAdmin, metodoAdminDe, UsuarioAdminError, validarUsuarioAdmin, type AdminUsuario, type AdminUsuarioInput } from "@/lib/usuarios-admin";
 import type { SesionUsuario } from "@/types/database";
 
-const COLUMNS = "id,Usuario,Rol,metodo_login,totp_enrolled,email,auth_user_id,ultimo_login_at,password_hash";
+const COLUMNS = "id,Usuario,Rol,metodo_login,totp_enrolled,permite_google,email,auth_user_id,ultimo_login_at,password_hash";
 
 type UsuarioRow = {
   id: number;
@@ -25,6 +25,7 @@ type UsuarioRow = {
   Rol: string | null;
   metodo_login: string | null;
   totp_enrolled: boolean;
+  permite_google: boolean;
   email: string | null;
   auth_user_id: string | null;
   ultimo_login_at: string | null;
@@ -131,7 +132,7 @@ export async function adminCrearUsuario(input: AdminUsuarioInput): Promise<{ err
     if (email && await emailEnUso(admin, email, null)) return { error: "Ya existe un usuario con ese correo.", usuario: null };
 
     let authUserId: string | null = null;
-    if (input.metodo === "correo" && email) {
+    if ((input.metodo === "correo" || input.metodo === "ambos") && email) {
       const existing = await findAuthUserByEmail(email);
       if (existing) {
         if (await authUserLinked(existing.id)) return { error: "Ese correo ya tiene una cuenta de acceso en uso.", usuario: null };
@@ -149,6 +150,7 @@ export async function adminCrearUsuario(input: AdminUsuarioInput): Promise<{ err
       metodo_login: input.metodo === "google" ? "google" : "password",
       password_hash: input.metodo === "usuario" ? input.password : null,
       totp_enrolled: input.metodo !== "usuario",
+      permite_google: input.metodo === "ambos",
       email,
       auth_user_id: authUserId,
     }).select(COLUMNS).single();
@@ -261,6 +263,7 @@ export async function adminActualizarUsuario(input: AdminUsuarioInput): Promise<
       email: emailObjetivo,
       auth_user_id: authUserId,
       totp_enrolled: totpEnrolled,
+      permite_google: input.metodo === "ambos",
       password_hash: passwordHash,
     }).eq("id", target.id).select(COLUMNS).single();
 
