@@ -1,0 +1,42 @@
+{
+  "packageId": "com.revisioncasitas.app",
+  "host": "revisioncasitas-app.vercel.app",
+  "name": "Revisión de casitas",
+  "launcherName": "Casitas",
+  "display": "standalone",
+  "themeColor": "#F6F7F4",
+  "themeColorDark": "#131B18",
+  "navigationColor": "#F6F7F4",
+  "navigationColorDark": "#131B18",
+  "navigationDividerColor": "#F6F7F4",
+  "navigationDividerColorDark": "#131B18",
+  "backgroundColor": "#F6F7F4",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "http://127.0.0.1:8765/icons/icon-512.png",
+  "maskableIconUrl": "http://127.0.0.1:8765/icons/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "casitas"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": false,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://revisioncasitas-app.vercel.app/",
+  "minSdkVersion": 24,
+  "orientation": "portrait",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "appVersion": "1.0.0"
+}

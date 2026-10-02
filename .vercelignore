@@ -1,0 +1,17 @@
+.env.local
+.pnpm-store
+.agents
+.claude
+android
+assets
+outputs
+tmp
+test
+tests
+docs
+models/articulos-v7.onnx
+public/articulos
+public/opencv
+public/sw.js
+public/swe-worker*
+tsconfig.tsbuildinfo

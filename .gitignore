@@ -50,3 +50,17 @@ public/articulos/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/*.keystore
+/android/*.jks
+/android/*.apk
+/android/*.aab
+/android/*.idsig
+
+.vercel
+/.pnpm-store/
+/outputs/
