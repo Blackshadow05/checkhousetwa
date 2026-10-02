@@ -12,8 +12,9 @@ import {
   updateAuthUser,
 } from "@/lib/auth/admin-usuarios";
 import { normalizeEmail } from "@/lib/auth/profile";
-import { getSesionUsuario } from "@/lib/auth/session";
+import { clearSupabaseSession, getSesionUsuario } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/server";
+import { clearUsuarioSession } from "@/lib/usuarios-session";
 import { esRolAdmin, metodoAdminDe, UsuarioAdminError, validarUsuarioAdmin, type AdminUsuario, type AdminUsuarioInput } from "@/lib/usuarios-admin";
 import type { SesionUsuario } from "@/types/database";
 
@@ -165,7 +166,7 @@ export async function adminCrearUsuario(input: AdminUsuarioInput): Promise<{ err
   }
 }
 
-export async function adminActualizarUsuario(input: AdminUsuarioInput): Promise<{ error: string | null; usuario: AdminUsuario | null }> {
+export async function adminActualizarUsuario(input: AdminUsuarioInput): Promise<{ error: string | null; usuario: AdminUsuario | null; sesionCerrada?: boolean }> {
   try {
     const guard = await requireAdmin();
     if (guard.error || !guard.admin) return { error: guard.error, usuario: null };
@@ -190,8 +191,10 @@ export async function adminActualizarUsuario(input: AdminUsuarioInput): Promise<
 
     if (esYo) {
       if (input.rol !== (target.Rol ?? "user")) return { error: "No puedes cambiar tu propio rol.", usuario: null };
-      if (input.metodo !== metodoActual) return { error: "Otro administrador debe cambiar tu método de ingreso.", usuario: null };
-      if (emailObjetivo !== emailActual) return { error: "Otro administrador debe cambiar tu correo.", usuario: null };
+      if (guard.admin.rol !== "SuperAdmin") {
+        if (input.metodo !== metodoActual) return { error: "Otro administrador debe cambiar tu método de ingreso.", usuario: null };
+        if (emailObjetivo !== emailActual) return { error: "Otro administrador debe cambiar tu correo.", usuario: null };
+      }
     }
 
     const dejaDeSerAdmin = esRolAdmin(target.Rol) && input.rol !== "admin" && input.rol !== "SuperAdmin";
@@ -268,6 +271,14 @@ export async function adminActualizarUsuario(input: AdminUsuarioInput): Promise<
     }).eq("id", target.id).select(COLUMNS).single();
 
     if (error || !data) return { error: "No se pudo guardar el usuario.", usuario: null };
+    if (esYo && (metodoCambia || emailCambia)) {
+      const sesion = await getSesionUsuario();
+      if (sesion?.id !== target.id) {
+        await clearUsuarioSession();
+        await clearSupabaseSession();
+        return { error: null, usuario: mapUsuario(data, emailObjetivo), sesionCerrada: true };
+      }
+    }
     return { error: null, usuario: mapUsuario(data, emailObjetivo) };
   } catch (error) {
     return { error: errorMessage(error, "No se pudo guardar el usuario."), usuario: null };

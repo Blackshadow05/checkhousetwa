@@ -151,6 +151,7 @@ export function AdminUsuariosScreen({
   }, [usuarios, search]);
 
   const esYo = editando?.id === session.id;
+  const puedeCambiarAcceso = !esYo || session.rol === "SuperAdmin";
   const abierto = visible && (creando ? path === "/admin-usuarios/nuevo" : editando ? path === "/admin-usuarios/editar" : false);
 
   function limpiarForm() {
@@ -234,6 +235,10 @@ export function AdminUsuariosScreen({
       const result = editando ? await adminActualizarUsuario(input) : await adminCrearUsuario(input);
       if (result.error || !result.usuario) {
         setFormError(result.error || "No se pudo guardar.");
+        return;
+      }
+      if ("sesionCerrada" in result && result.sesionCerrada) {
+        window.location.reload();
         return;
       }
       reemplazarEnLista(result.usuario);
@@ -373,7 +378,13 @@ export function AdminUsuariosScreen({
               void guardar();
             }}
           >
-            {esYo && <p className="auth-hint">Solo puedes cambiar tu nombre y contraseña.</p>}
+            {esYo && (
+              <p className="auth-hint">
+                {puedeCambiarAcceso
+                  ? "Si cambias tu método o tu correo, puede que tengas que volver a iniciar sesión."
+                  : "Solo puedes cambiar tu nombre y contraseña."}
+              </p>
+            )}
             <label className="revision-text-field">
               Nombre
               <input
@@ -395,7 +406,7 @@ export function AdminUsuariosScreen({
                     type="button"
                     className="auth-tab"
                     aria-pressed={metodo === item}
-                    disabled={busy || esYo}
+                    disabled={busy || !puedeCambiarAcceso}
                     onClick={() => cambiarMetodo(item)}
                   >
                     {METODO_CORTOS[item]}
@@ -416,7 +427,7 @@ export function AdminUsuariosScreen({
                   autoCorrect="off"
                   spellCheck={false}
                   enterKeyHint="next"
-                  readOnly={busy || esYo}
+                  readOnly={busy || !puedeCambiarAcceso}
                   required
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
