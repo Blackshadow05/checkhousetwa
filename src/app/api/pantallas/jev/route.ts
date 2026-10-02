@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSesionUsuario } from "@/lib/auth/session";
 
 type JevCandidate = {
   id: number;
@@ -53,6 +54,9 @@ function parseProbabilities(payload: unknown, candidates: JevCandidate[]): JevPr
 
 
 export async function POST(request: Request) {
+  if (!(await getSesionUsuario())) {
+    return NextResponse.json({ error: "Inicia sesión para revisar las pantallas." }, { status: 401 });
+  }
   const apiKey = process.env.TYPESAFE_API_KEY?.trim();
   if (!apiKey) return NextResponse.json({ error: "La revisión intermedia con IA no está configurada en el servidor." }, { status: 503 });
   let candidates: JevCandidate[] = [];

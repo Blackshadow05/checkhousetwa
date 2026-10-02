@@ -3,6 +3,7 @@ import "server-only";
 import { headers } from "next/headers";
 import { after } from "next/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";
+import { createAdminClient } from "@/lib/supabase/server";
 
 type RecordLoginOptions = {
   userId: number;
@@ -21,10 +22,38 @@ export async function recordLogin({
     const { url, publishableKey } = getSupabaseEnv();
     const incomingHeaders = await headers();
     const userAgent = incomingHeaders.get("user-agent") ?? "";
+
+    if (!accessToken) {
+      const ipAddress = incomingHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+      after(async () => {
+        try {
+          const admin = createAdminClient();
+          const loggedAt = new Date().toISOString();
+          const { error } = await admin.from("login_logs").insert({
+            user_id: userId,
+            usuario,
+            ip_address: ipAddress,
+            user_agent: userAgent.slice(0, 512) || null,
+            metodo,
+            logged_at: loggedAt,
+          });
+          if (error) throw error;
+          const { error: updateError } = await admin
+            .from("Usuarios")
+            .update({ ultimo_login_at: loggedAt, ultimo_login_ip: ipAddress })
+            .eq("id", userId);
+          if (updateError) throw updateError;
+        } catch {
+          console.error("No se pudo registrar el acceso.");
+        }
+      });
+      return;
+    }
+
     const requestHeaders = new Headers({
       "content-type": "application/json",
       apikey: publishableKey,
-      Authorization: `Bearer ${accessToken || publishableKey}`,
+      Authorization: `Bearer ${accessToken}`,
     });
 
     for (const name of ["x-forwarded-for", "user-agent"]) {

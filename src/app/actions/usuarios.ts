@@ -34,6 +34,12 @@ const UNAUTHORIZED = "Tu correo no está autorizado. Contacte al administrador."
 const INACTIVE = "Usuario inactivo. Contacte al administrador.";
 const GOOGLE_ONLY = "Esta cuenta entra con Google. Usa el botón de Google.";
 const LOGIN_ERROR = "No se pudo iniciar sesión. Revisa tu conexión o la configuración de acceso.";
+const TOO_MANY_ATTEMPTS = "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.";
+
+type VerificacionCredenciales = {
+  estado: "ok" | "invalido" | "bloqueado";
+  perfil?: { id: number; Usuario: string; Rol: string | null; metodo_login: string | null; totp_enrolled: boolean };
+};
 
 function authenticatorFailure(error: unknown): LoginResult {
   if (isAuthSessionMissingError(error) || (isAuthError(error) && [
@@ -132,8 +138,14 @@ export async function loginUsuario(username: string, password: string): Promise<
   }
   try {
     const client = await createClient();
-    const { data, error } = await createAdminClient().from("Usuarios").select("id,Usuario,Rol,metodo_login,totp_enrolled").eq("Usuario", username.trim()).eq("password_hash", password).single();
-    if (error || !data) return { error: "Usuario o contraseña incorrectos.", user: null };
+    const requestHeaders = await headers();
+    const ip = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip") || null;
+    const { data: verificacion, error } = await createAdminClient().rpc("verificar_credenciales_usuario", { p_usuario: username.trim(), p_password: password, p_ip: ip });
+    if (error) return { error: LOGIN_ERROR, user: null };
+    const resultado = verificacion as VerificacionCredenciales | null;
+    if (resultado?.estado === "bloqueado") return { error: TOO_MANY_ATTEMPTS, user: null };
+    const data = resultado?.estado === "ok" ? resultado.perfil ?? null : null;
+    if (!data) return { error: "Usuario o contraseña incorrectos.", user: null };
     if (data.Rol === "inactivo") return await rejectAuthSession(client, INACTIVE);
     if (data.metodo_login === "google") {
       return { ...await rejectAuthSession(client, "Este usuario entra con Google. Usa el botón de Google."), useGoogle: true };

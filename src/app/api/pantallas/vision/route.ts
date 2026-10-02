@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSesionUsuario } from "@/lib/auth/session";
 
 type VisionCandidate = { id: number; x: number; y: number; kind: "seguro" | "dudoso" };
 type VisionVerdict = { id: number; verdict: "defecto" | "reflejo"; reason?: string };
@@ -54,6 +55,9 @@ function outputText(body: unknown): string | null {
 }
 
 export async function POST(request: Request) {
+  if (!(await getSesionUsuario())) {
+    return NextResponse.json({ error: "Inicia sesión para revisar las pantallas." }, { status: 401 });
+  }
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return NextResponse.json({ error: "La revisión con IA no está configurada en el servidor." }, { status: 503 });
   let image = "";
