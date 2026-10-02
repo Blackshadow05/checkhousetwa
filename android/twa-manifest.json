@@ -13,8 +13,8 @@
   "backgroundColor": "#F6F7F4",
   "enableNotifications": false,
   "startUrl": "/",
-  "iconUrl": "http://127.0.0.1:8765/icons/icon-512.png",
-  "maskableIconUrl": "http://127.0.0.1:8765/icons/icon-maskable-512.png",
+  "iconUrl": "https://revisioncasitas-app.vercel.app/icons/icon-512.png",
+  "maskableIconUrl": "https://revisioncasitas-app.vercel.app/icons/icon-maskable-512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "./android.keystore",
