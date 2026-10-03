@@ -22,3 +22,37 @@ export function evidenceStoragePath(field: EvidenceField, timestamp = Date.now()
 export function isEvidenceCloudinaryPath(path: string) {
   return EVIDENCE_PATH.test(path);
 }
+
+const FILE_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Costa_Rica",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+export function evidenceDateMark(date = new Date()) {
+  const parts = Object.fromEntries(FILE_DATE.formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}-${parts.hour}${parts.minute}${parts.second}`;
+}
+
+export function evidencePathMark(path: string) {
+  const segment = (path.split("?")[0] ?? "").split("/").filter(Boolean).pop() ?? "";
+  const base = segment.replace(/\.[a-z0-9]+$/i, "");
+  const digits = /_(\d{10}|\d{13}|\d{16})$/.exec(base)?.[1];
+  if (digits) {
+    const value = Number(digits);
+    const millis = digits.length === 10 ? value * 1000 : digits.length === 16 ? Math.floor(value / 1000) : value;
+    const date = new Date(millis);
+    if (!Number.isNaN(date.getTime())) return evidenceDateMark(date);
+  }
+  return base.replace(/[^a-z0-9_-]/gi, "").slice(-12);
+}
+
+export function evidenceFileName(casita: string, index: number, extension: string, mark: string) {
+  const name = casita.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "");
+  return [`casita-${name || "sin-numero"}`, mark, `evidencia-${index + 1}`].filter(Boolean).join("-") + `.${extension}`;
+}

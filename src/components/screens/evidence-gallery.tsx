@@ -9,6 +9,7 @@ import {
   cloudinaryUrl,
   cloudinaryViewerUrl,
 } from "@/lib/cloudinary";
+import { evidenceFileName, evidencePathMark } from "@/lib/revision-evidence";
 
 type EvidenceGalleryProps = {
   paths: string[];
@@ -50,7 +51,7 @@ async function downloadSlide(
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `casita-${casita}-evidencia-${index + 1}.${EXTENSIONS[blob.type] ?? "jpg"}`;
+    link.download = evidenceFileName(casita, index, EXTENSIONS[blob.type] ?? "jpg", evidencePathMark(path));
     document.body.append(link);
     link.click();
     link.remove();
@@ -121,7 +122,7 @@ async function shareSlide(
     const blob = await response.blob();
     const file = new File(
       [blob],
-      `casita-${casita}-evidencia-${index + 1}.jpg`,
+      evidenceFileName(casita, index, EXTENSIONS[blob.type] ?? "jpg", evidencePathMark(path)),
       { type: blob.type || "image/jpeg" },
     );
     if (navigator.canShare?.({ files: [file] })) {
@@ -193,8 +194,10 @@ export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
   const casitaRef = useRef(casita);
   const openingRef = useRef(false);
 
-  pathsRef.current = paths;
-  casitaRef.current = casita;
+  useEffect(() => {
+    pathsRef.current = paths;
+    casitaRef.current = casita;
+  }, [paths, casita]);
 
   const pathsKey = paths.join("|");
 

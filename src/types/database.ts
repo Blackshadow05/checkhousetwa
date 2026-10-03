@@ -1,6 +1,7 @@
 import type { PantallaReport, PantallaStock } from "@/lib/pantallas";
 import type { HorarioRow } from "@/lib/horarios";
 import type { ConsejoDiario } from "@/lib/consejos-diarios";
+import type { RegistroEliminado } from "@/lib/eliminar-revisiones";
 type Table<Row, Insert = Partial<Row>> = { Row: Row; Insert: Insert; Update: Partial<Row>; Relationships: [] };
 export type UsuarioProfile = { id: number; Usuario: string; Rol: string | null; metodo_login: string | null; totp_enrolled: boolean; permite_google: boolean; auth_user_id: string | null; email: string | null; ultimo_login_at: string | null; ultimo_login_ip: string | null };
 export type SesionUsuario = { id: number; nombre: string; rol: string | null };
@@ -59,6 +60,7 @@ export type Database = {
       inventario_casitas: Table<InventarioCasitaRow>;
       Usuarios: Table<UsuarioProfile & { password_hash: string | null }>;
       login_logs: Table<{ id: string; user_id: number; usuario: string; ip_address: string | null; user_agent: string | null; metodo: string; logged_at: string }>;
+      registros_eliminados: Table<RegistroEliminado>;
       notas_revisiones_casitas: Table<NotaRevisionCasita, NotaRevisionCasitaInsert>;
       revisiones_casitas: {
         Row: {
@@ -227,6 +229,7 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      eliminar_revisiones_superadmin: { Args: { p_actor_id: number; p_auth_user_id: string; p_session_id: string; p_challenge_id: string; p_ids: string[]; p_ip: string | null }; Returns: RegistroEliminado[] };
       ajustar_inventario_pantalla: { Args: { p_ubicacion: string; p_habitacion: string; p_delta: number }; Returns: undefined };
       set_inventario_pantalla: { Args: { p_ubicacion: string; p_habitacion: string; p_cantidad: number }; Returns: undefined };
       registrar_movimiento_pantalla: { Args: { p_nombre_usuario: string; p_fecha_hora: string; p_notas: string; p_origen_ubicacion: string; p_origen_habitacion: string; p_destino_ubicacion: string; p_destino_habitacion: string }; Returns: PantallaReport };

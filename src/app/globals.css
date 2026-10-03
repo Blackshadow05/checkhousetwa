@@ -2938,6 +2938,8 @@ div.revision-photo-open { background-position: center; background-size: cover; }
   font-weight: 600; letter-spacing: .45em; text-align: center; font-variant-numeric: tabular-nums;
 }
 .login-form .auth-code::placeholder { color: color-mix(in srgb, var(--muted-foreground) 40%, transparent); }
+.login-form .auth-code-field { display: grid; gap: 8px; min-width: 0; }
+.login-form .auth-paste-code { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; border-radius: 14px; }
 .login-form .auth-submit,
 .login-form .auth-actions .primary-button { min-height: 52px; border-radius: 14px; font-size: .9375rem; font-weight: 600; }
 .login-form .auth-submit { width: 100%; margin-top: 4px; }

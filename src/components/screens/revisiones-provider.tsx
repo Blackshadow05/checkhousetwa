@@ -297,6 +297,26 @@ export function RevisionesProvider({
   }, [refresh]);
 
   useEffect(() => {
+    const onDeleted = (event: Event) => {
+      const ids = new Set((event as CustomEvent<string[]>).detail);
+      generation.current += 1;
+      if (inFlight.current) pendingForce.current = true;
+      const next = revisionesRef.current.filter(row => !ids.has(row.id));
+      const nextUpsells = upsellsRef.current.filter(row => !ids.has(row.id));
+      revisionesRef.current = next; upsellsRef.current = nextUpsells;
+      setRevisiones(next); setUpsells(nextUpsells);
+      // Reload room activity: removing the latest revision can reveal an older one.
+      activityRef.current = null; setRevisionActivity(null);
+      for (const id of ids) knownRowsRef.current.delete(id);
+      if (selectedRevisionRef.current && ids.has(selectedRevisionRef.current.id)) setSelectedRevision(null);
+      void persist(next, nextUpsells);
+      void refreshRef.current?.({ force: true });
+    };
+    window.addEventListener("casitas:revisiones-eliminadas", onDeleted);
+    return () => window.removeEventListener("casitas:revisiones-eliminadas", onDeleted);
+  }, [persist]);
+
+  useEffect(() => {
     let cancelled = false;
     let reconnectRetry: number | undefined;
     const currentGeneration = generation.current;

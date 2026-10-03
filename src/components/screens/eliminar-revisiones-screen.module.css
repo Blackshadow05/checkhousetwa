@@ -1,0 +1,41 @@
+.screen { min-width: 0; max-width: 560px; margin-inline: auto; padding-bottom: 8px; }
+.screen .back { padding-left: 0; color: var(--muted-foreground); }
+.header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.header > div { min-width: 0; }
+.screen .header h1 { margin: 0; font-size: clamp(21px, 5.5vw, 26px); }
+.screen .muted { color: var(--muted-foreground); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.screen .icon { padding: 0; flex-shrink: 0; border: 1px solid var(--border); background: var(--card); }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 18px; padding: 4px; background: var(--secondary); border-radius: 16px; }
+.screen .tabs button[aria-pressed=true] { background: var(--card); color: var(--primary); box-shadow: 0 1px 4px #0001; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.screen .batch { flex: 1; border: 1px solid var(--border); background: var(--card); color: var(--primary); }
+.search { font-size: 12px; color: var(--muted-foreground); }
+.selection { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; background: var(--background); font-size: 13px; }
+.screen .danger, .confirm .danger { min-height: 48px; padding: 12px 16px; border-radius: 12px; background: var(--destructive); color: white; font-weight: 600; }
+.list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.screen label.card { display: flex; align-items: flex-start; gap: 12px; margin: 0; padding: 16px; border-radius: 18px; border: 1px solid var(--border); background: var(--card); cursor: pointer; }
+.screen label.checked { border-color: var(--primary); background: var(--secondary); }
+.screen .card input[type=checkbox] { flex: 0 0 22px; min-width: 22px; width: 22px; height: 22px; min-height: 22px; padding: 0; margin-top: 2px; accent-color: var(--primary); }
+.record { min-width: 0; display: grid; gap: 4px; font-size: 12px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.record strong { font-size: 15px; color: var(--foreground); }
+.record small { font-size: 10px; }
+.log { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 18px; background: var(--card); overflow-wrap: anywhere; }
+.log > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.count { background: var(--secondary); padding: 3px 8px; border-radius: 8px; font-size: 12px; }
+.log time, .screen .log p { font-size: 12px; color: var(--muted-foreground); }
+.log time { display: block; margin-top: 10px; }
+.screen .more { width: 100%; margin-top: 20px; border: 1px solid var(--border); background: var(--card); }
+.notice { padding: 12px 14px; border-radius: 14px; background: var(--secondary); font-size: 13px; }
+.empty { padding: 36px 16px; text-align: center; color: var(--muted-foreground); }
+.empty > svg { margin: 0 auto; }
+.screen .empty h2 { font-size: 17px; color: var(--foreground); }
+.skeleton { height: 240px; border-radius: 18px; background: var(--secondary); animation: pulse 1.2s ease-in-out infinite alternate; }
+.confirm { display: grid; gap: 14px; font-size: 14px; }
+.confirm p { margin: 0; line-height: 1.6; }
+.confirm label { display: grid; gap: 8px; }
+.confirm input { min-width: 0; width: 100%; min-height: 48px; background: var(--card); color: var(--foreground); border: 1px solid var(--border); border-radius: 12px; padding: 12px; font-size: 20px; letter-spacing: .2em; }
+.confirm button { min-height: 48px; border-radius: 12px; }
+.confirm button:disabled { opacity: .5; }
+.confirm :is(input,button):focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; }
+@keyframes pulse { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

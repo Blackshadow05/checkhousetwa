@@ -52,6 +52,19 @@ export function useRevisionesArchive() {
   rowsRef.current = rows;
 
   useEffect(() => {
+    const onDeleted = (event: Event) => {
+      const ids = new Set((event as CustomEvent<string[]>).detail);
+      generation.current += 1;
+      const removed = rowsRef.current.filter(row => ids.has(row.id)).length;
+      setRows(current => current.filter(row => !ids.has(row.id)));
+      setTotal(current => Math.max(0, current - removed));
+      setLoading(false); setLoadingMore(false); loadingMoreRef.current = false;
+    };
+    window.addEventListener("casitas:revisiones-eliminadas", onDeleted);
+    return () => window.removeEventListener("casitas:revisiones-eliminadas", onDeleted);
+  }, []);
+
+  useEffect(() => {
     rememberRevisiones(rows);
   }, [rememberRevisiones, rows]);
 

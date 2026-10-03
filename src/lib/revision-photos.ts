@@ -1,11 +1,13 @@
 import { MAX_PHOTO_BYTES, type RevisionPhoto } from "@/lib/revision-form";
+import { evidenceDateMark, evidenceFileName } from "@/lib/revision-evidence";
 import { createUuid } from "@/lib/uuid";
 import { revisionPhotoDimensions, revisionPhotoEncoding, revisionPhotoExtension } from "@/lib/revision-photo-format";
 
 export function revisionShareFiles(photos: RevisionPhoto[], casita: string) {
+  const mark = evidenceDateMark();
   return photos.map((photo, index) => new File(
     [photo.blob],
-    `casita-${casita}-evidencia-${index + 1}.${revisionPhotoExtension(photo.blob.type)}`,
+    evidenceFileName(casita, index, revisionPhotoExtension(photo.blob.type), mark),
     { type: photo.blob.type },
   ));
 }

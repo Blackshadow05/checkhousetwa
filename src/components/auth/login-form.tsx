@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type ComponentType, type KeyboardEv
 import {
   CircleAlert,
   CircleCheck,
+  ClipboardPaste,
   Eye,
   EyeOff,
   LoaderCircle,
@@ -69,6 +70,104 @@ function PasswordField({ label, name, value, busy, onChange }: {
           {visible ? <EyeOff size={20} aria-hidden="true" /> : <Eye size={20} aria-hidden="true" />}
         </button>
       </div>
+    </div>
+  );
+}
+
+function prepararPegadoManual(field: HTMLInputElement) {
+  field.focus({ preventScroll: true });
+  field.select();
+}
+
+function AuthenticatorCodeField({ value, disabled, onChange }: {
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const pastePending = useRef(false);
+  const [pasting, setPasting] = useState(false);
+  const [message, setMessage] = useState("");
+  const messageId = useId();
+
+  async function pegarCodigo() {
+    const field = input.current;
+    if (!field || disabled || pastePending.current) return;
+    const previousValue = field.value;
+    pastePending.current = true;
+    setPasting(true);
+    setMessage("");
+
+    try {
+      if (!window.isSecureContext) {
+        setMessage("Pegar con el botón requiere HTTPS. Mantén presionado el campo y elige Pegar.");
+        prepararPegadoManual(field);
+        return;
+      }
+      if (!navigator.clipboard?.readText) {
+        setMessage("Este navegador no permite pegar con el botón. Mantén presionado el campo y elige Pegar.");
+        prepararPegadoManual(field);
+        return;
+      }
+      const code = (await navigator.clipboard.readText()).replace(/\s/g, "");
+      // A pending clipboard read must not replace edits or a different login step.
+      if (input.current !== field || field.readOnly || field.value !== previousValue) return;
+      if (!/^\d{6}$/.test(code)) {
+        setMessage("Copia el código de 6 dígitos de Authenticator e inténtalo de nuevo.");
+        field.focus({ preventScroll: true });
+        return;
+      }
+      onChange(code);
+      setMessage("Código pegado.");
+    } catch (error) {
+      if (input.current !== field || field.readOnly || field.value !== previousValue) return;
+      const denegado = error instanceof DOMException && error.name === "NotAllowedError";
+      setMessage(
+        denegado
+          ? "Permite el acceso al portapapeles o mantén presionado el campo y elige Pegar."
+          : "No se pudo pegar el código. Mantén presionado el campo y elige Pegar.",
+      );
+      prepararPegadoManual(field);
+    } finally {
+      pastePending.current = false;
+      if (input.current === field) setPasting(false);
+    }
+  }
+
+  return (
+    <div className="auth-code-field">
+      <label className="revision-text-field">
+        <span className="sr-only">Código</span>
+        <input
+          ref={input}
+          className="auth-code"
+          name="code"
+          enterKeyHint="go"
+          readOnly={disabled}
+          type="text"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          aria-describedby={message ? messageId : undefined}
+          required
+          placeholder="000000"
+          value={value}
+          onChange={(event) => {
+            setMessage("");
+            onChange(event.target.value);
+          }}
+        />
+      </label>
+      <button
+        type="button"
+        className="secondary-button auth-paste-code"
+        disabled={disabled}
+        aria-busy={pasting}
+        onClick={() => void pegarCodigo()}
+      >
+        {pasting ? <LoaderCircle size={18} className="auth-spinner" aria-hidden="true" /> : <ClipboardPaste size={18} aria-hidden="true" />}
+        {pasting ? "Pegando…" : "Pegar código"}
+      </button>
+      {message ? <p id={messageId} className="auth-hint" role="status">{message}</p> : null}
     </div>
   );
 }
@@ -403,22 +502,7 @@ export function LoginForm({
           <>
             <div className="auth-step-icon" aria-hidden="true"><ShieldCheck size={26} /></div>
             <p className="auth-hint auth-center">Código de 6 dígitos de Google Authenticator</p>
-            <label className="revision-text-field">
-              <span className="sr-only">Código</span>
-              <input
-                className="auth-code"
-                name="code"
-                enterKeyHint="go"
-                readOnly={busy}
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                required
-                placeholder="000000"
-                value={codigo}
-                onChange={(event) => actualizarCodigo(event.target.value)}
-              />
-            </label>
+            <AuthenticatorCodeField key={factorId} value={codigo} disabled={busy || done} onChange={actualizarCodigo} />
             <div className="auth-actions">
               <button type="button" className="secondary-button" disabled={busy || done} onClick={cancelarMfa}>
                 Cancelar
@@ -438,22 +522,7 @@ export function LoginForm({
               <img className="auth-qr" src={qrCode} alt="Código QR de Google Authenticator" />
             ) : null}
             {secret ? <p className="auth-secret">{secret}</p> : null}
-            <label className="revision-text-field">
-              <span className="sr-only">Código</span>
-              <input
-                className="auth-code"
-                name="code"
-                enterKeyHint="go"
-                readOnly={busy}
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                required
-                placeholder="000000"
-                value={codigo}
-                onChange={(event) => actualizarCodigo(event.target.value)}
-              />
-            </label>
+            <AuthenticatorCodeField key={factorId} value={codigo} disabled={busy || done} onChange={actualizarCodigo} />
             <button className="primary-button auth-submit" disabled={verificarDisabled || done}>
               <SubmitLabel busy={busy} done={done} busyText="Verificando…" text="Verificar y entrar" />
             </button>
