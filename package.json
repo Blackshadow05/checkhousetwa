@@ -13,7 +13,8 @@
     "lint": "eslint",
     "type-check": "tsc --noEmit",
     "test:pantallas": "node scripts/test-pantalla-analyzer.mjs",
-    "test:reportes": "node scripts/test-reportes-revision.mjs"
+    "test:reportes": "node scripts/test-reportes-revision.mjs",
+    "test:consejos": "node scripts/test-consejos-diarios.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
