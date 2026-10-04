@@ -27,7 +27,7 @@ export const ARTICULOS_CLASES = [
 export type ArticuloKey = (typeof ARTICULOS_CLASES)[number];
 export type ConteoArticulos = Record<ArticuloKey, number>;
 
-const SCORE_THRESHOLD = 0.25;
+const SCORE_THRESHOLD = 0.35;
 const NMS_IOU = 0.45;
 
 type Candidate = { cls: number; score: number; x1: number; y1: number; x2: number; y2: number };
