@@ -6,12 +6,10 @@
   --ok-text: var(--sage-text);
 }
 
-@media (prefers-color-scheme: dark) {
-  .recognition {
-    --alert-bg: #4a211c;
-    --alert-text: #ffb4a9;
-    --alert-border: #7c3027;
-  }
+:root[data-theme="dark"] .recognition {
+  --alert-bg: #4a211c;
+  --alert-text: #ffb4a9;
+  --alert-border: #7c3027;
 }
 
 .hint {

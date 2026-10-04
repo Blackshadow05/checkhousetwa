@@ -2657,47 +2657,45 @@ svg {
     gap: 5px;
   }
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --background: #131b18;
-    --foreground: #e2eade;
-    --card: #1c2620;
-    --card-foreground: #e2eade;
-    --popover: #1c2620;
-    --popover-foreground: #e2eade;
-    --primary: #b1cea4;
-    --primary-foreground: #1c3825;
-    --secondary: #2a392c;
-    --secondary-foreground: #c8d9bf;
-    --muted: #263129;
-    --muted-foreground: #a2afa2;
-    --border: #2e3a30;
-    --input: #485d47;
-    --ring: #a1c294;
-    --sage-bg: #2e4030;
-    --sage-text: #b5d6ac;
-    --blue-bg: #293646;
-    --blue-text: #b4c7e3;
-    --amber-bg: #433c2a;
-    --amber-text: #e5ce9a;
-    --rose-bg: #48322e;
-    --rose-text: #e9b7ac;
-    --plum-bg: #3a3148;
-    --plum-text: #d2c4e8;
-  }
-  .hoy-chip.tone-sage {
-    background: #2a4630;
-    color: #a5d6a7;
-  }
-  .hoy-chip.tone-rose {
-    background: #5c2a26;
-    color: #ffc2b8;
-  }
-  .hoy-chip.tone-blue {
-    background: #1e3a57;
-    color: #90caf9;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #131b18;
+  --foreground: #e2eade;
+  --card: #1c2620;
+  --card-foreground: #e2eade;
+  --popover: #1c2620;
+  --popover-foreground: #e2eade;
+  --primary: #b1cea4;
+  --primary-foreground: #1c3825;
+  --secondary: #2a392c;
+  --secondary-foreground: #c8d9bf;
+  --muted: #263129;
+  --muted-foreground: #a2afa2;
+  --border: #2e3a30;
+  --input: #485d47;
+  --ring: #a1c294;
+  --sage-bg: #2e4030;
+  --sage-text: #b5d6ac;
+  --blue-bg: #293646;
+  --blue-text: #b4c7e3;
+  --amber-bg: #433c2a;
+  --amber-text: #e5ce9a;
+  --rose-bg: #48322e;
+  --rose-text: #e9b7ac;
+  --plum-bg: #3a3148;
+  --plum-text: #d2c4e8;
+}
+:root[data-theme="dark"] .hoy-chip.tone-sage {
+  background: #2a4630;
+  color: #a5d6a7;
+}
+:root[data-theme="dark"] .hoy-chip.tone-rose {
+  background: #5c2a26;
+  color: #ffc2b8;
+}
+:root[data-theme="dark"] .hoy-chip.tone-blue {
+  background: #1e3a57;
+  color: #90caf9;
 }
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -3078,9 +3076,7 @@ div.revision-photo-open { background-position: center; background-size: cover; }
 @keyframes session-enter {
   from { opacity: 0; transform: scale(.985); }
 }
-@media (prefers-color-scheme: dark) {
-  .auth-google-button { border-color: #8e918f; background: #131314; color: #e3e3e3; }
-}
+:root[data-theme="dark"] .auth-google-button { border-color: #8e918f; background: #131314; color: #e3e3e3; }
 @media (max-width: 359px) {
   .login-form .auth-tab { font-size: .6875rem; }
 }

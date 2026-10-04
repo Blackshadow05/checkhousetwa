@@ -66,15 +66,13 @@
 .screen summary:focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; }
 @keyframes pulse { to { opacity: .45; } }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-color-scheme: dark) {
-  .screen {
-    --shift-neutral-color: var(--muted-foreground);
-    --shift-diurno-color: var(--rose-text);
-    --shift-mixto-color: var(--sage-text);
-    --shift-nocturno-color: var(--blue-text);
-    --shift-partido-color: #edbb94;
-    --shift-otros-color: var(--amber-text);
-  }
+:root[data-theme="dark"] .screen {
+  --shift-neutral-color: var(--muted-foreground);
+  --shift-diurno-color: var(--rose-text);
+  --shift-mixto-color: var(--sage-text);
+  --shift-nocturno-color: var(--blue-text);
+  --shift-partido-color: #edbb94;
+  --shift-otros-color: var(--amber-text);
 }
 @media (prefers-reduced-motion: reduce) { .spinning, .skeletons > div { animation: none; } }
 @media (min-width: 650px) { .views { grid-template-columns: repeat(4,1fr); } }

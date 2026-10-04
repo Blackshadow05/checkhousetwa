@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { HideKeyboardOnTapOutside } from "@/components/hide-keyboard-on-tap-outside";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
+import { ThemeSchedule } from "@/components/theme-schedule";
 import { startupImages } from "@/lib/pwa-startup-images";
 import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from "@/lib/constants";
 import "./globals.css";
@@ -44,10 +45,6 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f6f7f4" },
-    { media: "(prefers-color-scheme: dark)", color: "#131b18" },
-  ],
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -64,8 +61,10 @@ export default function RootLayout({
     <html
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full bg-background font-sans text-foreground">
+        <ThemeSchedule />
         <HideKeyboardOnTapOutside />
         <PwaProvider restrict={process.env.VERCEL_ENV === "production"}>{children}</PwaProvider>
       </body>
