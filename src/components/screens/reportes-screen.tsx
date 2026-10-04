@@ -7,6 +7,7 @@ import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { nombreArchivoReporteRevision, reporteRevisionDateRange, todayReporteRevision } from "@/lib/reportes-revision";
 import { shiftDay } from "@/lib/revisiones-archive";
 import { useOnline } from "@/lib/use-online";
+import { SegmentIndicator } from "@/components/ui/segment-indicator";
 import styles from "./reportes-screen.module.css";
 
 type SavedReport = {
@@ -100,6 +101,7 @@ function RevisionReport({ usuarioId }: { usuarioId: number }) {
     setDesde(start); setHasta(end); setError(""); setNotice("");
     setSelectedPreset(preset);
   };
+  const activePreset = presets.findIndex(preset => selectedPreset === preset.label && desde === preset.desde && hasta === preset.hasta);
   const generate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (preparing.current || rangeError || !online) return;
@@ -126,7 +128,7 @@ function RevisionReport({ usuarioId }: { usuarioId: number }) {
   return <>
     <form className={styles.form} onSubmit={event => void generate(event)} aria-busy={loading}>
       <div className={styles.sectionTitle}><CalendarDays size={18} aria-hidden /><h2>Rango de fechas</h2></div>
-      <div className={styles.presets} aria-label="Rangos rápidos">{presets.map(preset => <button key={preset.label} type="button" disabled={loading} aria-pressed={selectedPreset === preset.label && desde === preset.desde && hasta === preset.hasta} onClick={() => changeDates(preset.desde, preset.hasta, preset.label)}>{preset.label}</button>)}</div>
+      <div className={styles.presets} aria-label="Rangos rápidos"><SegmentIndicator activeIndex={activePreset} />{presets.map((preset, index) => <button key={preset.label} type="button" disabled={loading} aria-pressed={activePreset === index} onClick={() => changeDates(preset.desde, preset.hasta, preset.label)}>{preset.label}</button>)}</div>
       <div className={styles.dates}>
         <label>Desde<input type="date" required value={desde} disabled={loading} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "reporte-fechas-error" : undefined} onChange={event => changeDates(event.target.value, hasta)} /></label>
         <label>Hasta<input type="date" required value={hasta} disabled={loading} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "reporte-fechas-error" : undefined} onChange={event => changeDates(desde, event.target.value)} /></label>

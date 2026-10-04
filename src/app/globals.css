@@ -28,9 +28,38 @@
 .otros-screen .pantalla-primary { background: var(--primary); color: var(--primary-foreground); width: 100%; margin: 8px 0; }
 .pantalla-status { color: var(--muted-foreground); font-size: 12px; }
 .pantalla-card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin: 14px 0; overflow-wrap: anywhere; }
-.pantalla-tabs { display: flex; padding: 4px; border-radius: 14px; background: var(--secondary); margin: 18px 0; }
-.pantalla-tabs button { flex: 1; }
-.pantalla-tabs button[aria-pressed=true] { background: var(--card); color: var(--primary); box-shadow: 0 1px 4px #0001; }
+.pantalla-tabs { position: relative; isolation: isolate; display: flex; padding: 4px; border-radius: 14px; background: var(--secondary); margin: 18px 0; }
+.pantalla-tabs button { position: relative; z-index: 1; flex: 1; -webkit-tap-highlight-color: transparent; transition: color 200ms ease; }
+.pantalla-tabs button[aria-pressed=true] { color: var(--primary); }
+.segment-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 0;
+  height: 0;
+  border-radius: var(--segment-indicator-radius, 12px);
+  background: var(--card);
+  box-shadow: 0 1px 4px #0001;
+  pointer-events: none;
+  transition:
+    transform 340ms cubic-bezier(0.3, 1.18, 0.5, 1),
+    width 340ms cubic-bezier(0.3, 1.18, 0.5, 1),
+    height 340ms cubic-bezier(0.3, 1.18, 0.5, 1),
+    opacity 180ms ease,
+    scale 180ms ease;
+}
+.segment-indicator[data-hidden] { opacity: 0; scale: 0.9; }
+.slide-enter[data-direction="forward"] { animation: slideEnterForward 300ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.slide-enter[data-direction="back"] { animation: slideEnterBack 300ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.slide-enter[data-direction="none"] { animation: slideEnterFade 220ms ease; }
+@keyframes slideEnterForward { from { opacity: 0; transform: translateX(28px); } }
+@keyframes slideEnterBack { from { opacity: 0; transform: translateX(-28px); } }
+@keyframes slideEnterFade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .segment-indicator, .pantalla-tabs button { transition: none; }
+  .slide-enter[data-direction] { animation: none; }
+}
 .pantalla-filters { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
 .pantalla-photos { display: grid; grid-template-columns: repeat(auto-fit,minmax(100px,1fr)); gap: 10px; margin-top: 16px; }
 .pantalla-photos figure { min-width: 0; margin: 0; }
@@ -2240,6 +2269,75 @@ svg {
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+.detail-screen {
+  view-transition-name: revision-detail;
+}
+.detail-screen[data-shared-entry] {
+  animation: none;
+}
+::view-transition-group(revision-detail) {
+  animation-duration: 440ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+::view-transition-image-pair(revision-detail) {
+  overflow: hidden;
+}
+:root[data-detail-transition="open"]::view-transition-image-pair(revision-detail) {
+  animation: detail-radius-open 440ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+:root[data-detail-transition="open"]::view-transition-old(revision-detail) {
+  height: 100%;
+  object-fit: none;
+  object-position: 50% 0;
+  animation: detail-fade-out 150ms linear both;
+}
+:root[data-detail-transition="open"]::view-transition-new(revision-detail) {
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 0;
+  animation: detail-fade-in 260ms linear 70ms both;
+}
+:root[data-detail-transition="close"]::view-transition-group(revision-detail) {
+  animation-duration: 380ms;
+}
+:root[data-detail-transition="close"]::view-transition-image-pair(revision-detail) {
+  animation: detail-radius-close 380ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+:root[data-detail-transition="close"]::view-transition-old(revision-detail) {
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 0;
+  animation: detail-fade-out 190ms linear both;
+}
+:root[data-detail-transition="close"]::view-transition-new(revision-detail) {
+  height: 100%;
+  object-fit: none;
+  object-position: 50% 0;
+  animation: detail-fade-in 200ms linear 120ms both;
+}
+:root[data-detail-transition="exit"]::view-transition-old(revision-detail) {
+  animation: detail-exit 260ms cubic-bezier(0.3, 0, 0.8, 0.15) both;
+}
+@keyframes detail-radius-open {
+  from { border-radius: var(--detail-origin-radius, 16px); }
+  to { border-radius: 0; }
+}
+@keyframes detail-radius-close {
+  from { border-radius: 0; }
+  to { border-radius: var(--detail-origin-radius, 16px); }
+}
+@keyframes detail-fade-out {
+  to { opacity: 0; }
+}
+@keyframes detail-fade-in {
+  from { opacity: 0; }
+}
+@keyframes detail-exit {
+  to {
+    opacity: 0;
+    transform: translateX(28px);
   }
 }
 @keyframes detail-toast-in {

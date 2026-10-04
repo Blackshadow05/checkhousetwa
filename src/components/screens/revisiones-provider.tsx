@@ -12,6 +12,7 @@ import {
 import { fetchInicioRevisiones } from "@/app/actions/revisiones";
 import { applyRevisionActivityChange, type RevisionActivity } from "@/lib/casitas-sin-revision";
 import { REVISIONES_TABLE } from "@/lib/constants";
+import { runDetailTransition } from "@/lib/detail-transition";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { todayKey } from "@/lib/revisiones-display";
 import { applyRealtimeChange, applyUpsellChange, mapInicioRevision } from "@/lib/revisiones-map";
@@ -124,8 +125,25 @@ export function RevisionesProvider({
     }
   }, [initialRevisionActivity, initialError, initialActivityError]);
 
+  const showRevision = useCallback(
+    (next: InicioRevisionRow | null, animate = true) => {
+      const current = selectedRevisionRef.current;
+      const apply = () => {
+        selectedRevisionRef.current = next;
+        setSelectedRevision(next);
+      };
+      const id = next?.id || current?.id;
+      if (!animate || !id || Boolean(current) === Boolean(next)) {
+        apply();
+        return;
+      }
+      runDetailTransition(id, next !== null, apply);
+    },
+    [],
+  );
+
   const openRevision = useCallback((row: InicioRevisionRow) => {
-    setSelectedRevision(row);
+    showRevision(row);
     if (row.id) knownRowsRef.current.set(row.id, row);
     if (!row.id) return;
     try {
@@ -140,10 +158,10 @@ export function RevisionesProvider({
     } catch {
       return;
     }
-  }, []);
+  }, [showRevision]);
 
   const closeRevision = useCallback(() => {
-    setSelectedRevision(null);
+    showRevision(null);
     try {
       const url = new URL(window.location.href);
       const historyState = window.history.state as {
@@ -165,7 +183,7 @@ export function RevisionesProvider({
     } catch {
       return;
     }
-  }, []);
+  }, [showRevision]);
 
   const rememberRevisiones = useCallback((rows: InicioRevisionRow[]) => {
     for (const row of rows) {
@@ -389,11 +407,11 @@ export function RevisionesProvider({
       () => setToday(todayKey()),
       60_000,
     );
-    const syncFromUrl = (fromPop = false) => {
+    const syncFromUrl = (fromPop = false, animate = false) => {
       const url = new URL(window.location.href);
       const id = url.searchParams.get("r");
       if (!id) {
-        setSelectedRevision(null);
+        showRevision(null, animate);
         return;
       }
       const marked =
@@ -406,16 +424,18 @@ export function RevisionesProvider({
           "",
           url.toString(),
         );
-        setSelectedRevision(null);
+        showRevision(null, animate);
         return;
       }
       const row =
         revisionesRef.current.find((item) => item.id === id) ??
         upsellsRef.current.find((item) => item.id === id) ??
         knownRowsRef.current.get(id);
-      if (row) setSelectedRevision(row);
+      if (row) showRevision(row, animate);
     };
-    window.addEventListener("popstate", () => syncFromUrl(true));
+    const onPopState = (event: PopStateEvent) =>
+      syncFromUrl(true, !event.hasUAVisualTransition);
+    window.addEventListener("popstate", onPopState);
     syncFromUrl();
     return () => {
       cancelled = true;
@@ -424,10 +444,10 @@ export function RevisionesProvider({
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener("popstate", () => syncFromUrl(true));
+      window.removeEventListener("popstate", onPopState);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [persist, refresh]);
+  }, [persist, refresh, showRevision]);
 
   useEffect(() => {
     if (!online) return;

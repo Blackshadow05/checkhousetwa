@@ -11,6 +11,8 @@ import { EscanearMenuFeature, EscanearMenuScreen } from "@/components/screens/es
 import { PantallaForm } from "@/components/screens/pantalla-form";
 import { PantallaPhotoGallery } from "@/components/screens/pantalla-photo-gallery";
 import { PantallaPdfSheet } from "@/components/screens/pantalla-pdf-sheet";
+import { SegmentIndicator } from "@/components/ui/segment-indicator";
+import { useSlideDirection } from "@/hooks/use-slide-direction";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { UBICACIONES, inventarioPantallas, latestPantallaReports, movimientoLabel, pantallaTime, ubicacionLabel, type PantallaReport, type PantallaSnapshot } from "@/lib/pantallas";
 import { useOnline } from "@/lib/use-online";
@@ -33,6 +35,8 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
   const [deleteVisited, setDeleteVisited] = useState(false);
   const [scanVisited, setScanVisited] = useState(false);
   if (pdfReports && (!active || path !== "/reporte-pantallas")) setPdfReports(null);
+  const tabIndex = tab === "historial" ? 0 : 1;
+  const tabDirection = useSlideDirection(tabIndex);
   const online = useOnline();
   const esAdmin = esRolAdmin(session.rol);
   const esSuperAdmin = session.rol === "SuperAdmin";
@@ -146,9 +150,9 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
       <button type="button" className="pantalla-primary" onClick={() => navigate("/reporte-pantallas/nuevo")}><Plus size={20} aria-hidden /> Nuevo registro</button>
       <p role="status" className="pantalla-status">{loading ? "Actualizando…" : !online ? "Sin conexión · Últimos datos guardados" : cached || error ? "Últimos datos guardados" : snapshot ? "Datos actualizados" : "Sin datos disponibles"}{snapshot && ` · ${new Date(snapshot.updatedAt).toLocaleString("es-CR", { timeZone: "America/Costa_Rica" })}`}</p>
       {message && <p role="status" className="pantalla-notice">{message}</p>}{error && <p role="alert" className="pantalla-error">{error}</p>}
-      <div className="pantalla-tabs" aria-label="Vista de pantallas">{["historial", "inventario"].map(t => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)}>{t === "historial" ? "Historial" : "Inventario"}</button>)}</div>
+      <div className="pantalla-tabs" aria-label="Vista de pantallas"><SegmentIndicator activeIndex={tabIndex} />{["historial", "inventario"].map(t => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)}>{t === "historial" ? "Historial" : "Inventario"}</button>)}</div>
       <label>Ubicación<select aria-label="Ubicación" value={location} onChange={e => setLocation(e.target.value)}><option value="">Todas las ubicaciones</option>{UBICACIONES.map(v => <option key={v} value={v}>{ubicacionLabel(v)}</option>)}</select></label>
-      {tab === "historial" ? <>
+      <div key={tab} className="slide-enter" data-direction={tabDirection}>{tab === "historial" ? <>
         <div className="pantalla-filters"><label>Tipo<select aria-label="Tipo" value={type} onChange={e => setType(e.target.value)}><option value="reporte">Reportes</option><option value="movimiento">Movimientos</option></select></label><label>Buscar<input type="search" placeholder="Usuario, nota o casita" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
         <div className="pantalla-toolbar"><span>{reports.length} registros</span><button type="button" disabled={!pdfCandidates.length} onClick={() => setPdfReports(pdfCandidates)}><FileDown size={18} aria-hidden /> Crear PDF</button></div>
         {loading && !snapshot && <div className="pantalla-skeleton" aria-label="Cargando registros" />}
@@ -157,7 +161,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
           {row.tipo === "movimiento" ? <p>{movimientoLabel(row)}</p> : <PantallaPhotoGallery photos={row.fotos || []} casita={row.numero_casita} reportId={row.id} active={active && path === "/reporte-pantallas"} />}
           {row.notas && <p className="pantalla-notes">{row.notas}</p>}
         </article>)}
-      </> : <>{snapshot ? <><p className="pantalla-status">{snapshot.reports.length ? "Calculado desde reportes y movimientos en orden de fecha." : "Inventario guardado; todavía no hay historial."}</p><div className="pantalla-inventory">{UBICACIONES.filter(v => !location || v === location).map(v => { const rooms = inventory.filter(item => item.ubicacion === v); const total = rooms.reduce((sum, r) => sum + r.cantidad, 0); return <article className="pantalla-card" key={v}><div className="pantalla-toolbar"><h3>{ubicacionLabel(v)}</h3><strong>{total === 0 && rooms.length && rooms.every(r => r.sinPantalla) ? "No tiene" : total}</strong></div>{rooms.map(r => <div className="pantalla-stock-row" key={r.habitacion}><span>{r.habitacion || "General"}</span><strong>{r.cantidad === 0 && r.sinPantalla ? "No tiene" : r.cantidad}</strong></div>)}</article>; })}</div></> : <p>Carga los datos para consultar el inventario.</p>}</>}
+      </> : <>{snapshot ? <><p className="pantalla-status">{snapshot.reports.length ? "Calculado desde reportes y movimientos en orden de fecha." : "Inventario guardado; todavía no hay historial."}</p><div className="pantalla-inventory">{UBICACIONES.filter(v => !location || v === location).map(v => { const rooms = inventory.filter(item => item.ubicacion === v); const total = rooms.reduce((sum, r) => sum + r.cantidad, 0); return <article className="pantalla-card" key={v}><div className="pantalla-toolbar"><h3>{ubicacionLabel(v)}</h3><strong>{total === 0 && rooms.length && rooms.every(r => r.sinPantalla) ? "No tiene" : total}</strong></div>{rooms.map(r => <div className="pantalla-stock-row" key={r.habitacion}><span>{r.habitacion || "General"}</span><strong>{r.cantidad === 0 && r.sinPantalla ? "No tiene" : r.cantidad}</strong></div>)}</article>; })}</div></> : <p>Carga los datos para consultar el inventario.</p>}</>}</div>
     </div>
     {formVisited && <div hidden={path !== "/reporte-pantallas/nuevo"}><PantallaForm key={formKey} onClose={() => navigate("/reporte-pantallas")} onSaved={text => { setMessage(text); setFormKey(k => k + 1); navigate("/reporte-pantallas"); void refresh(); }} /></div>}
     {pdfReports && active && path === "/reporte-pantallas" && <PantallaPdfSheet reports={pdfReports} onClose={() => setPdfReports(null)} />}

@@ -44,6 +44,7 @@ export function HoyCasitas({
                     key={row.id || number}
                     type="button"
                     className={`hoy-chip tone-${group.tone}`}
+                    data-revision-card={row.id || undefined}
                     onClick={() => openRevision(row)}
                     aria-label={`Casita ${number}, ${group.label}. Ver detalle`}
                   >

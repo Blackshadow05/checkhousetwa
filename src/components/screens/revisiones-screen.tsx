@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Check,
   ChevronRight,
@@ -26,6 +26,15 @@ import {
 import type { InicioRevisionRow } from "@/types/database";
 import styles from "./revisiones-screen.module.css";
 
+const PERIODS = [
+  { id: "all", label: "Todas" },
+  { id: "today", label: "Hoy" },
+  { id: "three-days", label: "3 días" },
+  { id: "week", label: "7 días" },
+] as const;
+
+type ListDirection = "initial" | "none" | "forward" | "back";
+
 function groupByDay(rows: InicioRevisionRow[]) {
   const result = new Map<string, InicioRevisionRow[]>();
   for (const row of rows) {
@@ -42,6 +51,24 @@ export function RevisionesScreen() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => groupByDay(archive.rows), [archive.rows]);
+  const periodIndex = archive.date
+    ? -1
+    : PERIODS.findIndex((item) => item.id === archive.period);
+  const [listTransition, setListTransition] = useState<{
+    index: number;
+    direction: ListDirection;
+  }>({ index: periodIndex, direction: "initial" });
+  if (listTransition.index !== periodIndex) {
+    setListTransition({
+      index: periodIndex,
+      direction:
+        listTransition.index < 0 || periodIndex < 0
+          ? "none"
+          : periodIndex > listTransition.index
+            ? "forward"
+            : "back",
+    });
+  }
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -133,15 +160,18 @@ export function RevisionesScreen() {
             ) : null}
           </button>
         </div>
-        <div className={styles.segmented} role="group" aria-label="Filtrar por fecha">
-          {(
-            [
-              { id: "all", label: "Todas" },
-              { id: "today", label: "Hoy" },
-              { id: "three-days", label: "3 días" },
-              { id: "week", label: "7 días" },
-            ] as const
-          ).map((item) => (
+        <div
+          className={styles.segmented}
+          role="group"
+          aria-label="Filtrar por fecha"
+          style={{ "--segment-index": Math.max(periodIndex, 0) } as CSSProperties}
+        >
+          <span
+            className={styles.segmentIndicator}
+            data-hidden={periodIndex < 0 || undefined}
+            aria-hidden="true"
+          />
+          {PERIODS.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -186,7 +216,12 @@ export function RevisionesScreen() {
         </span>
       </div>
 
-      <div className={styles.groups} aria-busy={archive.loading || archive.loadingMore}>
+      <div
+        key={`${archive.period}|${archive.date}`}
+        className={styles.groups}
+        data-direction={listTransition.direction}
+        aria-busy={archive.loading || archive.loadingMore}
+      >
         {archive.loading ? (
           <div className={styles.list} aria-hidden="true">
             {[0, 1, 2, 3].map((item) => (
@@ -212,6 +247,7 @@ export function RevisionesScreen() {
                     key={revisionKey(row, index)}
                     className={styles.row}
                     data-tone={statusAppearance(row.caja_fuerte).tone}
+                    data-revision-card={row.id || undefined}
                     type="button"
                     onClick={() => archive.openRevision(row)}
                     aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${row.created_at}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}

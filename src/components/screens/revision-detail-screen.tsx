@@ -199,6 +199,9 @@ export function RevisionDetailScreen() {
   const { selectedRevision, closeRevision, today } = useRevisiones();
   const online = useOnline();
   const backRef = useRef<HTMLButtonElement>(null);
+  const [sharedEntry] = useState(
+    () => document.documentElement.dataset.detailTransition === "open",
+  );
   const loadingMoreRef = useRef(false);
   const [copyMessage, setCopyMessage] = useState("");
   const [editingField, setEditingField] = useState<RevisionEditField | null>(null);
@@ -430,6 +433,7 @@ export function RevisionDetailScreen() {
   return (
     <section
       className="detail-screen"
+      data-shared-entry={sharedEntry || undefined}
       role="dialog"
       aria-modal="true"
       aria-labelledby="detail-title"
