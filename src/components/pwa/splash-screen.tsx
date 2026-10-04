@@ -1,78 +1,118 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import Image from "next/image";
-import { APP_SHORT_NAME, APP_TAGLINE } from "@/lib/constants";
 import { SPLASH_BOOT_SCRIPT } from "@/lib/splash-screen";
 
-const HOLD_MS = 240;
+const HOLD_MS: Record<string, number> = { android: 650, compact: 420 };
 const MAX_WAIT_MS = 3200;
-const EXIT_MS = 360;
-const INTRO_FALLBACK_MS = 1000;
-
-type Phase = "intro" | "leaving" | "gone";
+const FLIGHT_MS = 720;
+const FADE_MS = 280;
+const FLIGHT_EASING = "cubic-bezier(0.55, 0, 0.15, 1)";
 
 const subscribe = () => () => {};
-const isActive = () => document.documentElement.dataset.splash !== undefined;
+const splashMode = () => document.documentElement.dataset.splash;
+const isActive = () => splashMode() !== undefined;
 const isActiveOnServer = () => true;
 
-const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => window.setTimeout(resolve, Math.max(0, ms)));
 
-function appVisible() {
-  return Array.from(document.querySelectorAll(".app-shell-frame")).some(
-    (frame) => frame.getClientRects().length > 0,
+function isVisible(element: Element) {
+  return element.getClientRects().length > 0;
+}
+
+function appReady() {
+  return (
+    !document.querySelector(".installed-gate") &&
+    Array.from(document.querySelectorAll(".app-shell-frame")).some(isVisible)
   );
 }
 
-async function introFinished(brand: HTMLElement | null) {
-  if (!brand || typeof brand.getAnimations !== "function") return wait(INTRO_FALLBACK_MS);
-  const finite = brand
-    .getAnimations({ subtree: true })
-    .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity);
-  await Promise.all(finite.map((animation) => animation.finished.catch(() => undefined)));
+function headerMark() {
+  return Array.from(document.querySelectorAll(".app-header .brand-mark")).find(isVisible) ?? null;
+}
+
+function firstPaintAt() {
+  return performance.getEntriesByType("paint")[0]?.startTime ?? 0;
+}
+
+async function leave(overlay: HTMLElement) {
+  if (typeof overlay.animate !== "function") return;
+  const mark = overlay.querySelector<HTMLElement>(".app-splash-mark");
+  const backdrop = overlay.querySelector<HTMLElement>(".app-splash-backdrop");
+  const progress = overlay.querySelector<HTMLElement>(".app-splash-progress");
+  const target = headerMark();
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduceMotion || !target || !mark || !backdrop) {
+    await overlay.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: FADE_MS,
+      easing: "ease",
+      fill: "forwards",
+    }).finished;
+    return;
+  }
+  const from = mark.getBoundingClientRect();
+  const to = target.getBoundingClientRect();
+  const dx = to.left + to.width / 2 - (from.left + from.width / 2);
+  const dy = to.top + to.height / 2 - (from.top + from.height / 2);
+  const scale = to.width / mark.offsetWidth;
+  const start = getComputedStyle(mark).transform;
+  progress?.animate([{ opacity: getComputedStyle(progress).opacity }, { opacity: 0 }], {
+    duration: 150,
+    fill: "forwards",
+  });
+  backdrop.animate([{ opacity: 1 }, { opacity: 0 }], {
+    duration: FLIGHT_MS - 220,
+    delay: 200,
+    easing: "ease-out",
+    fill: "forwards",
+  });
+  await mark.animate(
+    [
+      { transform: start === "none" ? "translate(0, 0) scale(1)" : start },
+      { transform: `translate(${dx}px, ${dy}px) scale(${scale})` },
+    ],
+    { duration: FLIGHT_MS, easing: FLIGHT_EASING, fill: "forwards" },
+  ).finished;
 }
 
 export function SplashScreen() {
   const active = useSyncExternalStore(subscribe, isActive, isActiveOnServer);
-  const [phase, setPhase] = useState<Phase>("intro");
-  const brandRef = useRef<HTMLDivElement>(null);
+  const [done, setDone] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isActive()) return;
+    const mode = splashMode();
+    const overlay = overlayRef.current;
+    if (!mode || !overlay) return;
     let cancelled = false;
     let observer: MutationObserver | undefined;
     const ready = new Promise<void>((resolve) => {
-      if (appVisible()) {
+      if (appReady()) {
         resolve();
         return;
       }
       observer = new MutationObserver(() => {
-        if (!appVisible()) return;
+        if (!appReady()) return;
         observer?.disconnect();
         resolve();
       });
       observer.observe(document.body, { childList: true, subtree: true });
     });
-    void Promise.race([
-      Promise.all([introFinished(brandRef.current), ready]).then(() => wait(HOLD_MS)),
-      wait(MAX_WAIT_MS),
-    ]).then(() => {
-      if (!cancelled) setPhase("leaving");
-    });
+    const hold = wait(firstPaintAt() + (HOLD_MS[mode] ?? HOLD_MS.compact) - performance.now());
+    void Promise.race([Promise.all([ready, hold]), wait(MAX_WAIT_MS)])
+      .then(() => (cancelled ? undefined : leave(overlay)))
+      .catch(() => undefined)
+      .then(() => {
+        if (cancelled) return;
+        delete document.documentElement.dataset.splash;
+        setDone(true);
+      });
     return () => {
       cancelled = true;
       observer?.disconnect();
     };
   }, []);
-
-  useEffect(() => {
-    if (phase !== "leaving") return;
-    const timer = window.setTimeout(() => {
-      delete document.documentElement.dataset.splash;
-      setPhase("gone");
-    }, EXIT_MS);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
 
   return (
     <>
@@ -81,25 +121,10 @@ export function SplashScreen() {
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: SPLASH_BOOT_SCRIPT }}
       />
-      {active && phase !== "gone" && (
-        <div className={`app-splash${phase === "leaving" ? " is-leaving" : ""}`} aria-hidden="true">
-          <div ref={brandRef} className="app-splash-brand">
-            <Image
-              className="app-splash-mark"
-              src="/splash/marca.webp"
-              alt=""
-              width={120}
-              height={120}
-              unoptimized
-              loading="eager"
-              fetchPriority="high"
-              decoding="sync"
-            />
-            <div className="app-splash-name">
-              <p className="app-splash-title">{APP_SHORT_NAME}</p>
-              <p className="app-splash-tagline">{APP_TAGLINE}</p>
-            </div>
-          </div>
+      {active && !done && (
+        <div ref={overlayRef} className="app-splash" aria-hidden="true">
+          <div className="app-splash-backdrop" />
+          <div className="app-splash-mark" />
           <div className="app-splash-progress" />
         </div>
       )}

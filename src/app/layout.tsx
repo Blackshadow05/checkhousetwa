@@ -8,6 +8,7 @@ import { ThemeSchedule } from "@/components/theme-schedule";
 import { startupImages } from "@/lib/pwa-startup-images";
 import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from "@/lib/constants";
 import "./globals.css";
+import "./splash-mark.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
