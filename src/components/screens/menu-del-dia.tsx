@@ -93,6 +93,22 @@ export function MenuDelDia({
   }, [initialError]);
 
   useEffect(() => {
+    const reload = async () => {
+      try {
+        const result = await fetchInicioMenus();
+        if (result.error) return;
+        setMenus(result.menus);
+        setError(null);
+        await persist(result.menus);
+      } catch {
+        return;
+      }
+    };
+    window.addEventListener("casitas:menus-actualizados", reload);
+    return () => window.removeEventListener("casitas:menus-actualizados", reload);
+  }, [persist]);
+
+  useEffect(() => {
     if (!online || !error) return;
     let cancelled = false;
     const refresh = async () => {

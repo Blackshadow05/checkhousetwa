@@ -7,6 +7,7 @@ import { HorariosScreen } from "@/components/screens/horarios-screen";
 import { ReportesScreen } from "@/components/screens/reportes-screen";
 import { LoginLogsFeature, LoginLogsScreen } from "@/components/screens/login-logs-screen";
 import { EliminarRevisionesFeature, EliminarRevisionesScreen } from "@/components/screens/eliminar-revisiones-screen";
+import { EscanearMenuFeature, EscanearMenuScreen } from "@/components/screens/escanear-menu-screen";
 import { PantallaForm } from "@/components/screens/pantalla-form";
 import { PantallaPhotoGallery } from "@/components/screens/pantalla-photo-gallery";
 import { PantallaPdfSheet } from "@/components/screens/pantalla-pdf-sheet";
@@ -30,6 +31,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
   const [reportesVisited, setReportesVisited] = useState(false);
   const [loginLogsVisited, setLoginLogsVisited] = useState(false);
   const [deleteVisited, setDeleteVisited] = useState(false);
+  const [scanVisited, setScanVisited] = useState(false);
   if (pdfReports && (!active || path !== "/reporte-pantallas")) setPdfReports(null);
   const online = useOnline();
   const esAdmin = esRolAdmin(session.rol);
@@ -37,10 +39,11 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
   const listRef = useRef<HTMLDivElement>(null); const adminRef = useRef<HTMLDivElement>(null); const horariosRef = useRef<HTMLDivElement>(null); const reportesRef = useRef<HTMLDivElement>(null);
   const otrosRef = useRef<HTMLDivElement>(null); const loginLogsRef = useRef<HTMLDivElement>(null);
   const deleteRef = useRef<HTMLDivElement>(null);
+  const scanRef = useRef<HTMLDivElement>(null);
   const scrollMemory = useRef<Record<string, number>>({});
   const lastPath = useRef("/otros");
   const scrollKey = (target: string) => (target.startsWith("/admin-usuarios/") ? "/admin-usuarios" : target);
-  const scrollerFor = (target: string) => (target === "/otros" ? otrosRef : target === "/eliminar-revisiones" ? deleteRef : target === "/historial-accesos" ? loginLogsRef : target.startsWith("/reportes") ? reportesRef : target === "/horarios" ? horariosRef : target.startsWith("/admin-usuarios") ? adminRef : listRef).current?.closest<HTMLElement>(".app-screen") ?? null;
+  const scrollerFor = (target: string) => (target === "/otros" ? otrosRef : target === "/escanear-menu" ? scanRef : target === "/eliminar-revisiones" ? deleteRef : target === "/historial-accesos" ? loginLogsRef : target.startsWith("/reportes") ? reportesRef : target === "/horarios" ? horariosRef : target.startsWith("/admin-usuarios") ? adminRef : listRef).current?.closest<HTMLElement>(".app-screen") ?? null;
   useEffect(() => {
     const sync = () => {
       const next = window.location.pathname.replace(/\/$/, "") || "/";
@@ -48,6 +51,11 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
       const fromReportes = lastPath.current.startsWith("/reportes");
       const fromLoginLogs = lastPath.current === "/historial-accesos";
       const fromDelete = lastPath.current === "/eliminar-revisiones";
+      const fromScan = lastPath.current === "/escanear-menu";
+      if (fromScan && next !== "/escanear-menu") {
+        const scroller = scrollerFor("/escanear-menu");
+        if (scroller) scrollMemory.current["/escanear-menu"] = scroller.scrollTop;
+      }
       if (fromDelete && next !== "/eliminar-revisiones") {
         const scroller = scrollerFor("/eliminar-revisiones");
         if (scroller) scrollMemory.current["/eliminar-revisiones"] = scroller.scrollTop;
@@ -73,7 +81,8 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
       if (next.startsWith("/reportes")) setReportesVisited(true);
       if (next === "/historial-accesos") setLoginLogsVisited(true);
       if (next === "/eliminar-revisiones") setDeleteVisited(true);
-      if (next === "/horarios" || next === "/historial-accesos" || next === "/eliminar-revisiones" || next.startsWith("/reportes") || (fromHorarios || fromReportes || fromLoginLogs || fromDelete) && next === "/otros") requestAnimationFrame(() => {
+      if (next === "/escanear-menu") setScanVisited(true);
+      if (next === "/horarios" || next === "/historial-accesos" || next === "/eliminar-revisiones" || next === "/escanear-menu" || next.startsWith("/reportes") || (fromHorarios || fromReportes || fromLoginLogs || fromDelete || fromScan) && next === "/otros") requestAnimationFrame(() => {
         if ((window.location.pathname.replace(/\/$/, "") || "/") !== next) return;
         const scroller = scrollerFor(next);
         if (scroller) scroller.scrollTop = scrollMemory.current[next] ?? 0;
@@ -84,7 +93,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
   }, []);
   const navigate = (next: string) => {
     const current = scrollerFor(path);
-    if (current && (path.startsWith("/reportes") || path === "/reporte-pantallas" || path === "/admin-usuarios" || path === "/horarios" || path === "/historial-accesos" || path === "/eliminar-revisiones" || path === "/otros")) scrollMemory.current[path] = current.scrollTop;
+    if (current && (path.startsWith("/reportes") || path === "/reporte-pantallas" || path === "/admin-usuarios" || path === "/horarios" || path === "/historial-accesos" || path === "/eliminar-revisiones" || path === "/escanear-menu" || path === "/otros")) scrollMemory.current[path] = current.scrollTop;
     window.history.pushState({ ...window.history.state, screen: "otros" }, "", next);
     window.dispatchEvent(new Event("casitas:navigate"));
     requestAnimationFrame(() => { const scroller = scrollerFor(next); if (scroller) scroller.scrollTop = next === "/reporte-pantallas/nuevo" ? 0 : scrollMemory.current[scrollKey(next)] ?? 0; });
@@ -125,6 +134,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
       <button type="button" className="pantalla-feature" onClick={() => navigate("/reportes")}><span className="pantalla-feature-icon"><Files size={27} aria-hidden /></span><span><strong>Reportes</strong></span><ArrowRight size={21} aria-hidden /></button>
       <button type="button" className="pantalla-feature" onClick={() => navigate("/horarios")}><span className="pantalla-feature-icon"><CalendarDays size={27} aria-hidden /></span><span><strong>Horario laboral</strong><small>Turnos, vacaciones, horas extras y feriados</small></span><ArrowRight size={21} aria-hidden /></button>
       <button type="button" className="pantalla-feature" onClick={() => navigate("/reporte-pantallas")}><span className="pantalla-feature-icon"><Monitor size={27} aria-hidden /></span><span><strong>Reporte de pantallas</strong><small>Revisiones, movimientos e inventario</small></span><ArrowRight size={21} aria-hidden /></button>
+      <EscanearMenuFeature onOpen={() => navigate("/escanear-menu")} />
       {esAdmin && <AdminUsuariosFeature onOpen={() => navigate("/admin-usuarios")} />}
       {esAdmin && <LoginLogsFeature onOpen={() => navigate("/historial-accesos")} />}
       {esSuperAdmin && <EliminarRevisionesFeature onOpen={() => navigate("/eliminar-revisiones")} />}
@@ -152,6 +162,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
     {formVisited && <div hidden={path !== "/reporte-pantallas/nuevo"}><PantallaForm key={formKey} onClose={() => navigate("/reporte-pantallas")} onSaved={text => { setMessage(text); setFormKey(k => k + 1); navigate("/reporte-pantallas"); void refresh(); }} /></div>}
     {pdfReports && active && path === "/reporte-pantallas" && <PantallaPdfSheet reports={pdfReports} onClose={() => setPdfReports(null)} />}
     {horariosVisited && <div ref={horariosRef} hidden={path !== "/horarios"}><HorariosScreen key={session.id} visible={active && path === "/horarios"} session={session} onBack={() => navigate("/otros")} /></div>}
+    {scanVisited && <div ref={scanRef} hidden={path !== "/escanear-menu"}><EscanearMenuScreen key={session.id} onBack={() => navigate("/otros")} /></div>}
     {esAdmin && loginLogsVisited && <div ref={loginLogsRef} hidden={path !== "/historial-accesos"}><LoginLogsScreen key={session.id} visible={active && path === "/historial-accesos"} ownerId={session.id} onBack={() => navigate("/otros")} /></div>}
     {esSuperAdmin && deleteVisited && <div ref={deleteRef} hidden={path !== "/eliminar-revisiones"}><EliminarRevisionesScreen key={session.id} visible={active && path === "/eliminar-revisiones"} onBack={() => navigate("/otros")} /></div>}
     {!esSuperAdmin && path === "/eliminar-revisiones" && <section><button type="button" onClick={() => navigate("/otros")}>← Otros</button><p role="alert">Solo los usuarios SuperAdmin pueden acceder a esta opción.</p></section>}

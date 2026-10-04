@@ -1,0 +1,56 @@
+.screen { --gap-l: max(20px, env(safe-area-inset-left)); --gap-r: max(20px, env(safe-area-inset-right)); --gap-b: 26px; min-width: 0; max-width: 560px; margin-inline: auto; }
+@media (min-width: 640px) { .screen { --gap-l: 32px; --gap-r: 32px; --gap-b: 36px; } }
+@media (max-width: 359px) { .screen { --gap-l: 16px; --gap-r: 16px; } }
+.screen .back { padding-left: 0; color: var(--muted-foreground); }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; min-height: 48px; }
+.screen .header h1 { margin: 0; font-size: clamp(21px, 5.5vw, 26px); }
+.screen .close { flex-shrink: 0; padding: 0; border-radius: 50%; background: var(--secondary); color: var(--muted-foreground); }
+
+.start, .done { display: flex; flex-direction: column; align-items: center; margin-top: clamp(40px, 12vh, 110px); }
+.start { gap: 40px; }
+.mark { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 30px; background: var(--secondary); color: var(--primary); }
+.actions { display: grid; gap: 10px; width: 100%; margin-top: 18px; }
+.start .actions { margin-top: 0; }
+.screen .primary, .screen .secondary { width: 100%; min-height: 54px; padding: 12px 18px; border-radius: 16px; gap: 10px; font-size: 16px; font-weight: 600; }
+.screen .primary { background: var(--primary); color: var(--primary-foreground); }
+.screen .secondary { background: var(--secondary); color: var(--foreground); }
+
+.preview { position: relative; height: min(56dvh, 520px); margin-top: 18px; border-radius: 22px; overflow: hidden; background: var(--secondary); }
+.photo { position: absolute; inset: 0; background-position: center; background-repeat: no-repeat; background-size: contain; }
+.sweep { position: absolute; inset-inline: 0; top: 0; height: 40%; background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--primary) 32%, transparent)); border-bottom: 2px solid var(--primary); animation: sweep 1.7s ease-in-out infinite; }
+.reading { position: absolute; left: 50%; bottom: 16px; display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; transform: translateX(-50%); border-radius: 999px; background: color-mix(in oklab, var(--card) 90%, transparent); backdrop-filter: blur(10px); box-shadow: 0 2px 12px #0003; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.spin { animation: spin .9s linear infinite; }
+
+.screen .error { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0 0; padding: 12px 14px; border-radius: 14px; background: var(--secondary); font-size: 14px; line-height: 1.4; }
+.error svg { flex-shrink: 0; margin-top: 1px; color: var(--destructive); }
+
+.days { margin: 14px 0 0; padding: 0; list-style: none; }
+.days li { animation: rise 240ms ease-out both; animation-delay: calc(var(--i) * 35ms); }
+.days li + li { border-top: 1px solid var(--border); }
+.screen .day { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: start; justify-content: stretch; gap: 14px; width: 100%; min-height: 64px; padding: 16px 2px; border-radius: 0; background: transparent; color: var(--foreground); font-weight: 400; text-align: left; }
+.check { display: grid; place-items: center; width: 26px; height: 26px; margin-top: 1px; border: 2px solid var(--input); border-radius: 50%; color: var(--primary-foreground); transition: background-color 160ms ease, border-color 160ms ease; }
+.day[data-on] .check { background: var(--primary); border-color: var(--primary); }
+.dayBody { min-width: 0; transition: opacity 160ms ease; }
+.day:not([data-on]) .dayBody { opacity: .42; }
+.dayHead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.dayHead strong { font-size: 17px; font-weight: 650; }
+.screen .date { color: var(--muted-foreground); font-size: 13px; }
+.screen .replace { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: var(--secondary); color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
+.dishes { display: grid; gap: 4px; margin-top: 8px; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+
+.bar { position: sticky; bottom: calc(-1 * var(--gap-b)); z-index: 2; display: grid; margin: 14px calc(-1 * var(--gap-r)) calc(-1 * var(--gap-b)) calc(-1 * var(--gap-l)); padding: 12px var(--gap-r) 14px var(--gap-l); border-top: 1px solid var(--border); background: color-mix(in oklab, var(--background) 94%, transparent); backdrop-filter: blur(14px); }
+.bar .error { margin: 0 0 10px; }
+
+.done { gap: 6px; text-align: center; }
+.doneMark { display: grid; place-items: center; width: 96px; height: 96px; margin-bottom: 18px; border-radius: 50%; background: var(--primary); color: var(--primary-foreground); animation: pop 340ms cubic-bezier(.2, .9, .3, 1.25) both; }
+.screen .done h2 { margin: 0; font-size: 22px; }
+.screen .done p { margin: 0 0 22px; color: var(--muted-foreground); font-size: 15px; }
+
+@keyframes sweep { from { transform: translateY(-100%); } to { transform: translateY(250%); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes pop { from { opacity: 0; transform: scale(.6); } }
+@media (prefers-reduced-motion: reduce) {
+  .sweep { animation: none; opacity: .5; top: 30%; }
+  .spin, .days li, .doneMark { animation: none; }
+}
