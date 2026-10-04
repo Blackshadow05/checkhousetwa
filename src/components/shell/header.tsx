@@ -1,6 +1,7 @@
 "use client";
 
-import { CloudCheck, House, WifiOff } from "lucide-react";
+import Image from "next/image";
+import { CloudCheck, WifiOff } from "lucide-react";
 import { APP_SHORT_NAME } from "@/lib/constants";
 import { useAppNavigationContext } from "@/components/shell/navigation-context";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
@@ -13,7 +14,7 @@ export function Header() {
       <div className="header-inner">
         <div className="app-brand">
           <span className="brand-mark">
-            <House size={23} strokeWidth={1.7} aria-hidden="true" />
+            <Image src="/icons/icon-192.png" alt="" width={44} height={44} priority />
           </span>
           <div>
             <p className="brand-name">{APP_SHORT_NAME}</p>

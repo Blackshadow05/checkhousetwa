@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { currentUsuario, logoutUsuario } from "@/app/actions/usuarios";
-import { House } from "lucide-react";
 import type { RetornoGoogle } from "@/components/auth/login-form";
 import { InicioScreen, PublicInicioScreen, type InicioAccount } from "@/components/screens/inicio-screen";
 import { BottomNavigation } from "@/components/shell/bottom-navigation";
@@ -253,7 +253,7 @@ export function AppShell({
           <div className="header-inner">
             <div className="app-brand">
               <span className="brand-mark">
-                <House size={23} strokeWidth={1.7} aria-hidden="true" />
+                <Image src="/icons/icon-192.png" alt="" width={44} height={44} priority />
               </span>
               <p className="brand-name">Casitas</p>
             </div>

@@ -1,4 +1,4 @@
-import { House } from "lucide-react";
+import Image from "next/image";
 
 export default function Loading() {
   return (
@@ -7,7 +7,7 @@ export default function Loading() {
         <div className="header-inner">
           <div className="app-brand">
             <span className="brand-mark">
-              <House size={23} />
+              <Image src="/icons/icon-192.png" alt="" width={44} height={44} priority />
             </span>
             <div>
               <p className="brand-name">Casitas</p>
