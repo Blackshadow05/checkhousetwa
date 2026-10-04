@@ -36,7 +36,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-!.env.example
 
 # Serwist
 public/sw.js
@@ -72,3 +71,9 @@ next-env.d.ts
 /scripts/*
 !/scripts/build-pantalla-analyzer.mjs
 !/scripts/build-articulos-detector.mjs
+/CLAUDE.md
+/README.md
+/components.json
+/assets/
+/models/*
+!/models/articulos-v8.onnx
