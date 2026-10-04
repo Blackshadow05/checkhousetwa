@@ -39,6 +39,7 @@ await square(180).toFile(path.join(icons, "apple-touch-icon.png"));
 await square(180).toFile(path.join(root, "src/app/apple-icon.png"));
 await markIn(512, 0.8).toFile(path.join(root, "src/app/icon.png"));
 await markIn(32, 0.94).toFile(path.join(root, "public/favicon.png"));
+await markIn(828, 0.8).webp({ quality: 90, alphaQuality: 100 }).toFile(path.join(splash, "marca.webp"));
 
 const icoSizes = [16, 32, 48];
 const icoImages = await Promise.all(icoSizes.map((size) => markIn(size, 0.94).toBuffer()));

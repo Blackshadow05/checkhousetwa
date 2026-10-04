@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { HideKeyboardOnTapOutside } from "@/components/hide-keyboard-on-tap-outside";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
+import { SplashScreen } from "@/components/pwa/splash-screen";
 import { ThemeSchedule } from "@/components/theme-schedule";
 import { startupImages } from "@/lib/pwa-startup-images";
 import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME } from "@/lib/constants";
@@ -65,6 +66,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-background font-sans text-foreground">
         <ThemeSchedule />
+        <SplashScreen />
         <HideKeyboardOnTapOutside />
         <PwaProvider restrict={process.env.VERCEL_ENV === "production"}>{children}</PwaProvider>
       </body>

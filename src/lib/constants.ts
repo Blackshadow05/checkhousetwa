@@ -1,7 +1,8 @@
 export const APP_NAME = "Revisión de casitas";
 export const APP_SHORT_NAME = "Casitas";
+export const APP_TAGLINE = "Tus casitas, al día.";
 export const APP_DESCRIPTION =
-  "Tus casitas, al día. Consulta y organiza las revisiones de tu equipo, incluso sin conexión.";
+  `${APP_TAGLINE} Consulta y organiza las revisiones de tu equipo, incluso sin conexión.`;
 export const ANDROID_PACKAGE_NAME = "com.revisioncasitas.app";
 export const REVISIONES_TABLE = "revisiones_casitas";
 export const NOTAS_REVISIONES_TABLE = "notas_revisiones_casitas";
