@@ -26,7 +26,7 @@
 .DS_Store
 *.pem
 /AGENTS.md
-/supabase/.temp/
+/supabase/
 
 # debug
 npm-debug.log*
@@ -64,3 +64,11 @@ next-env.d.ts
 .vercel
 /.pnpm-store/
 /outputs/
+/test/
+/docs/
+/.agents/
+/.claude/
+/skills-lock.json
+/scripts/*
+!/scripts/build-pantalla-analyzer.mjs
+!/scripts/build-articulos-detector.mjs
