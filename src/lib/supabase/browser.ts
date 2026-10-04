@@ -1,5 +1,4 @@
-import { createBrowserClient } from "@supabase/ssr";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
 type BrowserConfig = { url: string; publishableKey: string };
@@ -19,7 +18,9 @@ export function getBrowserSupabase() {
   if (client) return Promise.resolve(client);
   if (!loading) {
     loading = loadConfig().then(({ url, publishableKey }) => {
-      client = createBrowserClient<Database>(url, publishableKey);
+      client = createClient<Database>(url, publishableKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      });
       return client;
     }).catch((error) => {
       loading = null;

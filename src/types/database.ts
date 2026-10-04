@@ -235,6 +235,7 @@ export type Database = {
       registrar_movimiento_pantalla: { Args: { p_nombre_usuario: string; p_fecha_hora: string; p_notas: string; p_origen_ubicacion: string; p_origen_habitacion: string; p_destino_ubicacion: string; p_destino_habitacion: string }; Returns: PantallaReport };
       editar_campo_revision_casita: { Args: { p_id: string; p_editor_id: number; p_campo: string; p_esperado: string | null; p_nuevo: string | null }; Returns: RevisionCasita };
       verificar_credenciales_usuario: { Args: { p_usuario: string; p_password: string; p_ip?: string | null }; Returns: Json };
+      topic_revisiones_casitas: { Args: Record<string, never>; Returns: string | null };
     };
     Enums: {
       [_ in never]: never;

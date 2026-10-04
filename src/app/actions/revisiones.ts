@@ -18,6 +18,16 @@ export async function fetchInicioRevisiones() {
   return getInicioRevisiones();
 }
 
+export async function fetchCanalRevisiones(): Promise<string | null> {
+  try {
+    const client = await createPrivateClient();
+    const { data, error } = await client.rpc("topic_revisiones_casitas");
+    return error || typeof data !== "string" ? null : data;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchArchiveRevisiones(input: ArchiveQuery) {
   return getArchiveRevisiones(input);
 }

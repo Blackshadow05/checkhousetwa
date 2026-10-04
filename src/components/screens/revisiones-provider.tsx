@@ -9,20 +9,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { fetchInicioRevisiones } from "@/app/actions/revisiones";
+import { fetchCanalRevisiones, fetchInicioRevisiones } from "@/app/actions/revisiones";
 import { applyRevisionActivityChange, type RevisionActivity } from "@/lib/casitas-sin-revision";
-import { REVISIONES_TABLE } from "@/lib/constants";
 import { runDetailTransition } from "@/lib/detail-transition";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { todayKey } from "@/lib/revisiones-display";
-import { applyRealtimeChange, applyUpsellChange, mapInicioRevision } from "@/lib/revisiones-map";
+import { applyUpsellChange } from "@/lib/revisiones-map";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { useOnline } from "@/lib/use-online";
-import type { InicioRevisionRow, RevisionCasita, RevisionCasitaInicio } from "@/types/database";
-import type {
-  RealtimeChannel,
-  RealtimePostgresChangesPayload,
-} from "@supabase/supabase-js";
+import type { InicioRevisionRow } from "@/types/database";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 type Snapshot = {
   id: "inicio";
@@ -57,6 +53,8 @@ const Context = createContext<RevisionState | null>(null);
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 const LEFT_APP_MS = 2_000;
+const CHANGE_DEBOUNCE_MS = 250;
+const CHANNEL_RETRY_MS = 30_000;
 
 export function RevisionesProvider({
   children,
@@ -270,6 +268,7 @@ export function RevisionesProvider({
       }
       inFlight.current = true;
       generation.current += 1;
+      const startedGeneration = generation.current;
       setRefreshing(true);
       try {
         const result = await fetchInicioRevisiones();
@@ -291,6 +290,16 @@ export function RevisionesProvider({
         setRevisiones(result.revisiones);
         setUpsells(result.upsells);
         setError(null);
+        const open = selectedRevisionRef.current;
+        const fresh = open?.id && generation.current === startedGeneration
+          ? result.revisiones.find((row) => row.id === open.id) ??
+            result.upsells.find((row) => row.id === open.id)
+          : undefined;
+        if (fresh) {
+          knownRowsRef.current.set(fresh.id, fresh);
+          selectedRevisionRef.current = fresh;
+          setSelectedRevision(fresh);
+        }
         await persist(result.revisiones, result.upsells);
         return !result.activityError;
       } catch {
@@ -460,119 +469,61 @@ export function RevisionesProvider({
   }, [online, refresh]);
 
   useEffect(() => {
-    return;
+    if (!online) return;
     let cancelled = false;
     let channel: RealtimeChannel | null = null;
-    let persistTimer: number | undefined;
+    let supabase: Awaited<ReturnType<typeof getBrowserSupabase>> | null = null;
+    let changeTimer: number | undefined;
+    let retryTimer: number | undefined;
     let missedEvents = false;
 
-    const queuePersist = () => {
-      window.clearTimeout(persistTimer);
-      persistTimer = window.setTimeout(() => {
-        void persist(revisionesRef.current, upsellsRef.current);
-      }, 320);
-    };
-
-    const onChange = (
-      payload: RealtimePostgresChangesPayload<RevisionCasita>,
-    ) => {
-      generation.current += 1;
-      if (inFlight.current) pendingForce.current = true;
-      const next = applyRealtimeChange(
-        revisionesRef.current,
-        payload.eventType,
-        payload.new,
-        payload.old,
-      );
-      const nextUpsells = applyUpsellChange(
-        upsellsRef.current,
-        payload.eventType,
-        payload.new,
-        payload.old,
-      );
-      const nextActivity = applyRevisionActivityChange(
-        activityRef.current,
-        payload.eventType,
-        payload.new,
-        payload.old,
-        todayKey(),
-      );
-      revisionesRef.current = next;
-      upsellsRef.current = nextUpsells;
-      activityRef.current = nextActivity;
-      setRevisiones(next);
-      setUpsells(nextUpsells);
-      setRevisionActivity(nextActivity);
-      setToday(todayKey());
-      setError(null);
-      const open = selectedRevisionRef.current;
-      if (open?.id) {
-        if (payload.eventType === "DELETE") {
-          const deleted =
-            payload.old &&
-            typeof payload.old === "object" &&
-            "id" in payload.old &&
-            typeof payload.old.id === "string"
-              ? payload.old.id
-              : null;
-          if (deleted === open.id) {
-            knownRowsRef.current.delete(open.id);
-            closeRevision();
-          }
-        } else if (
-          payload.new &&
-          typeof payload.new === "object" &&
-          "id" in payload.new &&
-          payload.new.id === open.id
-        ) {
-          const mapped = mapInicioRevision(
-            payload.new as RevisionCasitaInicio,
-          );
-          knownRowsRef.current.set(mapped.id, mapped);
-          setSelectedRevision(mapped);
-        } else {
-          const match =
-            next.find((row) => row.id === open.id) ??
-            nextUpsells.find((row) => row.id === open.id) ??
-            knownRowsRef.current.get(open.id);
-          if (match) setSelectedRevision(match);
-        }
-      }
-      queuePersist();
+    const onChange = () => {
+      window.clearTimeout(changeTimer);
+      changeTimer = window.setTimeout(() => {
+        void refreshRef.current?.({ force: true });
+      }, CHANGE_DEBOUNCE_MS);
     };
 
     const connect = async () => {
       try {
-        const supabase = await getBrowserSupabase();
+        const [client, topic] = await Promise.all([
+          getBrowserSupabase(),
+          fetchCanalRevisiones(),
+        ]);
         if (cancelled) return;
-        channel = supabase
-          .channel("inicio-revisiones")
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "public", table: REVISIONES_TABLE },
-            onChange,
-          )
+        if (!topic) {
+          retryTimer = window.setTimeout(() => void connect(), CHANNEL_RETRY_MS);
+          return;
+        }
+        supabase = client;
+        channel = client
+          .channel(topic, { config: { private: true } })
+          .on("broadcast", { event: "cambio" }, onChange)
           .subscribe((status) => {
-            if (status === "SUBSCRIBED" && missedEvents) {
-              missedEvents = false;
-              void refresh({ force: true });
+            if (status === "SUBSCRIBED") {
+              if (missedEvents) {
+                missedEvents = false;
+                onChange();
+              }
+              return;
             }
-            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-              missedEvents = true;
-            }
+            missedEvents = true;
           });
       } catch {
-        missedEvents = true;
+        if (!cancelled) {
+          retryTimer = window.setTimeout(() => void connect(), CHANNEL_RETRY_MS);
+        }
       }
     };
 
     void connect();
     return () => {
       cancelled = true;
-      window.clearTimeout(persistTimer);
-      if (channel) void channel.unsubscribe();
+      window.clearTimeout(changeTimer);
+      window.clearTimeout(retryTimer);
+      if (channel && supabase) void supabase.removeChannel(channel);
     };
-  }, [closeRevision, online, persist, refresh]);
+  }, [online]);
 
   return (
     <Context.Provider
