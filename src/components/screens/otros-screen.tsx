@@ -8,6 +8,7 @@ import { ReportesScreen } from "@/components/screens/reportes-screen";
 import { LoginLogsFeature, LoginLogsScreen } from "@/components/screens/login-logs-screen";
 import { EliminarRevisionesFeature, EliminarRevisionesScreen } from "@/components/screens/eliminar-revisiones-screen";
 import { EscanearMenuFeature, EscanearMenuScreen } from "@/components/screens/escanear-menu-screen";
+import { EditarImagenFeature, EditarImagenScreen } from "@/components/screens/editar-imagen-screen";
 import { PantallaForm } from "@/components/screens/pantalla-form";
 import { PantallaPhotoGallery } from "@/components/screens/pantalla-photo-gallery";
 import { PantallaPdfSheet } from "@/components/screens/pantalla-pdf-sheet";
@@ -17,6 +18,7 @@ import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { UBICACIONES, inventarioPantallas, latestPantallaReports, movimientoLabel, pantallaTime, ubicacionLabel, type PantallaReport, type PantallaSnapshot } from "@/lib/pantallas";
 import { useOnline } from "@/lib/use-online";
 import { esRolAdmin } from "@/lib/usuarios-admin";
+import { puedeEditarImagen } from "@/lib/editar-imagen";
 import type { UsuarioShell } from "@/types/database";
 
 export function OtrosScreen({ active, session }: { active: boolean; session: UsuarioShell }) {
@@ -34,20 +36,23 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
   const [loginLogsVisited, setLoginLogsVisited] = useState(false);
   const [deleteVisited, setDeleteVisited] = useState(false);
   const [scanVisited, setScanVisited] = useState(false);
+  const [imageVisited, setImageVisited] = useState(false);
   if (pdfReports && (!active || path !== "/reporte-pantallas")) setPdfReports(null);
   const tabIndex = tab === "historial" ? 0 : 1;
   const tabDirection = useSlideDirection(tabIndex);
   const online = useOnline();
   const esAdmin = esRolAdmin(session.rol);
   const esSuperAdmin = session.rol === "SuperAdmin";
+  const editaImagen = puedeEditarImagen(session.id);
   const listRef = useRef<HTMLDivElement>(null); const adminRef = useRef<HTMLDivElement>(null); const horariosRef = useRef<HTMLDivElement>(null); const reportesRef = useRef<HTMLDivElement>(null);
   const otrosRef = useRef<HTMLDivElement>(null); const loginLogsRef = useRef<HTMLDivElement>(null);
   const deleteRef = useRef<HTMLDivElement>(null);
   const scanRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLDivElement>(null);
   const scrollMemory = useRef<Record<string, number>>({});
   const lastPath = useRef("/otros");
   const scrollKey = (target: string) => (target.startsWith("/admin-usuarios/") ? "/admin-usuarios" : target);
-  const scrollerFor = (target: string) => (target === "/otros" ? otrosRef : target === "/escanear-menu" ? scanRef : target === "/eliminar-revisiones" ? deleteRef : target === "/historial-accesos" ? loginLogsRef : target.startsWith("/reportes") ? reportesRef : target === "/horarios" ? horariosRef : target.startsWith("/admin-usuarios") ? adminRef : listRef).current?.closest<HTMLElement>(".app-screen") ?? null;
+  const scrollerFor = (target: string) => (target === "/otros" ? otrosRef : target === "/escanear-menu" ? scanRef : target === "/editar-imagen" ? imageRef : target === "/eliminar-revisiones" ? deleteRef : target === "/historial-accesos" ? loginLogsRef : target.startsWith("/reportes") ? reportesRef : target === "/horarios" ? horariosRef : target.startsWith("/admin-usuarios") ? adminRef : listRef).current?.closest<HTMLElement>(".app-screen") ?? null;
   useEffect(() => {
     const sync = () => {
       const next = window.location.pathname.replace(/\/$/, "") || "/";
@@ -86,6 +91,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
       if (next === "/historial-accesos") setLoginLogsVisited(true);
       if (next === "/eliminar-revisiones") setDeleteVisited(true);
       if (next === "/escanear-menu") setScanVisited(true);
+      if (next === "/editar-imagen") setImageVisited(true);
       if (next === "/horarios" || next === "/historial-accesos" || next === "/eliminar-revisiones" || next === "/escanear-menu" || next.startsWith("/reportes") || (fromHorarios || fromReportes || fromLoginLogs || fromDelete || fromScan) && next === "/otros") requestAnimationFrame(() => {
         if ((window.location.pathname.replace(/\/$/, "") || "/") !== next) return;
         const scroller = scrollerFor(next);
@@ -139,6 +145,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
       <button type="button" className="pantalla-feature" onClick={() => navigate("/horarios")}><span className="pantalla-feature-icon"><CalendarDays size={27} aria-hidden /></span><span><strong>Horario laboral</strong><small>Turnos, vacaciones, horas extras y feriados</small></span><ArrowRight size={21} aria-hidden /></button>
       <button type="button" className="pantalla-feature" onClick={() => navigate("/reporte-pantallas")}><span className="pantalla-feature-icon"><Monitor size={27} aria-hidden /></span><span><strong>Reporte de pantallas</strong><small>Revisiones, movimientos e inventario</small></span><ArrowRight size={21} aria-hidden /></button>
       <EscanearMenuFeature onOpen={() => navigate("/escanear-menu")} />
+      {editaImagen && <EditarImagenFeature onOpen={() => navigate("/editar-imagen")} />}
       {esAdmin && <AdminUsuariosFeature onOpen={() => navigate("/admin-usuarios")} />}
       {esAdmin && <LoginLogsFeature onOpen={() => navigate("/historial-accesos")} />}
       {esSuperAdmin && <EliminarRevisionesFeature onOpen={() => navigate("/eliminar-revisiones")} />}
@@ -167,8 +174,10 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
     {pdfReports && active && path === "/reporte-pantallas" && <PantallaPdfSheet reports={pdfReports} onClose={() => setPdfReports(null)} />}
     {horariosVisited && <div ref={horariosRef} hidden={path !== "/horarios"}><HorariosScreen key={session.id} visible={active && path === "/horarios"} session={session} onBack={() => navigate("/otros")} /></div>}
     {scanVisited && <div ref={scanRef} hidden={path !== "/escanear-menu"}><EscanearMenuScreen key={session.id} onBack={() => navigate("/otros")} /></div>}
+    {editaImagen && imageVisited && <div ref={imageRef} hidden={path !== "/editar-imagen"}><EditarImagenScreen key={session.id} onBack={() => navigate("/otros")} /></div>}
     {esAdmin && loginLogsVisited && <div ref={loginLogsRef} hidden={path !== "/historial-accesos"}><LoginLogsScreen key={session.id} visible={active && path === "/historial-accesos"} ownerId={session.id} onBack={() => navigate("/otros")} /></div>}
     {esSuperAdmin && deleteVisited && <div ref={deleteRef} hidden={path !== "/eliminar-revisiones"}><EliminarRevisionesScreen key={session.id} visible={active && path === "/eliminar-revisiones"} onBack={() => navigate("/otros")} /></div>}
+    {!editaImagen && path === "/editar-imagen" && <section><button type="button" onClick={() => navigate("/otros")}>← Otros</button><p role="alert">No tienes acceso a esta opción.</p></section>}
     {!esSuperAdmin && path === "/eliminar-revisiones" && <section><button type="button" onClick={() => navigate("/otros")}>← Otros</button><p role="alert">Solo los usuarios SuperAdmin pueden acceder a esta opción.</p></section>}
     {reportesVisited && <div ref={reportesRef} hidden={!path.startsWith("/reportes")}><ReportesScreen key={session.id} path={path} visible={active && path.startsWith("/reportes")} usuarioId={session.id} navigate={navigate} /></div>}
     {esAdmin && adminVisited && <div ref={adminRef} hidden={!path.startsWith("/admin-usuarios")}><AdminUsuariosScreen visible={active && path.startsWith("/admin-usuarios")} path={path} navigate={navigate} session={session} /></div>}

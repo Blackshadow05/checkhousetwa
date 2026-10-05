@@ -32,6 +32,7 @@ export function screenFromPath(pathname: string): ScreenId {
   if (normalized === "/historial-accesos") return "otros";
   if (normalized === "/eliminar-revisiones") return "otros";
   if (normalized === "/escanear-menu") return "otros";
+  if (normalized === "/editar-imagen") return "otros";
   if (normalized === "/otros" || normalized === "/reporte-pantallas" || normalized === "/reporte-pantallas/nuevo") return "otros";
   if (normalized === "/admin-usuarios" || normalized === "/admin-usuarios/nuevo" || normalized === "/admin-usuarios/editar") return "otros";
 
@@ -57,6 +58,7 @@ export function screenFromSlug(slug: string[] | undefined): ScreenId {
   if (first === "historial-accesos" && slug.length === 1) return "otros";
   if (first === "eliminar-revisiones" && slug.length === 1) return "otros";
   if (first === "escanear-menu" && slug.length === 1) return "otros";
+  if (first === "editar-imagen" && slug.length === 1) return "otros";
   if (first === "reporte-pantallas" && (slug.length === 1 || slug.length === 2 && slug[1] === "nuevo")) return "otros";
   if (first === "admin-usuarios" && (slug.length === 1 || slug.length === 2 && (slug[1] === "nuevo" || slug[1] === "editar"))) return "otros";
   if (first && isScreenId(first) && slug.length === 1) {
