@@ -19,7 +19,7 @@ export const SCREENS = {
 
 export type ScreenId = keyof typeof SCREENS;
 
-export const SCREEN_ORDER: ScreenId[] = ["inicio", "revisiones", "otros", "sync"];
+export const SCREEN_ORDER: ScreenId[] = ["inicio", "revisiones", "otros"];
 
 export function isScreenId(value: string): value is ScreenId {
   return value in SCREENS;
@@ -40,10 +40,6 @@ export function screenFromPath(pathname: string): ScreenId {
     return "revisiones";
   }
 
-  if (normalized === "/sync") {
-    return "sync";
-  }
-
   return "inicio";
 }
 
@@ -61,7 +57,7 @@ export function screenFromSlug(slug: string[] | undefined): ScreenId {
   if (first === "editar-imagen" && slug.length === 1) return "otros";
   if (first === "reporte-pantallas" && (slug.length === 1 || slug.length === 2 && slug[1] === "nuevo")) return "otros";
   if (first === "admin-usuarios" && (slug.length === 1 || slug.length === 2 && (slug[1] === "nuevo" || slug[1] === "editar"))) return "otros";
-  if (first && isScreenId(first) && slug.length === 1) {
+  if (first && first !== "sync" && isScreenId(first) && slug.length === 1) {
     return first;
   }
 

@@ -29,6 +29,34 @@ const SHARE_ICON = `<svg class="pswp__icn" viewBox="0 0 24 24" width="24" height
 const DOWNLOAD_ICON = '<svg class="pswp__icn" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5v15m-6-6 6 6 6-6M7 22v5h18v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const EXTENSIONS: Record<string, string> = { "image/png": "png", "image/webp": "webp", "image/avif": "avif", "image/heic": "heic", "image/heif": "heif" };
 let downloading = false;
+const originalCache = new Map<string, Promise<Blob>>();
+
+function isAppleMobile() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function fetchOriginal(path: string) {
+  const cached = originalCache.get(path);
+  if (cached) return cached;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30000);
+  const request = fetch(cloudinaryUrl(path, ""), { signal: controller.signal })
+    .then((response) => {
+      if (!response.ok) throw new Error("download");
+      return response.blob();
+    })
+    .finally(() => window.clearTimeout(timeout));
+  originalCache.set(path, request);
+  request.catch(() => originalCache.delete(path));
+  if (originalCache.size > 12) originalCache.delete(originalCache.keys().next().value!);
+  return request;
+}
+
+function prefetchOriginal(path: string | undefined) {
+  if (!path || !isAppleMobile()) return;
+  fetchOriginal(path).catch(() => undefined);
+}
 
 async function downloadSlide(
   path: string | undefined,
@@ -41,17 +69,27 @@ async function downloadSlide(
     if (statusEl) statusEl.textContent = message;
   };
   downloading = true;
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 30000);
   setStatus("Preparando descarga…");
   try {
-    const response = await fetch(cloudinaryUrl(path, ""), { signal: controller.signal });
-    if (!response.ok) throw new Error("download");
-    const blob = await response.blob();
+    const blob = await fetchOriginal(path);
+    const name = evidenceFileName(casita, index, EXTENSIONS[blob.type] ?? "jpg", evidencePathMark(path));
+    if (isAppleMobile() && typeof navigator.share === "function") {
+      const file = new File([blob], name, { type: blob.type || "image/jpeg" });
+      if (navigator.canShare?.({ files: [file] })) {
+        setStatus("Toca «Guardar imagen» para guardarla en Fotos.");
+        try {
+          await navigator.share({ files: [file] });
+          setStatus("");
+        } catch (error) {
+          setStatus(error instanceof DOMException && error.name === "AbortError" ? "" : "No se pudo abrir el guardado. Vuelve a tocar descargar.");
+        }
+        return;
+      }
+    }
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = evidenceFileName(casita, index, EXTENSIONS[blob.type] ?? "jpg", evidencePathMark(path));
+    link.download = name;
     document.body.append(link);
     link.click();
     link.remove();
@@ -60,7 +98,6 @@ async function downloadSlide(
   } catch {
     setStatus("No se pudo descargar la foto. Revisa la conexión y vuelve a intentarlo.");
   } finally {
-    window.clearTimeout(timeout);
     downloading = false;
   }
 }
@@ -277,6 +314,12 @@ export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
         },
       });
     });
+    const prefetchCurrent = () => {
+      const current = lightbox.pswp?.currIndex;
+      if (current !== undefined) prefetchOriginal(pathsRef.current[current]);
+    };
+    lightbox.on("afterInit", prefetchCurrent);
+    lightbox.on("change", prefetchCurrent);
     lightbox.init();
     lightboxRef.current = lightbox;
     return () => {

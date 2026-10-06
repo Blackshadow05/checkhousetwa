@@ -3,11 +3,9 @@
 import Image from "next/image";
 import { CloudCheck, WifiOff } from "lucide-react";
 import { APP_SHORT_NAME } from "@/lib/constants";
-import { useAppNavigationContext } from "@/components/shell/navigation-context";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 
 export function Header() {
-  const { navigate } = useAppNavigationContext();
   const { online, refreshing, error } = useRevisiones();
   return (
     <header className="app-header">
@@ -20,11 +18,8 @@ export function Header() {
             <p className="brand-name">{APP_SHORT_NAME}</p>
           </div>
         </div>
-        <button
-          type="button"
+        <div
           className={`connection-button ${!online ? "is-offline" : ""}`}
-          aria-label="Ver estado de conexión y datos"
-          onClick={() => navigate("sync")}
         >
           <span className="connection-dot" />
           <span aria-live="polite">
@@ -41,7 +36,7 @@ export function Header() {
           ) : (
             <WifiOff size={17} aria-hidden="true" />
           )}
-        </button>
+        </div>
       </div>
     </header>
   );
