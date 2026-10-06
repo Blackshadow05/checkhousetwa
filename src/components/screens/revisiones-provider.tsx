@@ -461,11 +461,7 @@ export function RevisionesProvider({
   useEffect(() => {
     if (!online) return;
     const initialRefresh = window.setTimeout(() => void refresh({ force: true }), 0);
-    const poll = window.setInterval(() => void refresh({ force: true }), 60_000);
-    return () => {
-      window.clearTimeout(initialRefresh);
-      window.clearInterval(poll);
-    };
+    return () => window.clearTimeout(initialRefresh);
   }, [online, refresh]);
 
   useEffect(() => {
