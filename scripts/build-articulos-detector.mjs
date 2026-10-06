@@ -18,7 +18,7 @@ for (const name of await readdir(output)) {
 }
 await copyFile(wasm, resolve(output, wasmName));
 await copyFile(gpuWasm, resolve(output, gpuWasmName));
-await copyFile(resolve("models/articulos-v8.onnx"), resolve(output, "articulos-v8.onnx"));
+await copyFile(resolve("models/articulos-v9.onnx"), resolve(output, "articulos-v9.onnx"));
 
 const common = {
   entryPoints: ["src/workers/articulos-detector.ts"],

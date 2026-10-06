@@ -2,8 +2,8 @@ import type { InventoryKey } from "@/lib/revision-form";
 
 export const ARTICULOS_INPUT_SIZE = 640;
 export const ARTICULOS_PAD_VALUE = 114;
-export const ARTICULOS_MODEL_ID = "yolo26n-v8";
-export const ARTICULOS_MODEL_URL = "/articulos/articulos-v8.onnx";
+export const ARTICULOS_MODEL_ID = "yolo26n-v9";
+export const ARTICULOS_MODEL_URL = "/articulos/articulos-v9.onnx";
 export const ARTICULOS_WORKER_URL = "/articulos/articulos-worker.js";
 export const ARTICULOS_GPU_WORKER_URL = "/articulos/articulos-worker-gpu.js";
 

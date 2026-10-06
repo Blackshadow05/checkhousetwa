@@ -10,6 +10,7 @@ test
 tests
 docs
 models/articulos-v7.onnx
+models/articulos-v8.onnx
 public/articulos
 public/opencv
 public/sw.js
