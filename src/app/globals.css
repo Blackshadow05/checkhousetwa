@@ -1379,6 +1379,17 @@ svg {
   color: var(--sage-text);
   background: var(--sage-bg);
 }
+.revision-share-saved:not([data-status="saved"]) .revision-share-success-icon {
+  border-color: var(--border);
+  color: var(--muted-foreground);
+  background: var(--muted);
+}
+.revision-share-saved[data-status="error"] .revision-share-success-icon {
+  color: var(--destructive);
+}
+.revision-share-saved:not([data-status="saved"]) p {
+  color: var(--muted-foreground);
+}
 .revision-share-saved p {
   color: var(--sage-text);
   font-size: 0.75rem;

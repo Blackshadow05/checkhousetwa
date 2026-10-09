@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCheck, ChevronDown, Download, LoaderCircle, Share2 } from "lucide-react";
+import { CheckCheck, ChevronDown, CloudOff, Download, LoaderCircle, Share2 } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 
 function canShareFiles(files: File[]) {
@@ -39,9 +39,10 @@ function EvidenceDownload({ file, index, disabled }: { file: File; index: number
   ><Download size={16} aria-hidden="true" />Guardar evidencia {index + 1}</a>;
 }
 
-export function RevisionShareSheet({ casita, files, onClose }: {
+export function RevisionShareSheet({ casita, files, status, onClose }: {
   casita: string;
   files: File[];
+  status: "saving" | "waiting" | "error" | "saved";
   onClose: () => void;
 }) {
   const [sharing, setSharing] = useState(false);
@@ -70,9 +71,13 @@ export function RevisionShareSheet({ casita, files, onClose }: {
   return (
     <BottomSheet open onClose={onClose} title="Compartir evidencias">
       <div className="revision-share-content">
-        <div className="revision-share-saved">
-          <span className="revision-share-success-icon"><CheckCheck size={25} strokeWidth={1.7} aria-hidden="true" /></span>
-          <div><p>Revisión guardada</p><h3>Casita {casita}</h3></div>
+        <div className="revision-share-saved" data-status={status}>
+          <span className="revision-share-success-icon">
+            {status === "saved" ? <CheckCheck size={25} strokeWidth={1.7} aria-hidden="true" />
+              : status === "saving" ? <LoaderCircle size={25} strokeWidth={1.7} className="revision-spinner" aria-hidden="true" />
+                : <CloudOff size={25} strokeWidth={1.7} aria-hidden="true" />}
+          </span>
+          <div role="status"><p>{status === "saved" ? "Revisión guardada" : status === "saving" ? "Guardando revisión…" : status === "waiting" ? "Se enviará al volver la conexión" : "No se guardó la revisión"}</p><h3>Casita {casita}</h3></div>
         </div>
         <div className="revision-share-photos" aria-label="Evidencias de la revisión">
           {files.map((file, index) => {

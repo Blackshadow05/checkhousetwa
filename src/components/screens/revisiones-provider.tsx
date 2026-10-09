@@ -5,17 +5,23 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { fetchCanalRevisiones, fetchInicioRevisiones } from "@/app/actions/revisiones";
+import { createRevision, fetchCanalRevisiones, fetchInicioRevisiones } from "@/app/actions/revisiones";
 import { applyRevisionActivityChange, type RevisionActivity } from "@/lib/casitas-sin-revision";
 import { runDetailTransition } from "@/lib/detail-transition";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { todayKey } from "@/lib/revisiones-display";
 import { applyUpsellChange } from "@/lib/revisiones-map";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
+import { discardUpload, releaseUploads, resolveEvidenciaUrls } from "@/lib/revision-evidence-upload";
+import { loadOutbox, pendingRevisionRow, storeOutbox, type PendingRevision } from "@/lib/revision-outbox";
+import type { RevisionDraft } from "@/lib/revision-form";
+import { prepararSonidoGuardado, sonarGuardado } from "@/lib/sonido-guardado";
+import type { RevisionRecognitionInput } from "@/lib/revision-recognition-log";
 import { useOnline } from "@/lib/use-online";
 import type { InicioRevisionRow } from "@/types/database";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -48,6 +54,11 @@ type RevisionState = {
   acceptRevision: (row: InicioRevisionRow) => void;
   replaceRevision: (row: InicioRevisionRow) => void;
   revisionPatch: InicioRevisionRow | null;
+  pendientes: PendingRevision[];
+  enviarRevision: (draft: RevisionDraft, reconocimiento: RevisionRecognitionInput | null) => void;
+  reintentarRevision: (id: string) => void;
+  tomarRevision: (id: string) => PendingRevision | null;
+  descartarRevision: (id: string) => void;
 };
 const Context = createContext<RevisionState | null>(null);
 
@@ -102,6 +113,9 @@ export function RevisionesProvider({
   const refreshRef = useRef<RevisionState["refresh"] | null>(null);
   const selectedRevisionRef = useRef(selectedRevision);
   const knownRowsRef = useRef(new Map<string, InicioRevisionRow>());
+  const [pendientes, setPendientes] = useState<PendingRevision[]>([]);
+  const pendientesRef = useRef<PendingRevision[]>([]);
+  const sendingRef = useRef(new Set<string>());
 
   useEffect(() => {
     revisionesRef.current = revisiones;
@@ -141,6 +155,7 @@ export function RevisionesProvider({
   );
 
   const openRevision = useCallback((row: InicioRevisionRow) => {
+    if (pendientesRef.current.some((item) => item.draft.id === row.id)) return;
     showRevision(row);
     if (row.id) knownRowsRef.current.set(row.id, row);
     if (!row.id) return;
@@ -254,6 +269,107 @@ export function RevisionesProvider({
     if (selectedRevisionRef.current?.id === row.id) setSelectedRevision(row);
     void persist(next, nextUpsells);
   }, [persist]);
+
+  const writePendientes = useCallback((change: (items: PendingRevision[]) => PendingRevision[]) => {
+    const next = change(pendientesRef.current);
+    pendientesRef.current = next;
+    setPendientes(next);
+    void storeOutbox(next).catch(() => setStorageError(true));
+  }, []);
+
+  const marcarPendiente = useCallback((id: string, status: PendingRevision["status"], error: string | null = null) => {
+    writePendientes((items) => items.map((item) => item.draft.id === id ? { ...item, status, error } : item));
+  }, [writePendientes]);
+
+  const sendPendiente = useCallback(async (id: string) => {
+    const item = pendientesRef.current.find((entry) => entry.draft.id === id);
+    if (!item || sendingRef.current.has(id)) return;
+    if (!navigator.onLine) {
+      marcarPendiente(id, "waiting");
+      return;
+    }
+    sendingRef.current.add(id);
+    marcarPendiente(id, "saving");
+    try {
+      const { draft } = item;
+      let paths: string[] = [];
+      if (draft.photos.length) {
+        try {
+          paths = await resolveEvidenciaUrls(draft.photos);
+        } catch {
+          marcarPendiente(id, navigator.onLine ? "error" : "waiting", "No pudimos subir una evidencia. Conservamos la revisión para reintentar.");
+          return;
+        }
+      }
+      const result = await createRevision({ id, values: draft.values, photos: paths, reconocimiento: item.reconocimiento });
+      if (!result.row) {
+        marcarPendiente(id, "error", result.error ?? "No pudimos confirmar el guardado.");
+        return;
+      }
+      releaseUploads(draft.photos.map((photo) => photo.id));
+      writePendientes((items) => items.filter((entry) => entry.draft.id !== id));
+      acceptRevision(result.row);
+      sonarGuardado();
+    } catch {
+      marcarPendiente(id, navigator.onLine ? "error" : "waiting", "No pudimos conectar para guardar. Conservamos la revisión para reintentar.");
+    } finally {
+      sendingRef.current.delete(id);
+    }
+  }, [acceptRevision, marcarPendiente, writePendientes]);
+
+  const enviarRevision = useCallback((draft: RevisionDraft, reconocimiento: RevisionRecognitionInput | null) => {
+    prepararSonidoGuardado();
+    const entry: PendingRevision = { draft, reconocimiento, row: pendingRevisionRow(draft), status: "saving", error: null };
+    writePendientes((items) => [entry, ...items.filter((item) => item.draft.id !== draft.id)]);
+    void sendPendiente(draft.id);
+  }, [sendPendiente, writePendientes]);
+
+  const reintentarRevision = useCallback((id: string) => {
+    prepararSonidoGuardado();
+    void sendPendiente(id);
+  }, [sendPendiente]);
+
+  const tomarRevision = useCallback((id: string) => {
+    if (sendingRef.current.has(id)) return null;
+    const item = pendientesRef.current.find((entry) => entry.draft.id === id) ?? null;
+    if (item) writePendientes((items) => items.filter((entry) => entry.draft.id !== id));
+    return item;
+  }, [writePendientes]);
+
+  const descartarRevision = useCallback((id: string) => {
+    const item = tomarRevision(id);
+    for (const photo of item?.draft.photos ?? []) void discardUpload(photo.id);
+  }, [tomarRevision]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadOutbox().then((saved) => {
+      if (cancelled || !saved.length) return;
+      const known = new Set(pendientesRef.current.map((item) => item.draft.id));
+      const restored = saved.filter((item) => !known.has(item.draft.id))
+        .map((item) => ({ ...item, status: navigator.onLine ? "saving" as const : "waiting" as const }));
+      if (!restored.length) return;
+      writePendientes((items) => [...items, ...restored]);
+      for (const item of restored) void sendPendiente(item.draft.id);
+    }).catch(() => {});
+    const onOnline = () => {
+      for (const item of pendientesRef.current) {
+        if (item.status !== "saving") void sendPendiente(item.draft.id);
+      }
+    };
+    window.addEventListener("online", onOnline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", onOnline);
+    };
+  }, [sendPendiente, writePendientes]);
+
+  const visibles = useMemo(() => {
+    if (!pendientes.length) return revisiones;
+    const ids = new Set(pendientes.map((item) => item.draft.id));
+    return [...pendientes.map((item) => item.row), ...revisiones.filter((row) => !ids.has(row.id))]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }, [pendientes, revisiones]);
 
   const refresh = useCallback(
     async ({ force = true }: RefreshOptions = {}) => {
@@ -524,7 +640,7 @@ export function RevisionesProvider({
   return (
     <Context.Provider
       value={{
-        revisiones,
+        revisiones: visibles,
         upsells,
         revisionActivity,
         activityError,
@@ -543,6 +659,11 @@ export function RevisionesProvider({
         acceptRevision,
         replaceRevision,
         revisionPatch,
+        pendientes,
+        enviarRevision,
+        reintentarRevision,
+        tomarRevision,
+        descartarRevision,
       }}
     >
       {children}

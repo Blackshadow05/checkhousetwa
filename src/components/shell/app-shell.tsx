@@ -25,6 +25,7 @@ import { SCREEN_ORDER, SCREENS, type ScreenId } from "@/lib/navigation/screens";
 import type { InicioRevisionRow, MenuDelDia, UsuarioShell } from "@/types/database";
 import type { RevisionActivity } from "@/lib/casitas-sin-revision";
 import type { RevisionMode } from "@/lib/revision-form";
+import { restoreRevisionDraft } from "@/hooks/use-revision-draft";
 
 type AppShellProps = {
   initialUser?: UsuarioShell | null;
@@ -57,10 +58,10 @@ function AppShellFrame({
   menusError: string | null;
   session: UsuarioShell;
 }) {
-  const { selectedRevision, acceptRevision } = useRevisiones();
+  const { selectedRevision, enviarRevision, pendientes, revisiones } = useRevisiones();
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<RevisionMode>("manual");
-  const [shareEvidence, setShareEvidence] = useState<{ casita: string; files: File[] } | null>(null);
+  const [shareEvidence, setShareEvidence] = useState<{ id: string; casita: string; files: File[] } | null>(null);
   const formVisible = formOpen && navigation.screen === "revisiones";
   useLayoutEffect(() => {
     const syncForm = () => {
@@ -109,7 +110,10 @@ function AppShellFrame({
     inicio: (
       <InicioScreen account={account} menus={menusInicio} menusError={menusError} />
     ),
-    revisiones: <RevisionesScreen />,
+    revisiones: <RevisionesScreen onEditarPendiente={(draft) => {
+      restoreRevisionDraft(draft);
+      openForm(draft.mode ?? "manual");
+    }} />,
     sync: <SyncScreen />,
   };
   const detailOpen = selectedRevision !== null;
@@ -148,10 +152,10 @@ function AppShellFrame({
               {screens[id]}
             </div>
           ))}
-          <RevisionFormScreen open={formVisible} mode={formMode} reviewer={session.nombre} onClose={closeForm} onSaved={(row, files) => {
-            acceptRevision(row);
+          <RevisionFormScreen open={formVisible} mode={formMode} reviewer={session.nombre} onClose={closeForm} onQueued={(draft, reconocimiento, files) => {
+            enviarRevision(draft, reconocimiento);
             closeForm();
-            if (files.length) setShareEvidence({ casita: row.casita, files });
+            if (files.length) setShareEvidence({ id: draft.id, casita: String(Number(draft.values.casita)), files });
           }} />
           {navigation.screen === "revisiones" && !formVisible && !detailOpen && <NewRevisionFab onSelect={openForm} />}
           {showTop[navigation.screen] && !formVisible && !detailOpen && (
@@ -173,7 +177,7 @@ function AppShellFrame({
       {selectedRevision && (
         <RevisionDetailScreen key={selectedRevision.id} />
       )}
-      {shareEvidence && <RevisionShareSheet casita={shareEvidence.casita} files={shareEvidence.files} onClose={() => {
+      {shareEvidence && <RevisionShareSheet casita={shareEvidence.casita} files={shareEvidence.files} status={pendientes.find((item) => item.draft.id === shareEvidence.id)?.status ?? (revisiones.some((row) => row.id === shareEvidence.id) ? "saved" : "error")} onClose={() => {
         setShareEvidence(null);
         requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(".new-revision-fab")?.focus({ preventScroll: true }));
       }} />}

@@ -4,7 +4,10 @@ import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } fr
 import {
   Check,
   ChevronRight,
+  CircleAlert,
   ClipboardCheck,
+  CloudOff,
+  LoaderCircle,
   MessageSquareText,
   Search,
   SlidersHorizontal,
@@ -13,6 +16,7 @@ import {
 } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
 import { CAJA_FUERTE_FILTERS, REPORT_FILTERS } from "@/lib/revisiones-archive";
 import {
@@ -23,6 +27,8 @@ import {
   shortTime,
   statusAppearance,
 } from "@/lib/revisiones-display";
+import type { RevisionDraft } from "@/lib/revision-form";
+import type { PendingRevision } from "@/lib/revision-outbox";
 import type { InicioRevisionRow } from "@/types/database";
 import styles from "./revisiones-screen.module.css";
 
@@ -46,9 +52,24 @@ function groupByDay(rows: InicioRevisionRow[]) {
   return result;
 }
 
-export function RevisionesScreen() {
+const PENDING_LABEL: Record<PendingRevision["status"], string> = {
+  saving: "Guardando…",
+  waiting: "Sin conexión",
+  error: "No se guardó",
+};
+
+export function RevisionesScreen({ onEditarPendiente }: { onEditarPendiente: (draft: RevisionDraft) => void }) {
   const archive = useRevisionesArchive();
+  const { pendientes, reintentarRevision, tomarRevision, descartarRevision } = useRevisiones();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [pendienteId, setPendienteId] = useState<string | null>(null);
+  const [confirmarDescarte, setConfirmarDescarte] = useState(false);
+  const pendingById = useMemo(() => new Map(pendientes.map((item) => [item.draft.id, item])), [pendientes]);
+  const pendienteAbierto = pendienteId ? pendingById.get(pendienteId) ?? null : null;
+  const cerrarPendiente = () => {
+    setPendienteId(null);
+    setConfirmarDescarte(false);
+  };
   const sentinelRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => groupByDay(archive.rows), [archive.rows]);
   const periodIndex = archive.date
@@ -242,15 +263,24 @@ export function RevisionesScreen() {
                 <span>{dayRows.length}</span>
               </div>
               <div className={styles.list}>
-                {dayRows.map((row, index) => (
+                {dayRows.map((row, index) => {
+                  const pendiente = pendingById.get(row.id);
+                  return (
                   <button
                     key={revisionKey(row, index)}
                     className={styles.row}
                     data-tone={statusAppearance(row.caja_fuerte).tone}
                     data-revision-card={row.id || undefined}
+                    data-pending={pendiente?.status}
                     type="button"
-                    onClick={() => archive.openRevision(row)}
-                    aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${row.created_at}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}
+                    aria-disabled={pendiente?.status === "saving" || undefined}
+                    onClick={() => {
+                      if (!pendiente) archive.openRevision(row);
+                      else if (pendiente.status !== "saving") setPendienteId(row.id);
+                    }}
+                    aria-label={pendiente
+                      ? `Casita ${row.casita}, ${row.quien_revisa}, ${PENDING_LABEL[pendiente.status]}`
+                      : `Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${row.created_at}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}
                   >
                     <span className={styles.plaque}>
                       <strong className={styles.number}>{row.casita}</strong>
@@ -264,12 +294,22 @@ export function RevisionesScreen() {
                       </span>
                       <span className={styles.name}>{row.quien_revisa}</span>
                     </span>
-                    <span className={styles.meta}>
-                      <span className={styles.time}>{shortTime(row.created_at)}</span>
-                      <ChevronRight size={18} aria-hidden="true" />
-                    </span>
+                    {pendiente ? (
+                      <span className={styles.pending} data-status={pendiente.status}>
+                        {pendiente.status === "saving" ? <LoaderCircle size={15} className="revision-spinner" aria-hidden="true" />
+                          : pendiente.status === "waiting" ? <CloudOff size={15} aria-hidden="true" />
+                            : <CircleAlert size={15} aria-hidden="true" />}
+                        {PENDING_LABEL[pendiente.status]}
+                      </span>
+                    ) : (
+                      <span className={styles.meta}>
+                        <span className={styles.time}>{shortTime(row.created_at)}</span>
+                        <ChevronRight size={18} aria-hidden="true" />
+                      </span>
+                    )}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </section>
           ))
@@ -303,6 +343,60 @@ export function RevisionesScreen() {
       <div ref={sentinelRef} className="list-sentinel">
         {archive.loadingMore ? "Cargando más…" : null}
       </div>
+
+      <BottomSheet
+        open={Boolean(pendienteAbierto)}
+        onClose={cerrarPendiente}
+        title={pendienteAbierto ? `Casita ${pendienteAbierto.row.casita}` : "Revisión pendiente"}
+      >
+        {pendienteAbierto && (
+          <>
+            <p className="sheet-description">
+              {pendienteAbierto.status === "waiting"
+                ? "Sin conexión. La revisión se enviará cuando vuelva la conexión."
+                : pendienteAbierto.error ?? "No pudimos guardar la revisión."}
+            </p>
+            <div className="sheet-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  const item = tomarRevision(pendienteAbierto.draft.id);
+                  cerrarPendiente();
+                  if (item) onEditarPendiente(item.draft);
+                }}
+              >
+                Editar
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!archive.online}
+                onClick={() => {
+                  reintentarRevision(pendienteAbierto.draft.id);
+                  cerrarPendiente();
+                }}
+              >
+                Reintentar
+              </button>
+            </div>
+            <button
+              type="button"
+              className={`text-action ${styles.discard}`}
+              onClick={() => {
+                if (!confirmarDescarte) {
+                  setConfirmarDescarte(true);
+                  return;
+                }
+                descartarRevision(pendienteAbierto.draft.id);
+                cerrarPendiente();
+              }}
+            >
+              {confirmarDescarte ? "Confirmar: descartar esta revisión" : "Descartar revisión"}
+            </button>
+          </>
+        )}
+      </BottomSheet>
 
       <BottomSheet
         open={filtersOpen}

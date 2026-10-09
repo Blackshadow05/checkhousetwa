@@ -7,6 +7,11 @@ import { newRevisionDraft, type RevisionDraft, type RevisionMode } from "@/lib/r
 
 const DRAFT_KEY = "new-revision-draft-v1";
 type Snapshot = { id: typeof DRAFT_KEY; draft: RevisionDraft | null };
+let draftToRestore: RevisionDraft | null = null;
+
+export function restoreRevisionDraft(draft: RevisionDraft) {
+  draftToRestore = draft;
+}
 
 function isFormRoute() {
   return new URLSearchParams(window.location.search).get("nueva") === "1";
@@ -57,7 +62,8 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
   const beginFresh = useCallback(() => {
     generation.current += 1;
     discardPhotos(current.current?.photos);
-    const next = newRevisionDraft(modeRef.current);
+    const next = draftToRestore ?? newRevisionDraft(modeRef.current);
+    draftToRestore = null;
     current.current = next;
     setDraft(next);
     void persist(next);
@@ -103,7 +109,7 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
     if (open && !previouslyOpen) {
       if (restoreOnOpen.current) {
         restoreOnOpen.current = false;
-        return;
+        if (!draftToRestore) return;
       }
       beginFresh();
       return;
@@ -119,9 +125,12 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
     void persist(next);
   }, [persist]);
 
-  const clear = useCallback(async () => {
-    await abandon();
-  }, [abandon]);
+  const detach = useCallback(() => {
+    generation.current += 1;
+    current.current = newRevisionDraft(modeRef.current);
+    setDraft(current.current);
+    void persist(null);
+  }, [persist]);
 
-  return { draft, storage, update, clear };
+  return { draft, storage, update, detach };
 }

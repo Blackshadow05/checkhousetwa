@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { BedDouble, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, LoaderCircle, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
-import { createRevision } from "@/app/actions/revisiones";
+import { BedDouble, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
 import { useRevisionDraft } from "@/hooks/use-revision-draft";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import { statusAppearance } from "@/lib/revisiones-display";
-import { BOOLEAN_FIELDS, CAJA_FUERTE_NO_EVIDENCE, QUANTITY_LIMITS, evidencePhotoLimit, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionFormErrors, type RevisionFormValues, type RevisionMode, type RevisionPhoto } from "@/lib/revision-form";
+import { BOOLEAN_FIELDS, CAJA_FUERTE_NO_EVIDENCE, QUANTITY_LIMITS, evidencePhotoLimit, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionDraft, type RevisionFormErrors, type RevisionFormValues, type RevisionMode, type RevisionPhoto } from "@/lib/revision-form";
 import { prepareRevisionPhoto, prepareRevisionPhotoWith, revisionShareFiles } from "@/lib/revision-photos";
-import { discardUpload, ensureBackgroundUploads, releaseUploads, resolveEvidenciaUrls } from "@/lib/revision-evidence-upload";
-import type { InicioRevisionRow } from "@/types/database";
+import { discardUpload, ensureBackgroundUploads } from "@/lib/revision-evidence-upload";
+import type { RevisionRecognitionInput } from "@/lib/revision-recognition-log";
 import { RevisionPhotoPreview, type PhotoStatus } from "@/components/screens/revision-photo-preview";
 import { RecognitionResults, RecognitionScanCard, recognitionStyles, type FotoPrevia } from "@/components/screens/revision-recognition";
 import { useInventarioCasitas } from "@/hooks/use-inventario-casitas";
@@ -97,16 +96,15 @@ function withoutInventoryErrors(errors: RevisionFormErrors): RevisionFormErrors 
   return Object.fromEntries(Object.entries(errors).filter(([key]) => !INVENTARIO_KEY_SET.has(key))) as RevisionFormErrors;
 }
 
-export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, onSaved }: {
-  open: boolean; mode?: RevisionMode; reviewer?: string; onClose: () => void; onSaved: (row: InicioRevisionRow, files: File[]) => void;
+export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, onQueued }: {
+  open: boolean; mode?: RevisionMode; reviewer?: string; onClose: () => void;
+  onQueued: (draft: RevisionDraft, reconocimiento: RevisionRecognitionInput | null, files: File[]) => void;
 }) {
-  const { draft, storage, update, clear } = useRevisionDraft(open, mode);
+  const { draft, storage, update, detach } = useRevisionDraft(open, mode);
   const { online, revisiones } = useRevisiones();
   const [errors, setErrors] = useState<RevisionFormErrors>({});
   const [message, setMessage] = useState("");
   const [preparing, setPreparing] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const [progress, setProgress] = useState("");
   const inFlight = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
@@ -124,7 +122,6 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     setShownDraftId(draft?.id);
     setErrors({});
     setMessage("");
-    setProgress("");
     setScanError("");
     setAvisoEspera(false);
     setEditarRevisor(false);
@@ -163,7 +160,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
 
   if (!draft) return open ? <div className="revision-form-screen"><p className="revision-form-loading" role="status">Preparando tu revisión…</p></div> : null;
   const { values, photos } = draft;
-  const busy = pending || (!recognition && preparing);
+  const busy = !recognition && preparing;
   const scan = recognition ? draft.scan ?? null : null;
   const sinEscanear = recognition ? photos.filter((photo) => !draft.escaneos?.[photo.id]) : [];
   const falloEscaneo = sinEscanear.map((photo) => escaneo.fallidas[photo.id]).find(Boolean) ?? "";
@@ -308,42 +305,17 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     if (Object.keys(nextErrors).length) {
       focusError(nextErrors); return;
     }
-    if (!navigator.onLine) { setMessage("Estás sin conexión. Puedes seguir llenando el borrador y guardarlo al volver a conectarte."); return; }
     inFlight.current = true;
+    const queued: RevisionDraft = { ...draft, values: stamped };
+    const reconocimiento: RevisionRecognitionInput | null = recognition && draft.scan
+      ? { detectados: draft.scan.detectados, at: draft.scan.at, model: draft.scan.model }
+      : null;
+    const shareFiles = revisionShareFiles(photos, stamped.casita);
+    detach();
+    setErrors({});
     setMessage("");
-    startTransition(async () => {
-      try {
-        const shareFiles = revisionShareFiles(photos, stamped.casita);
-        const photoIds = photos.map((photo) => photo.id);
-        let paths: string[] = [];
-        if (photos.length) {
-          setProgress("Subiendo evidencias…");
-          try {
-            paths = await resolveEvidenciaUrls(photos);
-          } catch {
-            setMessage("No pudimos subir una evidencia. Conservamos el borrador para que puedas reintentar.");
-            return;
-          }
-        }
-        setProgress("Guardando revisión…");
-        const result = await createRevision({
-          id: draft.id, values: withCurrentRevisionTime(stamped), photos: paths,
-          reconocimiento: recognition && draft.scan ? {
-            detectados: draft.scan.detectados, at: draft.scan.at, model: draft.scan.model,
-          } : null,
-        });
-        if (!result.row) { setMessage(result.error ?? "No pudimos confirmar el guardado."); return; }
-        releaseUploads(photoIds);
-        await clear();
-        setErrors({});
-        onSaved(result.row, shareFiles);
-      } catch {
-        setMessage("No pudimos confirmar el guardado. Tu borrador sigue aquí; vuelve a intentarlo.");
-      } finally {
-        inFlight.current = false;
-        setProgress("");
-      }
-    });
+    inFlight.current = false;
+    onQueued(queued, reconocimiento, shareFiles);
   };
 
   const removePhoto = (photoId: string) => {
@@ -385,7 +357,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
           </div>
           <div className={`revision-draft-status ${storage === "error" || !online ? "is-warning" : ""}`} role="status">
             {!online ? <WifiOff size={14} /> : storage === "saved" ? <CheckCheck size={15} /> : null}
-            <span>{storage === "error" ? "No pudimos guardar el progreso en este dispositivo. Mantén la app abierta." : storage === "saving" ? "Guardando tu progreso…" : !online ? "Sin conexión. Puedes continuar; se guarda al recargar." : storage === "saved" ? "Progreso guardado" : "Tu progreso se guarda mientras estás en el formulario."}</span>
+            <span>{storage === "error" ? "No pudimos guardar el progreso en este dispositivo. Mantén la app abierta." : storage === "saving" ? "Guardando tu progreso…" : !online ? "Sin conexión. Puedes guardar; la revisión se enviará al volver la conexión." : storage === "saved" ? "Progreso guardado" : "Tu progreso se guarda mientras estás en el formulario."}</span>
           </div>
           <fieldset className="revision-form-fields" disabled={busy}>
               <FormCard icon={<House size={18} />} title="Datos de la revisión">
@@ -436,7 +408,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
           {Object.values(errors).some(Boolean) && <p className="sr-only" role="alert">Revisa los campos marcados antes de continuar.</p>}
           <footer className="revision-form-footer">
             <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Salir</button>
-            <button type="submit" className="primary-button" disabled={busy || !online}>{pending ? <><LoaderCircle size={16} className="revision-spinner" />{progress || "Guardando…"}</> : <><CloudCheck size={16} />{online ? "Guardar revisión" : "Sin conexión"}</>}</button>
+            <button type="submit" className="primary-button" disabled={busy}><CloudCheck size={16} />Guardar revisión</button>
           </footer>
         </div>
       </form>

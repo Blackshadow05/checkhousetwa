@@ -410,3 +410,30 @@
   .row, .segmented button, .segmentIndicator { transition: none; }
   .groups[data-direction] { animation: none; }
 }
+
+.pending {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.pending[data-status="error"] {
+  color: var(--destructive);
+}
+
+.row[data-pending] .plaque {
+  opacity: 0.6;
+}
+
+.discard {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 8px;
+  color: var(--destructive);
+}
