@@ -60,15 +60,19 @@ function emailPattern(email: string): string {
   return email.replace(/[\\%_]/g, "\\$&");
 }
 
-async function fetchLinkedProfile(authUser: User): Promise<AuthProfile | null> {
+export async function fetchLinkedProfileByAuthId(authUserId: string): Promise<AuthProfile | null> {
   const { data, error } = await createAdminClient()
     .from("Usuarios")
     .select(PROFILE_COLUMNS)
-    .eq("auth_user_id", authUser.id)
+    .eq("auth_user_id", authUserId)
     .maybeSingle();
 
   if (error) throw error;
   return toProfile(data);
+}
+
+function fetchLinkedProfile(authUser: User): Promise<AuthProfile | null> {
+  return fetchLinkedProfileByAuthId(authUser.id);
 }
 
 export async function fetchProfileForAuthUser(

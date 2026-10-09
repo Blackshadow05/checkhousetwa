@@ -9,7 +9,7 @@ export async function updateSession(request: NextRequest) {
   const hasAuthCookie = request.cookies
     .getAll()
     .some((cookie) => cookie.name.includes("-auth-token"));
-  if (!hasAuthCookie) {
+  if (!hasAuthCookie || request.headers.has("next-action")) {
     return NextResponse.next({ request });
   }
 

@@ -5,6 +5,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { clearUsuarioSession, getUsuarioSession } from "@/lib/usuarios-session";
 import {
   fetchAuthorizedProfile,
+  fetchLinkedProfileByAuthId,
   isGoogleProvider,
   linkAuthUserToProfile,
   permiteGoogle,
@@ -79,9 +80,22 @@ export async function getPendingSession(client: AuthClient, profile: AuthProfile
   };
 }
 
+function sessionSubject(accessToken: string | undefined) {
+  try {
+    const payload = JSON.parse(Buffer.from(accessToken?.split(".")[1] ?? "", "base64url").toString());
+    return typeof payload?.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getSupabaseUsuario() {
   try {
     const client = await createClient();
+    const { data: current } = await client.auth.getSession();
+    const subject = sessionSubject(current.session?.access_token);
+    if (!subject) return null;
+    const linked = fetchLinkedProfileByAuthId(subject).catch(() => null);
     const { data, error } = await client.auth.getUser();
     if (error || !data.user) return null;
 
@@ -92,7 +106,8 @@ export async function getSupabaseUsuario() {
       return null;
     }
 
-    const profile = await fetchAuthorizedProfile(client, data.user);
+    const prefetched = data.user.id === subject ? await linked : null;
+    const profile = prefetched ?? await fetchAuthorizedProfile(client, data.user);
     if (!profile || profile.Rol === "inactivo") return null;
     if (!hasCompletedAuthentication(assurance, profile, data.user)) return null;
     return { id: profile.id, nombre: profile.Usuario, rol: profile.Rol };
