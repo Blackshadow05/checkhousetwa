@@ -58,7 +58,7 @@ function AppShellFrame({
   menusError: string | null;
   session: UsuarioShell;
 }) {
-  const { selectedRevision, enviarRevision, pendientes, revisiones } = useRevisiones();
+  const { selectedRevision, enviarRevision, pendientes, confirmadas } = useRevisiones();
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<RevisionMode>("manual");
   const [shareEvidence, setShareEvidence] = useState<{ id: string; casita: string; files: File[] } | null>(null);
@@ -186,7 +186,7 @@ function AppShellFrame({
       {selectedRevision && (
         <RevisionDetailScreen key={selectedRevision.id} />
       )}
-      {shareEvidence && <RevisionShareSheet casita={shareEvidence.casita} files={shareEvidence.files} status={pendientes.find((item) => item.draft.id === shareEvidence.id)?.status ?? (revisiones.some((row) => row.id === shareEvidence.id) ? "saved" : "error")} onClose={() => {
+      {shareEvidence && <RevisionShareSheet casita={shareEvidence.casita} files={shareEvidence.files} status={pendientes.find((item) => item.draft.id === shareEvidence.id)?.status ?? (confirmadas.has(shareEvidence.id) ? "saved" : "error")} onClose={() => {
         setShareEvidence(null);
         requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(".new-revision-fab")?.focus({ preventScroll: true }));
       }} />}

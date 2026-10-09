@@ -55,6 +55,7 @@ type RevisionState = {
   replaceRevision: (row: InicioRevisionRow) => void;
   revisionPatch: InicioRevisionRow | null;
   pendientes: PendingRevision[];
+  confirmadas: ReadonlySet<string>;
   enviarRevision: (draft: RevisionDraft, reconocimiento: RevisionRecognitionInput | null) => void;
   reintentarRevision: (id: string) => void;
   tomarRevision: (id: string) => PendingRevision | null;
@@ -116,6 +117,7 @@ export function RevisionesProvider({
   const [pendientes, setPendientes] = useState<PendingRevision[]>([]);
   const pendientesRef = useRef<PendingRevision[]>([]);
   const sendingRef = useRef(new Set<string>());
+  const [confirmadas, setConfirmadas] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
     revisionesRef.current = revisiones;
@@ -312,6 +314,7 @@ export function RevisionesProvider({
         return;
       }
       releaseUploads(draft.photos.map((photo) => photo.id));
+      setConfirmadas((previous) => new Set(previous).add(id));
       writePendientes((items) => items.filter((entry) => entry.draft.id !== id));
       acceptRevision(result.row);
       sonarGuardado();
@@ -665,6 +668,7 @@ export function RevisionesProvider({
         replaceRevision,
         revisionPatch,
         pendientes,
+        confirmadas,
         enviarRevision,
         reintentarRevision,
         tomarRevision,
