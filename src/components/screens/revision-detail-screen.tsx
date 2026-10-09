@@ -500,6 +500,9 @@ export function RevisionDetailScreen() {
               <span className="detail-person-copy">
                 <span>Revisó</span>
                 <strong>{row.quien_revisa}</strong>
+                {row.marcada_por && row.marcada_por !== row.quien_revisa && (
+                  <span>Marcó primero: {row.marcada_por}{row.marcada_at ? ` · ${shortTime(row.marcada_at)}` : ""}</span>
+                )}
               </span>
               <Pencil size={15} className="detail-edit-icon" aria-hidden="true" />
             </button>

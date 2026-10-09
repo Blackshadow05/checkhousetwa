@@ -3,7 +3,7 @@
 import { getArchiveRevisiones, getInicioRevisiones, getLatestRevisionCasita, getRevisionInicioById, listRevisionEdits, listRevisionNotes } from "@/lib/db/revisiones-casitas";
 import type { ArchiveQuery } from "@/lib/revisiones-archive";
 import { createPrivateClient, createPrivateSession } from "@/lib/auth/session";
-import { costaRicaDateTime, revisionInsert, validateRevisionForm, withCurrentRevisionTime, type RevisionFormValues } from "@/lib/revision-form";
+import { costaRicaDateTime, pendienteInsert, revisionInsert, validatePendienteForm, validateRevisionForm, withCurrentRevisionTime, type RevisionFormValues } from "@/lib/revision-form";
 import { isEvidenceCloudinaryPath } from "@/lib/revision-evidence";
 import { isRevisionEditField, persistRevisionFieldValue, validateRevisionField, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
 import { mapNotaRevision, noteRevisionPage, NOTAS_REVISION_PAGE_SIZE, persistNotaRevision, persistNotaRevisionImage, validateNotaRevision, validateNotaRevisionImage, type RevisionNoteItem } from "@/lib/revision-notes";
@@ -32,14 +32,23 @@ export async function fetchArchiveRevisiones(input: ArchiveQuery) {
   return getArchiveRevisiones(input);
 }
 
-export async function createRevision(input: { id: string; values: RevisionFormValues; photos: string[]; reconocimiento?: RevisionRecognitionInput | null }) {
+export async function createRevision(input: { id: string; values: RevisionFormValues; photos: string[]; reconocimiento?: RevisionRecognitionInput | null; pendiente?: boolean; completa?: string | null }) {
   try {
     if (!input || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.id) ||
       !input.values || Object.values(input.values).some((value) => typeof value !== "string") ||
-      !Array.isArray(input.photos) || input.photos.length > 3) {
+      !Array.isArray(input.photos) || input.photos.length > 3 ||
+      (input.completa != null && (typeof input.completa !== "string" || !REVISION_ID.test(input.completa)))) {
       return { row: null, error: "Revisa los datos del formulario e inténtalo de nuevo." };
     }
     const values = withCurrentRevisionTime(input.values);
+    if (input.pendiente === true) {
+      if (input.photos.length || input.reconocimiento != null || input.completa != null) {
+        return { row: null, error: "Revisa los datos del formulario e inténtalo de nuevo." };
+      }
+      const errors = validatePendienteForm(values);
+      if (Object.keys(errors).length) return { row: null, error: "Selecciona la casita y quién revisa.", errors };
+      return await saveRevision(await createPrivateClient(), pendienteInsert(input.id, values));
+    }
     const errors = validateRevisionForm(values, undefined, input.photos.length);
     if (Object.keys(errors).length) return { row: null, error: "Hay campos pendientes. Revisa el formulario.", errors };
     if (input.photos.some((path) => typeof path !== "string" || !isEvidenceCloudinaryPath(path))) {
@@ -58,7 +67,7 @@ export async function createRevision(input: { id: string; values: RevisionFormVa
       if (inventory.error) return { row: null, error: "No pudimos comprobar el reconocimiento. Conservamos el borrador; vuelve a intentarlo." };
       registro = registroReconocimiento(values, recognition, inventory.data ? mapInventarioCasita(inventory.data) : null);
     }
-    return await saveRevision(client, revisionInsert(input.id, values, input.photos, registro));
+    return await saveRevision(client, revisionInsert(input.id, values, input.photos, registro), input.completa ?? null);
   } catch {
     return { row: null, error: "No pudimos conectar para guardar. Tu borrador sigue disponible." };
   }

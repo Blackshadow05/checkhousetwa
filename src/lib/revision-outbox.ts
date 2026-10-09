@@ -1,5 +1,5 @@
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
-import { revisionInsert, type RevisionDraft } from "@/lib/revision-form";
+import { pendienteInsert, revisionInsert, type RevisionDraft } from "@/lib/revision-form";
 import type { RevisionRecognitionInput } from "@/lib/revision-recognition-log";
 import { mapInicioRevision } from "@/lib/revisiones-map";
 import type { InicioRevisionRow, RevisionCasitaInicio } from "@/types/database";
@@ -18,8 +18,12 @@ const OUTBOX_KEY = "revision-outbox-v1";
 type Snapshot = { id: typeof OUTBOX_KEY; items: PendingRevision[] };
 
 export function pendingRevisionRow(draft: RevisionDraft): InicioRevisionRow {
+  if (draft.completarDespues) {
+    const insert = pendienteInsert(draft.id, draft.values);
+    return mapInicioRevision({ ...insert, marcada_por: insert.quien_revisa, marcada_at: insert.created_at } as RevisionCasitaInicio);
+  }
   const insert = revisionInsert(draft.id, draft.values, []);
-  return mapInicioRevision({ ...insert, registro_reconocimiento: null } as RevisionCasitaInicio);
+  return mapInicioRevision({ ...insert, registro_reconocimiento: null, marcada_por: draft.completa?.marcadaPor ?? null } as RevisionCasitaInicio);
 }
 
 export async function loadOutbox(): Promise<PendingRevision[]> {

@@ -188,7 +188,7 @@ export function InicioScreen({
     if (showAll) setShowAll(false);
     const number = String(casita);
     const local = [...revisiones, ...upsells]
-      .filter((row) => casitaNumber(row.casita) === number)
+      .filter((row) => !row.pendiente && casitaNumber(row.casita) === number)
       .sort((left, right) => right.created_at.localeCompare(left.created_at))[0];
     if (local) {
       fromSheet.current = wasSheet;

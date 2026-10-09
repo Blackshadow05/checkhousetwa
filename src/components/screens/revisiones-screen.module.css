@@ -437,3 +437,60 @@
   margin-top: 8px;
   color: var(--destructive);
 }
+
+.row[data-tone="pendiente"] {
+  --card-tint: var(--alert-border);
+  --card-ink: var(--alert-text);
+  background: var(--alert-bg);
+  border-radius: 16px;
+  box-shadow: inset 3px 0 0 var(--alert-border);
+}
+
+.row[data-tone="pendiente"] .plaque {
+  color: #3d2c00;
+}
+
+.row[data-tone="pendiente"] .name {
+  color: var(--alert-text);
+}
+
+.laterChip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--alert-border);
+  color: #3d2c00;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.completeOptions {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.completeOptions button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.completeOptions button:active {
+  background: var(--muted);
+}
+
+.row[data-tone="pendiente"]::before,
+.row[data-tone="pendiente"] + .row::before {
+  display: none;
+}

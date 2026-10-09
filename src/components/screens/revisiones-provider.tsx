@@ -14,7 +14,7 @@ import { createRevision, fetchCanalRevisiones, fetchInicioRevisiones } from "@/a
 import { applyRevisionActivityChange, type RevisionActivity } from "@/lib/casitas-sin-revision";
 import { runDetailTransition } from "@/lib/detail-transition";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
-import { todayKey } from "@/lib/revisiones-display";
+import { casitaNumber, todayKey } from "@/lib/revisiones-display";
 import { applyUpsellChange } from "@/lib/revisiones-map";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { discardUpload, releaseUploads, resolveEvidenciaUrls } from "@/lib/revision-evidence-upload";
@@ -229,10 +229,12 @@ export function RevisionesProvider({
   const acceptRevision = useCallback((row: InicioRevisionRow) => {
     generation.current += 1;
     if (inFlight.current) pendingForce.current = true;
-    const next = [row, ...revisionesRef.current.filter((item) => item.id !== row.id)]
+    const casita = casitaNumber(row.casita);
+    const next = [row, ...revisionesRef.current.filter((item) =>
+      item.id !== row.id && !(item.pendiente && casitaNumber(item.casita) === casita))]
       .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100);
-    const nextUpsells = applyUpsellChange(upsellsRef.current, "INSERT", row, null);
-    const nextActivity = applyRevisionActivityChange(activityRef.current, "INSERT", row, null, todayKey());
+    const nextUpsells = row.pendiente ? upsellsRef.current : applyUpsellChange(upsellsRef.current, "INSERT", row, null);
+    const nextActivity = row.pendiente ? activityRef.current : applyRevisionActivityChange(activityRef.current, "INSERT", row, null, todayKey());
     revisionesRef.current = next;
     upsellsRef.current = nextUpsells;
     activityRef.current = nextActivity;
@@ -301,7 +303,10 @@ export function RevisionesProvider({
           return;
         }
       }
-      const result = await createRevision({ id, values: draft.values, photos: paths, reconocimiento: item.reconocimiento });
+      const result = await createRevision({
+        id, values: draft.values, photos: paths, reconocimiento: item.reconocimiento,
+        pendiente: draft.completarDespues === true, completa: draft.completa?.id ?? null,
+      });
       if (!result.row) {
         marcarPendiente(id, "error", result.error ?? "No pudimos confirmar el guardado.");
         return;
@@ -366,7 +371,7 @@ export function RevisionesProvider({
 
   const visibles = useMemo(() => {
     if (!pendientes.length) return revisiones;
-    const ids = new Set(pendientes.map((item) => item.draft.id));
+    const ids = new Set(pendientes.flatMap((item) => item.draft.completa ? [item.draft.id, item.draft.completa.id] : [item.draft.id]));
     return [...pendientes.map((item) => item.row), ...revisiones.filter((row) => !ids.has(row.id))]
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   }, [pendientes, revisiones]);

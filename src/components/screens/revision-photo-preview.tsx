@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Maximize2, X } from "lucide-react";
+import { Check, Maximize2, X } from "lucide-react";
 import PhotoSwipe from "photoswipe";
 import "photoswipe/style.css";
-import type { RevisionPhoto } from "@/lib/revision-form";
+import type { FaseRevelado } from "@/hooks/use-revelado-escaneo";
+import type { RevisionPhoto, RevisionScanBox } from "@/lib/revision-form";
 
 function evidenceLabel(index: number) {
   return `Evidencia ${String(index + 1).padStart(2, "0")}`;
@@ -18,7 +19,7 @@ function photoSize(bytes: number) {
 }
 
 export type PhotoMark = { label: string; x: number; y: number; w: number; h: number };
-export type PhotoStatus = { text: string; tone?: "busy" | "done" | "error" };
+export type PhotoStatus = { text: string; tone?: "busy" | "queued" | "scanning" | "done" | "error"; phase?: FaseRevelado; cajas?: readonly RevisionScanBox[] };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -79,6 +80,17 @@ function PhotoMarks({ marks, width, height }: { marks: readonly PhotoMark[]; wid
   );
 }
 
+function ScanBoxes({ cajas, width, height }: { cajas: readonly RevisionScanBox[]; width: number; height: number }) {
+  const radius = Math.max(width, height) * 0.006;
+  return (
+    <svg className="revision-photo-scan-boxes" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      {cajas.map((caja, index) => (
+        <rect key={index} x={caja.x * width} y={caja.y * height} width={caja.w * width} height={caja.h * height} rx={radius}
+          vectorEffect="non-scaling-stroke" style={{ animationDelay: `${Math.round(Math.min(1, caja.y + caja.h / 2) * 720)}ms` }} />
+      ))}
+    </svg>
+  );
+}
 
 export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active, label: labelOverride, marks, status }: {
   photo: RevisionPhoto;
@@ -179,7 +191,7 @@ export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active,
   };
 
   return (
-    <figure className="revision-photo" data-state={status?.tone}>
+    <figure className="revision-photo" data-state={status?.tone} data-phase={status?.phase}>
       <button ref={triggerRef} type="button" className="revision-photo-open" disabled={disabled}
         aria-label={`Abrir ${label}, ${status?.text ?? size}${marked ? `, ${marked.length === 1 ? "1 artículo marcado" : `${marked.length} artículos marcados`}` : ""}`} onClick={openViewer}>
         {/* Local Blob URLs must bypass the remote image optimizer. */}
@@ -189,6 +201,9 @@ export function RevisionPhotoPreview({ photo, index, onRemove, disabled, active,
           setNatural({ width: image.naturalWidth, height: image.naturalHeight });
         }} />
         {marked && natural && <PhotoMarks marks={marked} width={natural.width} height={natural.height} />}
+        {status?.phase === "escanea" && status.cajas?.length && natural ? <ScanBoxes cajas={status.cajas} width={natural.width} height={natural.height} /> : null}
+        {status?.phase && status.phase !== "encoge" && <span className="revision-photo-scan" aria-hidden="true">{status.phase === "escanea" && <span className="revision-photo-scan-line" />}</span>}
+        {status?.phase === "encoge" && status.tone === "done" && <span className="revision-photo-scan-check" aria-hidden="true"><Check size={20} strokeWidth={3} /></span>}
         <span className="revision-photo-expand" aria-hidden="true"><Maximize2 size={15} /></span>
       </button>
       <button type="button" className="revision-photo-remove" onClick={onRemove} disabled={disabled} aria-label={`Quitar ${label}`}><X size={17} /></button>

@@ -87,6 +87,7 @@ export async function listCurrentUpsells(client: Client) {
   const { data: recent, error: recentError } = await revisionesCasitas(client)
     .select("id, casita")
     .in("casita", casitaValues)
+    .eq("pendiente", false)
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(5000);
 
@@ -117,6 +118,7 @@ export async function listRevisionActivity(client: Client, today = todayKey()): 
     for (;;) {
       let request = revisionesCasitas(client)
         .select("id, casita, created_at")
+        .eq("pendiente", false)
         .gte("created_at", `${shiftDay(today, -7)} 00:00:00`)
         .lt("created_at", `${shiftDay(today, 1)} 00:00:00`)
         .order("id", { ascending: true })
@@ -218,6 +220,7 @@ export async function getArchiveRevisiones(input: ArchiveQuery): Promise<{
       for (let page = 0; ; page += 500) {
         let indexRequest = revisionesCasitas(supabase)
           .select("id, casita, created_at")
+          .eq("pendiente", false)
           .order("created_at", { ascending: false, nullsFirst: false })
           .order("id", { ascending: false })
           .range(page, page + 499);
@@ -292,6 +295,7 @@ export async function getLatestRevisionCasita(client: Client, casita: string) {
   return revisionesCasitas(client)
     .select(INICIO_REVISION_COLUMNS)
     .eq("casita", casita)
+    .eq("pendiente", false)
     .order("created_at", { ascending: false, nullsFirst: false })
     .order("id", { ascending: false })
     .limit(1)

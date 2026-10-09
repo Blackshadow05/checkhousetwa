@@ -84,8 +84,13 @@ export function useRevisionesArchive() {
   useEffect(() => {
     if (filtersActive) return;
     setRows((current) => {
+      const ids = new Set(revisiones.map((item) => item.id));
+      const oldest = revisiones.reduce<string | null>(
+        (min, item) => (min === null || item.created_at < min ? item.created_at : min),
+        null,
+      );
       const extra = current.filter(
-        (row) => !revisiones.some((item) => item.id === row.id),
+        (row) => !ids.has(row.id) && oldest !== null && row.created_at < oldest,
       );
       return [...revisiones, ...extra];
     });

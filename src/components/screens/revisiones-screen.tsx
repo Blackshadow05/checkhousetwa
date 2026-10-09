@@ -6,8 +6,10 @@ import {
   ChevronRight,
   CircleAlert,
   ClipboardCheck,
+  ClipboardPen,
   CloudOff,
   LoaderCircle,
+  ScanSearch,
   MessageSquareText,
   Search,
   SlidersHorizontal,
@@ -27,7 +29,7 @@ import {
   shortTime,
   statusAppearance,
 } from "@/lib/revisiones-display";
-import type { RevisionDraft } from "@/lib/revision-form";
+import type { RevisionDraft, RevisionMode } from "@/lib/revision-form";
 import type { PendingRevision } from "@/lib/revision-outbox";
 import type { InicioRevisionRow } from "@/types/database";
 import styles from "./revisiones-screen.module.css";
@@ -58,12 +60,16 @@ const PENDING_LABEL: Record<PendingRevision["status"], string> = {
   error: "No se guardó",
 };
 
-export function RevisionesScreen({ onEditarPendiente }: { onEditarPendiente: (draft: RevisionDraft) => void }) {
+export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente }: {
+  onEditarPendiente: (draft: RevisionDraft) => void;
+  onCompletarPendiente: (row: InicioRevisionRow, mode: RevisionMode) => void;
+}) {
   const archive = useRevisionesArchive();
   const { pendientes, reintentarRevision, tomarRevision, descartarRevision } = useRevisiones();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [pendienteId, setPendienteId] = useState<string | null>(null);
   const [confirmarDescarte, setConfirmarDescarte] = useState(false);
+  const [porCompletar, setPorCompletar] = useState<InicioRevisionRow | null>(null);
   const pendingById = useMemo(() => new Map(pendientes.map((item) => [item.draft.id, item])), [pendientes]);
   const pendienteAbierto = pendienteId ? pendingById.get(pendienteId) ?? null : null;
   const cerrarPendiente = () => {
@@ -265,21 +271,26 @@ export function RevisionesScreen({ onEditarPendiente }: { onEditarPendiente: (dr
               <div className={styles.list}>
                 {dayRows.map((row, index) => {
                   const pendiente = pendingById.get(row.id);
+                  const marcada = row.pendiente && !pendiente;
+                  const marcadaPor = row.marcada_por ?? row.quien_revisa;
                   return (
                   <button
                     key={revisionKey(row, index)}
                     className={styles.row}
-                    data-tone={statusAppearance(row.caja_fuerte).tone}
+                    data-tone={row.pendiente ? "pendiente" : statusAppearance(row.caja_fuerte).tone}
                     data-revision-card={row.id || undefined}
                     data-pending={pendiente?.status}
                     type="button"
                     aria-disabled={pendiente?.status === "saving" || undefined}
                     onClick={() => {
-                      if (!pendiente) archive.openRevision(row);
+                      if (marcada) setPorCompletar(row);
+                      else if (!pendiente) archive.openRevision(row);
                       else if (pendiente.status !== "saving") setPendienteId(row.id);
                     }}
                     aria-label={pendiente
                       ? `Casita ${row.casita}, ${row.quien_revisa}, ${PENDING_LABEL[pendiente.status]}`
+                      : marcada
+                        ? `Casita ${row.casita} por completar, marcada por ${marcadaPor} a las ${shortTime(row.created_at)}. Completar`
                       : `Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${row.created_at}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}
                   >
                     <span className={styles.plaque}>
@@ -287,12 +298,20 @@ export function RevisionesScreen({ onEditarPendiente }: { onEditarPendiente: (dr
                     </span>
                     <span className={styles.content}>
                       <span className={styles.top}>
-                        <StatusBadge value={row.caja_fuerte} />
+                        {row.pendiente
+                          ? <span className={styles.laterChip}>Por completar</span>
+                          : <StatusBadge value={row.caja_fuerte} />}
                         {hasRevisionValue(row.notas) && (
                           <MessageSquareText size={14} className={styles.noteIcon} aria-hidden="true" />
                         )}
                       </span>
-                      <span className={styles.name}>{row.quien_revisa}</span>
+                      <span className={styles.name}>
+                        {row.pendiente
+                          ? `Marcada por ${marcadaPor}`
+                          : row.marcada_por && row.marcada_por !== row.quien_revisa
+                            ? `${row.quien_revisa} · marcó ${row.marcada_por}`
+                            : row.quien_revisa}
+                      </span>
                     </span>
                     {pendiente ? (
                       <span className={styles.pending} data-status={pendiente.status}>
@@ -343,6 +362,41 @@ export function RevisionesScreen({ onEditarPendiente }: { onEditarPendiente: (dr
       <div ref={sentinelRef} className="list-sentinel">
         {archive.loadingMore ? "Cargando más…" : null}
       </div>
+
+      <BottomSheet
+        open={Boolean(porCompletar)}
+        onClose={() => setPorCompletar(null)}
+        title={porCompletar ? `Casita ${porCompletar.casita}` : "Completar revisión"}
+      >
+        {porCompletar && (
+          <>
+            <p className="sheet-description">
+              {porCompletar.marcada_por ?? porCompletar.quien_revisa} la marcó para completar después
+              {" "}{revisionDay(porCompletar.created_at) === archive.today ? "hoy" : dayLabel(revisionDay(porCompletar.created_at), archive.today).toLowerCase()}
+              {" "}a las {shortTime(porCompletar.created_at)}. ¿Cómo quieres completarla?
+            </p>
+            <div className={styles.completeOptions}>
+              {([
+                { mode: "manual", label: "Ingreso manual", icon: <ClipboardPen size={20} aria-hidden="true" /> },
+                { mode: "reconocimiento", label: "Por reconocimiento", icon: <ScanSearch size={20} aria-hidden="true" /> },
+              ] as const).map((option) => (
+                <button
+                  key={option.mode}
+                  type="button"
+                  onClick={() => {
+                    const row = porCompletar;
+                    setPorCompletar(null);
+                    onCompletarPendiente(row, option.mode);
+                  }}
+                >
+                  <span>{option.label}</span>
+                  {option.icon}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </BottomSheet>
 
       <BottomSheet
         open={Boolean(pendienteAbierto)}

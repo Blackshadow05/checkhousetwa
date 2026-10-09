@@ -8,10 +8,6 @@ import type { RevisionDraft } from "@/lib/revision-form";
 
 type Sesion = { detector: DetectorArticulos; enCola: Set<string>; cola: Promise<void> };
 
-function avisar() {
-  if (document.visibilityState === "visible") navigator.vibrate?.(12);
-}
-
 export function useEscaneoArticulos(active: boolean, draft: RevisionDraft | null, update: (change: (draft: RevisionDraft) => RevisionDraft) => void) {
   const sesion = useRef<Sesion | null>(null);
   const entradas = useRef(new Map<string, EntradaDetector>());
@@ -54,7 +50,6 @@ export function useEscaneoArticulos(active: boolean, draft: RevisionDraft | null
             ...previous,
             escaneos: { ...previous.escaneos, [photo.id]: { ...resultado, at: new Date().toISOString(), model: ARTICULOS_MODEL_ID } },
           }));
-          avisar();
         } catch (error) {
           if (sesion.current !== actual) return;
           entradas.current.delete(photo.id);

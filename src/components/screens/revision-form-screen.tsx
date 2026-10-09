@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { BedDouble, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
 import { useRevisionDraft } from "@/hooks/use-revision-draft";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import { statusAppearance } from "@/lib/revisiones-display";
-import { BOOLEAN_FIELDS, CAJA_FUERTE_NO_EVIDENCE, QUANTITY_LIMITS, evidencePhotoLimit, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionDraft, type RevisionFormErrors, type RevisionFormValues, type RevisionMode, type RevisionPhoto } from "@/lib/revision-form";
+import { BOOLEAN_FIELDS, CAJA_FUERTE_NO_EVIDENCE, QUANTITY_LIMITS, evidencePhotoLimit, validatePendienteForm, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionDraft, type RevisionFormErrors, type RevisionFormValues, type RevisionMode, type RevisionPhoto } from "@/lib/revision-form";
 import { prepareRevisionPhoto, prepareRevisionPhotoWith, revisionShareFiles } from "@/lib/revision-photos";
 import { discardUpload, ensureBackgroundUploads } from "@/lib/revision-evidence-upload";
 import type { RevisionRecognitionInput } from "@/lib/revision-recognition-log";
@@ -17,6 +17,7 @@ import { useInventarioCasitas } from "@/hooks/use-inventario-casitas";
 import { entradaDesdeImagen } from "@/lib/articulos-detector";
 import { INVENTARIO_KEYS, compararInventario, type InventarioKey } from "@/lib/inventario-casitas";
 import { useEscaneoArticulos } from "@/hooks/use-escaneo-articulos";
+import { useReveladoEscaneo } from "@/hooks/use-revelado-escaneo";
 import { articulosEnFoto, conEscaneo } from "@/lib/revision-scan";
 import { createUuid } from "@/lib/uuid";
 import { cajaFuerteSugerida } from "@/lib/caja-fuerte-sugerida";
@@ -54,6 +55,8 @@ function ChoiceField({ name, label, options, value, onChange, errors, numeric = 
     </fieldset>
   );
 }
+
+const SIN_FOTOS: RevisionPhoto[] = [];
 
 function FormCard({ icon, title, children }: { icon?: ReactNode; title?: string; children: ReactNode }) {
   return <section className="revision-form-card">{title ? <h2><span>{icon}</span>{title}</h2> : null}{children}</section>;
@@ -112,6 +115,9 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const recognition = draft?.mode === "reconocimiento";
   const inventario = useInventarioCasitas(open && recognition);
   const escaneo = useEscaneoArticulos(open && recognition, draft, update);
+  const fotosEscaneo = recognition && draft ? draft.photos : SIN_FOTOS;
+  const revelado = useReveladoEscaneo(useMemo(() => fotosEscaneo.map((photo) => photo.id), [fotosEscaneo]), draft?.escaneos, escaneo.fallidas);
+  const [resultadosVistos, setResultadosVistos] = useState(false);
   const [previas, setPrevias] = useState<FotoPrevia[]>([]);
   const [scanError, setScanError] = useState("");
   const [avisoEspera, setAvisoEspera] = useState(false);
@@ -126,6 +132,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     setAvisoEspera(false);
     setEditarRevisor(false);
     setSugerida("");
+    setResultadosVistos(false);
   }
 
   useEffect(() => {
@@ -160,6 +167,8 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
 
   if (!draft) return open ? <div className="revision-form-screen"><p className="revision-form-loading" role="status">Preparando tu revisión…</p></div> : null;
   const { values, photos } = draft;
+  const completarDespues = draft.completarDespues === true && !draft.completa;
+  const completando = draft.completa ?? null;
   const busy = !recognition && preparing;
   const scan = recognition ? draft.scan ?? null : null;
   const sinEscanear = recognition ? photos.filter((photo) => !draft.escaneos?.[photo.id]) : [];
@@ -182,12 +191,20 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const mostrarRevisor = editarRevisor || Boolean(errors.quien_revisa) || !revisor;
   const photoStatus = (photoId: string): PhotoStatus => {
     const item = draft.escaneos?.[photoId];
-    if (item) {
-      const total = articulosEnFoto(item);
-      return { tone: "done", text: total === 0 ? "Sin artículos" : total === 1 ? "1 artículo" : `${total} artículos` };
+    const phase = revelado.fase(photoId);
+    if (phase === "crece" || phase === "escanea") return { tone: "scanning", text: "Escaneando…", phase, cajas: item?.cajas };
+    if (phase || revelado.revelado(photoId)) {
+      if (item) {
+        const total = articulosEnFoto(item);
+        return { tone: "done", text: total === 0 ? "Sin artículos" : total === 1 ? "1 artículo" : `${total} artículos`, phase: phase ?? undefined };
+      }
+      if (escaneo.fallidas[photoId]) return { tone: "error", text: "No se escaneó", phase: phase ?? undefined };
     }
-    return escaneo.fallidas[photoId] ? { tone: "error", text: "No se escaneó" } : { tone: "busy", text: "Contando…" };
+    return revelado.animando ? { tone: "queued", text: "En cola" } : { tone: "busy", text: "Contando…" };
   };
+  if (scan && !revelado.activo && !resultadosVistos) setResultadosVistos(true);
+  if (!scan && resultadosVistos) setResultadosVistos(false);
+  const mostrarResultados = scan && (resultadosVistos || !revelado.activo) ? scan : null;
   const cambiarRevisor = () => {
     flushSync(() => setEditarRevisor(true));
     const input = scrollRef.current?.querySelector<HTMLInputElement>("#revision-quien_revisa");
@@ -252,8 +269,11 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const addPhotos = async (files: FileList | null) => {
     if (!files?.length || inFlight.current || preparing || !canAddNextEvidence) return;
     setMessage("");
-    const failure = await appendPhotos(Array.from(files).slice(0, 1));
+    const room = photoLimit - photos.length;
+    const selected = Array.from(files);
+    const failure = await appendPhotos(selected.slice(0, room));
     if (failure) setMessage(failure);
+    else if (selected.length > room) setMessage(`Solo se agregaron ${room === 1 ? "1 foto" : `${room} fotos`}; el máximo es ${photoLimit}.`);
   };
   const addScanPhotos = async (files: FileList | null) => {
     const room = photoLimit - photos.length - previas.length;
@@ -289,9 +309,28 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
       card?.scrollIntoView({ block: "center", behavior: "instant" });
     });
   };
+  const toggleCompletarDespues = (checked: boolean) => {
+    update((previous) => ({ ...previous, completarDespues: checked }));
+    setErrors({});
+    setMessage("");
+  };
   const submit = () => {
     if (inFlight.current) return;
     const stamped = withCurrentRevisionTime(values);
+    if (completarDespues) {
+      const pendingErrors = validatePendienteForm(stamped);
+      setErrors(pendingErrors);
+      if (Object.keys(pendingErrors).length) {
+        focusError(pendingErrors);
+        return;
+      }
+      for (const photo of photos) void discardUpload(photo.id);
+      const queued: RevisionDraft = { ...draft, values: stamped, photos: [], scan: null, escaneos: undefined, completarDespues: true, completa: null };
+      detach();
+      setMessage("");
+      onQueued(queued, null, []);
+      return;
+    }
     const nextErrors = validateRevisionForm(stamped, undefined, photos.length);
     if (recognition && (!draft.scan || sinEscanear.length)) {
       const visible = Object.fromEntries(Object.entries(withoutInventoryErrors(nextErrors)).filter(([key]) => key !== "camas_ordenadas")) as RevisionFormErrors;
@@ -347,6 +386,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
           <div className="revision-form-welcome">
             <div className="revision-form-welcome-copy">
               {recognition && <p className="revision-form-kicker">POR RECONOCIMIENTO</p>}
+              {completando && <p className="revision-form-completing">Completando la revisión que marcó {completando.marcadaPor}</p>}
               <p className="revision-form-welcome-title">{values.casita ? `Casita ${String(Number(values.casita)).padStart(2, "0")}` : "Selecciona una casita"}</p>
               {revisor && <p className="revision-form-reviewer">
                 <span>Revisa: {revisor}</span>
@@ -361,9 +401,18 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
           </div>
           <fieldset className="revision-form-fields" disabled={busy}>
               <FormCard icon={<House size={18} />} title="Datos de la revisión">
-                <div className="revision-text-field"><label htmlFor="revision-casita">Número de casita</label><select id="revision-casita" name="casita" value={values.casita ? String(Number(values.casita)) : ""} onChange={(e) => change("casita", e.target.value)} aria-invalid={Boolean(errors.casita)} aria-describedby={errors.casita ? "error-casita" : undefined}><option value="" disabled>Selecciona una casita</option>{Array.from({ length: 50 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select><FieldError name="casita" errors={errors} /></div>
+                <div className="revision-text-field"><label htmlFor="revision-casita">Número de casita</label><select id="revision-casita" name="casita" disabled={Boolean(completando)} value={values.casita ? String(Number(values.casita)) : ""} onChange={(e) => change("casita", e.target.value)} aria-invalid={Boolean(errors.casita)} aria-describedby={errors.casita ? "error-casita" : undefined}><option value="" disabled>Selecciona una casita</option>{Array.from({ length: 50 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select><FieldError name="casita" errors={errors} /></div>
                 {mostrarRevisor && <div className="revision-text-field"><label htmlFor="revision-quien_revisa">¿Quién revisa?</label><input id="revision-quien_revisa" name="quien_revisa" list="revision-reviewers" autoComplete="name" maxLength={100} value={values.quien_revisa} onChange={(e) => change("quien_revisa", e.target.value)} aria-invalid={Boolean(errors.quien_revisa)} aria-describedby={errors.quien_revisa ? "error-quien_revisa" : undefined} /><datalist id="revision-reviewers">{reviewers.map((name) => <option key={name} value={name} />)}</datalist><FieldError name="quien_revisa" errors={errors} /></div>}
+                {values.casita && !completando && <label className="revision-later-toggle" data-checked={completarDespues || undefined}>
+                  <input type="checkbox" checked={completarDespues} onChange={(event) => toggleCompletarDespues(event.target.checked)} />
+                  <span className="revision-later-copy">
+                    <strong>Completar después</strong>
+                    <small>Guarda solo la casita y tu nombre. Otra persona completa el formulario.</small>
+                  </span>
+                  <span className="revision-later-switch" aria-hidden="true" />
+                </label>}
               </FormCard>
+              {!completarDespues && <>
               <FormCard>
                 <ChoiceField name="caja_fuerte" label="Caja fuerte" options={CAJA_FUERTE_FILTERS} value={values.caja_fuerte} onChange={change} errors={errors}
                   disabledOptions={recognition ? CAJA_FUERTE_NO_EVIDENCE : undefined}
@@ -373,27 +422,27 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
               </FormCard>
               {recognition ? <>
                 {values.casita && <FormCard icon={<ScanSearch size={18} />} title="Reconocimiento de artículos">
-                  <RecognitionScanCard photos={photos} previas={previas} limit={photoLimit} scan={scan} status={photoStatus} marks={scanMarks}
+                  <RecognitionScanCard photos={photos} previas={previas} limit={photoLimit} scan={scan} status={photoStatus} marks={scanMarks} progreso={revelado.progreso}
                     error={scanNotice} disabled={busy} active={open} onPick={(files) => void addScanPhotos(files)} onRemove={removePhoto}
                     onRetry={falloEscaneo ? escaneo.reintentar : undefined}>
                     <FieldError name="evidencias" errors={errors} />
                   </RecognitionScanCard>
                 </FormCard>}
-                {scan && <div className="revision-recognition-results">
+                {mostrarResultados && <div className="revision-recognition-results">
                   <FormCard icon={<ListChecks size={18} />} title="Artículos encontrados">
-                    <RecognitionResults values={values} scan={scan} inventario={casitaInventario} inventarioStatus={inventario.status}
+                    <RecognitionResults values={values} scan={mostrarResultados} inventario={casitaInventario} inventarioStatus={inventario.status}
                       onRetryInventario={() => void inventario.refresh()}
                       renderField={(key: InventarioKey, extras) => quantity(FORM_FIELD_BY_KEY.get(key) ?? { key, label: key }, extras)}
                       renderCamas={(extras) => quantity(CAMAS_FIELD, extras)} />
                   </FormCard>
                 </div>}
-                {scan && (values.camas_ordenadas === "Si" || values.camas_ordenadas === "No") && <FormCard icon={<BedDouble size={18} />} title="Habitación">{quantity(CAMAS_FIELD)}</FormCard>}
+                {mostrarResultados && (values.camas_ordenadas === "Si" || values.camas_ordenadas === "No") && <FormCard icon={<BedDouble size={18} />} title="Habitación">{quantity(CAMAS_FIELD)}</FormCard>}
               </> : FORM_INVENTORY_GROUPS.map((fields) => <FormCard key={fields[0].key}>{fields.map((field) => quantity(field))}</FormCard>)}
               {!recognition && photoLimit > 0 && <FormCard icon={<Camera size={18} />} title="Añade imágenes de evidencias">
                 <div data-revision-evidencias="" tabIndex={-1}>
                   {photos.length === 0 && <div className="revision-evidence-empty"><ImagePlus size={26} strokeWidth={1.5} aria-hidden="true" /></div>}
                   {photos.length > 0 && <div className="revision-photo-grid">{photos.map((photo, index) => <RevisionPhotoPreview key={photo.id} photo={photo} index={index} disabled={busy} active={open} onRemove={() => removePhoto(photo.id)} />)}</div>}
-                  <input ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
+                  <input ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple={photoLimit - photos.length > 1} hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
                   <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
                   {canAddNextEvidence && <div className="revision-photo-actions"><button className="secondary-button" type="button" onClick={() => cameraRef.current?.click()}><Camera size={17} />Tomar foto</button><button className="secondary-button" type="button" onClick={() => libraryRef.current?.click()}><ImagePlus size={17} />Elegir fotos</button></div>}
                   {preparing && <p role="status">Preparando fotos…</p>}
@@ -403,12 +452,13 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
               <FormCard icon={<ClipboardCheck size={18} />} title="Notas de revisión">
                 <div className="revision-text-field"><label htmlFor="revision-notas">Observaciones<small>Opcional. ¿Hay algún daño, faltante o detalle por atender?</small></label><textarea id="revision-notas" name="notas" rows={4} maxLength={2000} placeholder="¿Hay algún daño, faltante o detalle por atender?" value={values.notas} onChange={(e) => change("notas", e.target.value)} aria-invalid={Boolean(errors.notas)} aria-describedby={errors.notas ? "error-notas" : undefined} /><FieldError name="notas" errors={errors} /></div>
               </FormCard>
+              </>}
           </fieldset>
           {message && <div className="inline-notice notice-error revision-submit-error" role="alert" tabIndex={-1}>{message}</div>}
           {Object.values(errors).some(Boolean) && <p className="sr-only" role="alert">Revisa los campos marcados antes de continuar.</p>}
           <footer className="revision-form-footer">
             <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Salir</button>
-            <button type="submit" className="primary-button" disabled={busy}><CloudCheck size={16} />Guardar revisión</button>
+            <button type="submit" className="primary-button" disabled={busy}><CloudCheck size={16} />{completarDespues ? "Guardar para completar después" : "Guardar revisión"}</button>
           </footer>
         </div>
       </form>

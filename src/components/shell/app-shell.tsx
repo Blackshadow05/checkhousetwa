@@ -24,7 +24,7 @@ import { useAppNavigation } from "@/lib/navigation/use-app-navigation";
 import { SCREEN_ORDER, SCREENS, type ScreenId } from "@/lib/navigation/screens";
 import type { InicioRevisionRow, MenuDelDia, UsuarioShell } from "@/types/database";
 import type { RevisionActivity } from "@/lib/casitas-sin-revision";
-import type { RevisionMode } from "@/lib/revision-form";
+import { newRevisionDraft, type RevisionMode } from "@/lib/revision-form";
 import { restoreRevisionDraft } from "@/hooks/use-revision-draft";
 
 type AppShellProps = {
@@ -110,10 +110,19 @@ function AppShellFrame({
     inicio: (
       <InicioScreen account={account} menus={menusInicio} menusError={menusError} />
     ),
-    revisiones: <RevisionesScreen onEditarPendiente={(draft) => {
-      restoreRevisionDraft(draft);
-      openForm(draft.mode ?? "manual");
-    }} />,
+    revisiones: <RevisionesScreen
+      onEditarPendiente={(draft) => {
+        restoreRevisionDraft(draft);
+        openForm(draft.mode ?? "manual");
+      }}
+      onCompletarPendiente={(row, mode) => {
+        const draft = newRevisionDraft(mode);
+        draft.values.casita = String(Number(row.casita));
+        draft.completa = { id: row.id, marcadaPor: row.marcada_por ?? row.quien_revisa };
+        restoreRevisionDraft(draft);
+        openForm(mode);
+      }}
+    />,
     sync: <SyncScreen />,
   };
   const detailOpen = selectedRevision !== null;

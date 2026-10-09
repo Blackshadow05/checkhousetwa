@@ -29,13 +29,14 @@ function FotoPreparando({ url, label }: { url: string; label: string }) {
   );
 }
 
-export function RecognitionScanCard({ photos, previas, limit, scan, status, marks, error, disabled, active, onPick, onRemove, onRetry, children }: {
+export function RecognitionScanCard({ photos, previas, limit, scan, status, marks, progreso, error, disabled, active, onPick, onRemove, onRetry, children }: {
   photos: RevisionPhoto[];
   previas: FotoPrevia[];
   limit: number;
   scan: RevisionScan | null;
   status: (photoId: string) => PhotoStatus;
   marks?: ReadonlyMap<string, PhotoMark[]>;
+  progreso?: { actual: number; total: number } | null;
   error: string;
   disabled: boolean;
   active: boolean;
@@ -48,7 +49,7 @@ export function RecognitionScanCard({ photos, previas, limit, scan, status, mark
   const libraryRef = useRef<HTMLInputElement>(null);
   const total = photos.length + previas.length;
   const restantes = limit - total;
-  const trabajando = previas.length > 0 || photos.some((photo) => status(photo.id).tone === "busy");
+  const trabajando = previas.length > 0 || Boolean(progreso) || photos.some((photo) => status(photo.id).tone === "busy");
   const listo = !trabajando && !error && scan && scan.photoIds.length === photos.length;
   return (
     <div className={styles.recognition} data-revision-evidencias="" tabIndex={-1}>
@@ -68,16 +69,19 @@ export function RecognitionScanCard({ photos, previas, limit, scan, status, mark
         </div>
       ) : (
         <div className="revision-photo-grid">
-          {photos.map((photo, index) => (
-            <RevisionPhotoPreview key={photo.id} photo={photo} index={index} label={photoLabel(index)} disabled={disabled} active={active}
-              marks={marks?.get(photo.id)} status={status(photo.id)} onRemove={() => onRemove(photo.id)} />
-          ))}
+          {photos.map((photo, index) => {
+            const estado = status(photo.id);
+            return (
+              <RevisionPhotoPreview key={photo.id} photo={photo} index={index} label={photoLabel(index)} disabled={disabled} active={active}
+                marks={estado.tone === "done" ? marks?.get(photo.id) : undefined} status={estado} onRemove={() => onRemove(photo.id)} />
+            );
+          })}
           {previas.map((previa, index) => <FotoPreparando key={previa.id} url={previa.url} label={photoLabel(photos.length + index)} />)}
         </div>
       )}
       <p className={trabajando || listo ? styles.scanMeta : "sr-only"} aria-live="polite">
         {trabajando
-          ? <><LoaderCircle size={14} className="revision-spinner" aria-hidden="true" />Contando artículos…</>
+          ? <><LoaderCircle size={14} className="revision-spinner" aria-hidden="true" />{progreso && progreso.total > 1 ? `Escaneando foto ${progreso.actual} de ${progreso.total}…` : "Contando artículos…"}</>
           : listo
             ? <><CircleCheck size={14} aria-hidden="true" />{marks?.size ? "En rojo los artículos por revisar." : "Revisa y corrige los conteos abajo."}</>
             : null}

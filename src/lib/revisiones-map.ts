@@ -50,6 +50,9 @@ export function mapInicioRevision(row: RevisionCasitaInicio): InicioRevisionRow 
     nota_extra: asText(row.nota_extra),
     room_move: asText(row.room_move),
     reconocimiento: recognitionDetailItems(row.registro_reconocimiento),
+    pendiente: row.pendiente === true,
+    marcada_por: asText(row.marcada_por),
+    marcada_at: row.marcada_at ? formatCreatedAt(row.marcada_at) : null,
   };
 }
 

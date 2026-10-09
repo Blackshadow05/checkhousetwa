@@ -50,6 +50,8 @@ export type RevisionDraft = {
   mode?: RevisionMode;
   scan?: RevisionScan | null;
   escaneos?: Record<string, RevisionPhotoScan>;
+  completarDespues?: boolean;
+  completa?: { id: string; marcadaPor: string } | null;
 };
 export type RevisionFormErrors = Partial<Record<keyof RevisionFormValues | "evidencias", string>>;
 
@@ -128,6 +130,18 @@ export function validateRevisionForm(values: RevisionFormValues, step?: number, 
   if ((step === undefined || step === 3) && (values.notas?.length ?? 0) > 2000)
     errors.notas = "Las notas pueden tener hasta 2000 caracteres.";
   return errors;
+}
+
+export function validatePendienteForm(values: RevisionFormValues): RevisionFormErrors {
+  const all = validateRevisionForm(values, 0);
+  return Object.fromEntries(Object.entries(all).filter(([key]) => key === "casita" || key === "quien_revisa" || key === "created_at"));
+}
+
+export function pendienteInsert(id: string, values: RevisionFormValues): RevisionCasitaInsert {
+  return {
+    id, casita: String(Number(values.casita)), quien_revisa: values.quien_revisa.trim(),
+    created_at: values.created_at.replace("T", " "), pendiente: true,
+  };
 }
 
 // Only these fields may cross the write boundary. Never spread a client payload.

@@ -143,6 +143,7 @@ export function filterArchiveLocally(
   const seen = new Set<string>();
   return ordered.filter((row) => {
     if (date ? revisionDay(row.created_at) !== date : !matchesArchivePeriod(row, period, today)) return false;
+    if (reportFilter && row.pendiente) return false;
     if (reportFilter && reportFilter !== "caja_fuerte") {
       const casita = casitaNumber(row.casita).replace(/^0+(?=\d)/, "");
       if (seen.has(casita)) return false;

@@ -1,10 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { NOTAS_REVISIONES_TABLE, REVISIONES_TABLE } from "@/lib/constants";
+import { NOTAS_REVISIONES_TABLE } from "@/lib/constants";
 import { isRevisionEditField, type RevisionEditField } from "@/lib/revision-edit";
 import { mapNotaRevision, sameNotaRevisionPayload, type RevisionNoteItem } from "@/lib/revision-notes";
-import { INICIO_REVISION_COLUMNS } from "@/lib/revisiones-display";
 import { mapInicioRevision } from "@/lib/revisiones-map";
-import type { Database, InicioRevisionRow, NotaRevisionCasitaInsert, RevisionCasitaInsert } from "@/types/database";
+import type { Database, InicioRevisionRow, Json, NotaRevisionCasitaInsert, RevisionCasitaInsert } from "@/types/database";
 
 type Client = SupabaseClient<Database>;
 type SaveResult = { row: InicioRevisionRow | null; error: string | null };
@@ -17,12 +16,11 @@ export type SaveNoteResult = {
 
 const NOTA_REVISION_COLUMNS = "id, revision_id, nota, usuario, imagen, hora, created_at";
 
-export async function saveRevision(client: Client, row: RevisionCasitaInsert): Promise<SaveResult> {
-  const result = await client.from(REVISIONES_TABLE).insert(row).select(INICIO_REVISION_COLUMNS).single();
-  if (!result.error) return { row: mapInicioRevision(result.data), error: null };
-  if (result.error.code === "23505" && row.id) {
-    const existing = await client.from(REVISIONES_TABLE).select(INICIO_REVISION_COLUMNS).eq("id", row.id).single();
-    if (!existing.error) return { row: mapInicioRevision(existing.data), error: null };
+export async function saveRevision(client: Client, row: RevisionCasitaInsert, completa: string | null = null): Promise<SaveResult> {
+  const result = await client.rpc("guardar_revision_casita", { p_revision: row as Json, p_completa: completa });
+  if (!result.error && result.data) return { row: mapInicioRevision(result.data), error: null };
+  if (result.error?.code === "P0001" && /revision_ya_completada/i.test(result.error.message)) {
+    return { row: null, error: "Otra persona ya completó esta revisión. Puedes descartar este intento." };
   }
   return { row: null, error: "No pudimos confirmar el guardado. Conservamos tu borrador; vuelve a intentarlo." };
 }

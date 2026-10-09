@@ -97,6 +97,10 @@ export type Database = {
           usuario_nota: string | null;
           se_movio: Json | null;
           registro_reconocimiento: Json | null;
+          pendiente: boolean;
+          marcada_por: string | null;
+          marcada_at: string | null;
+          completada_id: string | null;
           imagen_nota: string | null;
           hora_nota: string | null;
           update_at: string | null;
@@ -136,6 +140,10 @@ export type Database = {
           usuario_nota?: string | null;
           se_movio?: Json | null;
           registro_reconocimiento?: Json | null;
+          pendiente?: boolean;
+          marcada_por?: string | null;
+          marcada_at?: string | null;
+          completada_id?: string | null;
           imagen_nota?: string | null;
           hora_nota?: string | null;
           update_at?: string | null;
@@ -175,6 +183,10 @@ export type Database = {
           usuario_nota?: string | null;
           se_movio?: Json | null;
           registro_reconocimiento?: Json | null;
+          pendiente?: boolean;
+          marcada_por?: string | null;
+          marcada_at?: string | null;
+          completada_id?: string | null;
           imagen_nota?: string | null;
           hora_nota?: string | null;
           update_at?: string | null;
@@ -236,6 +248,7 @@ export type Database = {
       editar_campo_revision_casita: { Args: { p_id: string; p_editor_id: number; p_campo: string; p_esperado: string | null; p_nuevo: string | null }; Returns: RevisionCasita };
       verificar_credenciales_usuario: { Args: { p_usuario: string; p_password: string; p_ip?: string | null }; Returns: Json };
       topic_revisiones_casitas: { Args: Record<string, never>; Returns: string | null };
+      guardar_revision_casita: { Args: { p_revision: Json; p_completa?: string | null }; Returns: RevisionCasita };
     };
     Enums: {
       [_ in never]: never;
@@ -282,7 +295,7 @@ export type RevisionCasitaInicio = Pick<
   | "notas"
   | "nota_extra"
   | "room_move"
-> & Partial<Pick<RevisionCasita, "registro_reconocimiento">>;
+> & Partial<Pick<RevisionCasita, "registro_reconocimiento" | "pendiente" | "marcada_por" | "marcada_at">>;
 
 export type MenuRow = Database["public"]["Tables"]["menus"]["Row"];
 
@@ -323,4 +336,7 @@ export type InicioRevisionRow = {
   notas: string | null;
   nota_extra?: string | null;
   room_move: string | null;
+  pendiente?: boolean;
+  marcada_por?: string | null;
+  marcada_at?: string | null;
 };
