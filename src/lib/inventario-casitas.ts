@@ -95,7 +95,6 @@ export function compararInventario(
       esperado,
       detectado,
       coincideAhora: esperado === null ? null
-        : detectado === null ? false
         : sinCambios ? escaneoCoincide
         : coincide(key, values[key], esperado),
     };
