@@ -7,6 +7,11 @@ export const MENU_SCAN_MAX_PLATOS = 20;
 export const MENU_SCAN_MAX_PLATO_CHARS = 120;
 
 const PLATOS_VACIOS = new Set([
+  "off",
+  "cerrado",
+  "libre",
+  "no hay servicio",
+  "sin servicio",
   "n/a",
   "ninguno",
   "no disponible",
