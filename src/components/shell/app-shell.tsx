@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { currentUsuario, logoutUsuario } from "@/app/actions/usuarios";
@@ -11,7 +11,7 @@ import { Fab, NewRevisionFab } from "@/components/shell/fab";
 import { Header } from "@/components/shell/header";
 import { AppNavigationProvider } from "@/components/shell/navigation-context";
 import { RevisionDetailScreen } from "@/components/screens/revision-detail-screen";
-import { RevisionFormScreen } from "@/components/screens/revision-form-screen";
+import { RevisionFormScreen, type RevisionExitGuard } from "@/components/screens/revision-form-screen";
 import { RevisionShareSheet } from "@/components/screens/revision-share-sheet";
 import { RevisionesScreen } from "@/components/screens/revisiones-screen";
 import { SyncScreen } from "@/components/screens/sync-screen";
@@ -25,7 +25,7 @@ import { SCREEN_ORDER, SCREENS, type ScreenId } from "@/lib/navigation/screens";
 import type { InicioRevisionRow, MenuDelDia, UsuarioShell } from "@/types/database";
 import type { RevisionActivity } from "@/lib/casitas-sin-revision";
 import { newRevisionDraft, type RevisionMode } from "@/lib/revision-form";
-import { restoreRevisionDraft } from "@/hooks/use-revision-draft";
+import { restoreRevisionDraft, takeSavedRevisionDraft } from "@/hooks/use-revision-draft";
 
 type AppShellProps = {
   initialUser?: UsuarioShell | null;
@@ -63,9 +63,22 @@ function AppShellFrame({
   const [formMode, setFormMode] = useState<RevisionMode>("manual");
   const [shareEvidence, setShareEvidence] = useState<{ id: string; casita: string; files: File[] } | null>(null);
   const formVisible = formOpen && navigation.screen === "revisiones";
+  const exitGuard = useRef<RevisionExitGuard | null>(null);
+  const registerExitGuard = useCallback((guard: RevisionExitGuard | null) => { exitGuard.current = guard; }, []);
+  const leaving = useRef(false);
+  const formVisibleRef = useRef(formVisible);
+  useLayoutEffect(() => { formVisibleRef.current = formVisible; }, [formVisible]);
   useLayoutEffect(() => {
-    const syncForm = () => {
-      const params = new URL(window.location.href).searchParams;
+    const syncForm = (event?: Event) => {
+      const url = new URL(window.location.href);
+      const params = url.searchParams;
+      if (event?.type === "popstate" && formVisibleRef.current && params.get("nueva") !== "1" && !leaving.current
+        && exitGuard.current?.(() => closeFormRef.current())) {
+        params.set("nueva", "1");
+        window.history.pushState({ ...window.history.state, casitaForm: true }, "", url);
+        return;
+      }
+      if (params.get("nueva") === "1") leaving.current = false;
       setFormOpen(params.get("nueva") === "1");
       setFormMode(params.get("modo") === "reconocimiento" ? "reconocimiento" : "manual");
     };
@@ -78,6 +91,7 @@ function AppShellFrame({
     };
   }, [navigation.screen]);
   const openForm = (mode: RevisionMode) => {
+    leaving.current = false;
     const url = new URL(window.location.href);
     url.searchParams.set("nueva", "1");
     if (mode === "reconocimiento") url.searchParams.set("modo", mode);
@@ -87,6 +101,7 @@ function AppShellFrame({
     setFormOpen(true);
   };
   const closeForm = useCallback(() => {
+    leaving.current = true;
     setFormOpen(false);
     const url = new URL(window.location.href);
     if (url.searchParams.has("nueva")) {
@@ -99,6 +114,15 @@ function AppShellFrame({
     }
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(".new-revision-fab")?.focus({ preventScroll: true }));
   }, []);
+  const closeFormRef = useRef(closeForm);
+  const guardedNavigation = useMemo(() => ({
+    screen: navigation.screen,
+    navigate: (next: ScreenId) => {
+      const leave = () => { leaving.current = true; navigation.navigate(next); };
+      if (formVisibleRef.current && exitGuard.current?.(leave)) return;
+      leave();
+    },
+  }), [navigation]);
   const screenElements = useRef<
     Partial<Record<ScreenId, HTMLDivElement | null>>
   >({});
@@ -111,6 +135,11 @@ function AppShellFrame({
       <InicioScreen account={account} menus={menusInicio} menusError={menusError} />
     ),
     revisiones: <RevisionesScreen
+      onContinuarGuardada={(draft) => {
+        void takeSavedRevisionDraft(draft.id);
+        restoreRevisionDraft(draft);
+        openForm(draft.mode ?? "manual");
+      }}
       onEditarPendiente={(draft) => {
         restoreRevisionDraft(draft);
         openForm(draft.mode ?? "manual");
@@ -161,7 +190,7 @@ function AppShellFrame({
               {screens[id]}
             </div>
           ))}
-          <RevisionFormScreen open={formVisible} mode={formMode} reviewer={session.nombre} onClose={closeForm} onQueued={(draft, reconocimiento, files) => {
+          <RevisionFormScreen open={formVisible} mode={formMode} reviewer={session.nombre} onExitGuard={registerExitGuard} onClose={closeForm} onQueued={(draft, reconocimiento, files) => {
             enviarRevision(draft, reconocimiento);
             closeForm();
             if (files.length) setShareEvidence({ id: draft.id, casita: String(Number(draft.values.casita)), files });
@@ -181,7 +210,9 @@ function AppShellFrame({
             />
           )}
         </main>
-        <BottomNavigation />
+        <AppNavigationProvider value={guardedNavigation}>
+          <BottomNavigation />
+        </AppNavigationProvider>
       </div>
       {selectedRevision && (
         <RevisionDetailScreen key={selectedRevision.id} />

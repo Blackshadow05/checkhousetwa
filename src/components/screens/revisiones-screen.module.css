@@ -494,3 +494,13 @@
 .row[data-tone="pendiente"] + .row::before {
   display: none;
 }
+
+.saved {
+  margin-bottom: 8px;
+}
+
+.continue {
+  color: var(--primary);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}

@@ -2,7 +2,7 @@
 
 import { SerwistProvider, useSerwist } from "@serwist/next/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
 import { InstalledGate } from "@/components/pwa/installed-gate";
 
 function UpdateNotice() {
@@ -36,12 +36,29 @@ function UpdateNotice() {
     };
   }, [serwist]);
 
+  useEffect(() => {
+    if (!dismissed) return;
+    const remind = () => { if (document.visibilityState === "visible") setDismissed(false); };
+    const timer = window.setTimeout(() => setDismissed(false), 10 * 60_000);
+    document.addEventListener("visibilitychange", remind);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", remind);
+    };
+  }, [dismissed]);
+
   if (!waiting || dismissed) return null;
   return (
-    <aside className="update-toast" aria-label="Actualización disponible">
-      <span>Hay una nueva versión de Casitas.</span>
+    <aside className="update-toast" role="status" aria-label="Actualización disponible">
+      <span className="update-toast-icon" aria-hidden="true">
+        <RefreshCw size={20} />
+      </span>
+      <span className="update-toast-copy">
+        <strong>Nueva versión disponible</strong>
+        <small>Trae mejoras para la app.</small>
+      </span>
       <button
-        className="text-action"
+        className="update-toast-action"
         type="button"
         onClick={() => {
           applying.current = true;

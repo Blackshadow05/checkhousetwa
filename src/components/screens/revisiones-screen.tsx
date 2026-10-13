@@ -20,6 +20,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
+import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
 import { CAJA_FUERTE_FILTERS, REPORT_FILTERS } from "@/lib/revisiones-archive";
 import {
   dayLabel,
@@ -60,11 +61,13 @@ const PENDING_LABEL: Record<PendingRevision["status"], string> = {
   error: "No se guardó",
 };
 
-export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente }: {
+export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onContinuarGuardada }: {
   onEditarPendiente: (draft: RevisionDraft) => void;
+  onContinuarGuardada: (draft: RevisionDraft) => void;
   onCompletarPendiente: (row: InicioRevisionRow, mode: RevisionMode) => void;
 }) {
   const archive = useRevisionesArchive();
+  const guardadas = useSavedRevisionDrafts();
   const { pendientes, reintentarRevision, tomarRevision, descartarRevision } = useRevisiones();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [pendienteId, setPendienteId] = useState<string | null>(null);
@@ -242,6 +245,46 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente }: {
               : `${archive.total} revisiones encontradas`}
         </span>
       </div>
+
+      {guardadas.length > 0 && (
+        <section className={styles.saved} aria-label="Revisiones sin terminar">
+          <div className={styles.dayHeading}>
+            <h3>Sin terminar</h3>
+            <span>{guardadas.length}</span>
+          </div>
+          <div className={styles.list}>
+            {guardadas.map(({ draft, savedAt }) => {
+              const casita = draft.values.casita ? String(Number(draft.values.casita)) : "";
+              const hora = new Date(savedAt).toLocaleTimeString("es-CR", { hour: "numeric", minute: "2-digit" });
+              const modo = draft.mode === "reconocimiento" ? "Por reconocimiento" : "Ingreso manual";
+              return (
+                <button
+                  key={draft.id}
+                  type="button"
+                  className={styles.row}
+                  data-tone="amber"
+                  onClick={() => onContinuarGuardada(draft)}
+                  aria-label={`Continuar revisión${casita ? ` de Casita ${casita}` : ""}, ${modo}, guardada a las ${hora}`}
+                >
+                  <span className={styles.plaque}>
+                    {casita ? <strong className={styles.number}>{casita}</strong> : <ClipboardPen size={20} aria-hidden="true" />}
+                  </span>
+                  <span className={styles.content}>
+                    <span className={styles.top}>
+                      <span className={styles.laterChip}>Sin terminar</span>
+                    </span>
+                    <span className={styles.name}>{modo} · {hora}</span>
+                  </span>
+                  <span className={styles.meta}>
+                    <span className={styles.continue}>Continuar</span>
+                    <ChevronRight size={18} aria-hidden="true" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <div
         key={`${archive.period}|${archive.date}`}

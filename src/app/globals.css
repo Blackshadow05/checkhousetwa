@@ -1355,6 +1355,19 @@ svg {
 .sheet-actions .secondary-button {
   flex: 1;
 }
+.revision-exit-actions {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+.revision-exit-actions button {
+  width: 100%;
+  min-height: 48px;
+}
+.revision-exit-actions .revision-exit-discard {
+  color: var(--destructive);
+  font-size: 0.875rem;
+}
 .revision-share-content {
   display: grid;
   gap: 20px;
@@ -2523,17 +2536,62 @@ svg {
   margin: auto;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 10px 8px 15px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--card);
-  box-shadow: 0 6px 30px #00000016;
+  gap: 10px;
+  padding: 10px 6px 10px 12px;
+  border-radius: 18px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 10px 34px #0000003d;
   z-index: 40;
-  font-size: 0.75rem;
+  animation: update-toast-in 380ms cubic-bezier(.2, .9, .3, 1.15) both;
 }
-.update-toast > span {
+.update-toast-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary-foreground) 16%, transparent);
+}
+.update-toast-icon svg {
+  animation: update-toast-spin 2.4s ease-in-out infinite;
+}
+.update-toast-copy {
+  display: grid;
   flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.update-toast-copy strong {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.update-toast-copy small {
+  font-size: 0.75rem;
+  opacity: .85;
+}
+.update-toast-action {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--primary-foreground);
+  color: var(--primary);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.update-toast .icon-button {
+  color: inherit;
+}
+@keyframes update-toast-in {
+  from { opacity: 0; transform: translateY(24px) scale(.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes update-toast-spin {
+  0%, 60% { transform: rotate(0); }
+  100% { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .update-toast, .update-toast-icon svg { animation: none; }
 }
 .installed-gate-app {
   display: contents;

@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { BedDouble, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
-import { useRevisionDraft } from "@/hooks/use-revision-draft";
+import { revisionDraftHasProgress, useRevisionDraft } from "@/hooks/use-revision-draft";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import { statusAppearance } from "@/lib/revisiones-display";
@@ -99,11 +100,30 @@ function withoutInventoryErrors(errors: RevisionFormErrors): RevisionFormErrors 
   return Object.fromEntries(Object.entries(errors).filter(([key]) => !INVENTARIO_KEY_SET.has(key))) as RevisionFormErrors;
 }
 
-export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, onQueued }: {
+export type RevisionExitGuard = (leave: () => void) => boolean;
+
+export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, onQueued, onExitGuard }: {
   open: boolean; mode?: RevisionMode; reviewer?: string; onClose: () => void;
   onQueued: (draft: RevisionDraft, reconocimiento: RevisionRecognitionInput | null, files: File[]) => void;
+  onExitGuard?: (guard: RevisionExitGuard | null) => void;
 }) {
-  const { draft, storage, update, detach } = useRevisionDraft(open, mode);
+  const { draft, storage, update, detach, keepForLater } = useRevisionDraft(open, mode);
+  const [salida, setSalida] = useState<{ leave: () => void } | null>(null);
+  const [guardandoSalida, setGuardandoSalida] = useState(false);
+  const [errorSalida, setErrorSalida] = useState("");
+  const draftRef = useRef(draft);
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+  useEffect(() => {
+    if (!onExitGuard) return;
+    onExitGuard((leave) => {
+      if (!revisionDraftHasProgress(draftRef.current)) return false;
+      setErrorSalida("");
+      setSalida({ leave });
+      return true;
+    });
+    return () => onExitGuard(null);
+  }, [onExitGuard]);
+  if (!open && salida) setSalida(null);
   const { online, revisiones } = useRevisiones();
   const [errors, setErrors] = useState<RevisionFormErrors>({});
   const [message, setMessage] = useState("");
@@ -457,11 +477,40 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
           {message && <div className="inline-notice notice-error revision-submit-error" role="alert" tabIndex={-1}>{message}</div>}
           {Object.values(errors).some(Boolean) && <p className="sr-only" role="alert">Revisa los campos marcados antes de continuar.</p>}
           <footer className="revision-form-footer">
-            <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Salir</button>
+            <button type="button" className="secondary-button" disabled={busy} onClick={() => {
+              if (revisionDraftHasProgress(draft)) {
+                setErrorSalida("");
+                setSalida({ leave: onClose });
+              } else onClose();
+            }}>Salir</button>
             <button type="submit" className="primary-button" disabled={busy}><CloudCheck size={16} />{completarDespues ? "Guardar para completar después" : "Guardar revisión"}</button>
           </footer>
         </div>
       </form>
+      <BottomSheet open={Boolean(salida)} onClose={() => { if (!guardandoSalida) setSalida(null); }} title="¿Salir de la revisión?">
+        <p className="sheet-description">Puedes guardar tu avance y terminarlo después desde Revisiones.</p>
+        {errorSalida && <p className="inline-notice notice-error" role="alert">{errorSalida}</p>}
+        <div className="revision-exit-actions">
+          <button type="button" className="primary-button" disabled={guardandoSalida} onClick={() => setSalida(null)}>Seguir llenando</button>
+          <button type="button" className="secondary-button" disabled={guardandoSalida} onClick={async () => {
+            if (!salida) return;
+            setGuardandoSalida(true);
+            setErrorSalida("");
+            try {
+              await keepForLater();
+              setSalida(null);
+              salida.leave();
+            } catch {
+              setErrorSalida("No se pudo guardar en este dispositivo. Sigue llenando o sal sin guardar.");
+            } finally { setGuardandoSalida(false); }
+          }}>{guardandoSalida ? "Guardando…" : "Guardar y salir"}</button>
+          <button type="button" className="text-action revision-exit-discard" disabled={guardandoSalida} onClick={() => {
+            const leave = salida?.leave;
+            setSalida(null);
+            leave?.();
+          }}>Salir sin guardar</button>
+        </div>
+      </BottomSheet>
     </section>
   );
 }

@@ -6,8 +6,54 @@ import { discardUpload } from "@/lib/revision-evidence-upload";
 import { newRevisionDraft, type RevisionDraft, type RevisionMode } from "@/lib/revision-form";
 
 const DRAFT_KEY = "new-revision-draft-v1";
+const SAVED_KEY = "saved-revision-drafts-v1";
+const SAVED_EVENT = "casitas:saved-drafts";
 type Snapshot = { id: typeof DRAFT_KEY; draft: RevisionDraft | null };
+export type SavedRevisionDraft = { draft: RevisionDraft; savedAt: string };
+type SavedSnapshot = { id: typeof SAVED_KEY; items: SavedRevisionDraft[] };
 let draftToRestore: RevisionDraft | null = null;
+let savedQueue: Promise<unknown> = Promise.resolve();
+
+function changeSavedDrafts(change: (items: SavedRevisionDraft[]) => SavedRevisionDraft[]) {
+  const next = savedQueue.catch(() => {}).then(async () => {
+    const saved = await idbGet<SavedSnapshot>(IDB_STORES.snapshots, SAVED_KEY);
+    await idbPut<SavedSnapshot>(IDB_STORES.snapshots, { id: SAVED_KEY, items: change(saved?.items ?? []) });
+    window.dispatchEvent(new Event(SAVED_EVENT));
+  });
+  savedQueue = next;
+  return next;
+}
+
+export function saveRevisionDraftForLater(draft: RevisionDraft) {
+  return changeSavedDrafts((items) => [{ draft, savedAt: new Date().toISOString() }, ...items.filter((item) => item.draft.id !== draft.id)]);
+}
+
+export function takeSavedRevisionDraft(id: string) {
+  return changeSavedDrafts((items) => items.filter((item) => item.draft.id !== id));
+}
+
+export function useSavedRevisionDrafts() {
+  const [items, setItems] = useState<SavedRevisionDraft[]>([]);
+  useEffect(() => {
+    let live = true;
+    const load = () => void idbGet<SavedSnapshot>(IDB_STORES.snapshots, SAVED_KEY)
+      .then((saved) => { if (live) setItems(saved?.items ?? []); })
+      .catch(() => {});
+    load();
+    window.addEventListener(SAVED_EVENT, load);
+    return () => {
+      live = false;
+      window.removeEventListener(SAVED_EVENT, load);
+    };
+  }, []);
+  return items;
+}
+
+export function revisionDraftHasProgress(draft: RevisionDraft | null) {
+  if (!draft) return false;
+  if (draft.photos.length || draft.completarDespues || draft.completa) return true;
+  return Object.entries(draft.values).some(([key, value]) => key !== "quien_revisa" && key !== "created_at" && String(value ?? "").trim() !== "");
+}
 
 export function restoreRevisionDraft(draft: RevisionDraft) {
   draftToRestore = draft;
@@ -132,5 +178,12 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
     void persist(null);
   }, [persist]);
 
-  return { draft, storage, update, detach };
+  const keepForLater = useCallback(async () => {
+    const saved = current.current;
+    if (!saved) return;
+    await saveRevisionDraftForLater(saved);
+    if (current.current === saved) detach();
+  }, [detach]);
+
+  return { draft, storage, update, detach, keepForLater };
 }
