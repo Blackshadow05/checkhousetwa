@@ -76,4 +76,4 @@ next-env.d.ts
 /components.json
 /assets/
 /models/*
-!/models/articulos-v9.onnx
+!/models/articulos-v12.onnx
