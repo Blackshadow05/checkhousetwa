@@ -14,6 +14,7 @@ import {
   MessageSquareText,
   Search,
   SlidersHorizontal,
+  Sparkles,
   WifiOff,
   X,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
 import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
+import { esPreguntaNatural, useBusquedaInteligente } from "@/hooks/use-busqueda-inteligente";
 import { CAJA_FUERTE_FILTERS, REPORT_FILTERS, type ReportFilter } from "@/lib/revisiones-archive";
 import { fechaAbreviada, fechaTexto } from "@/lib/fechas";
 import {
@@ -86,6 +88,9 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
 }) {
   const archive = useRevisionesArchive();
   const guardadas = useSavedRevisionDrafts();
+  const inteligente = useBusquedaInteligente();
+  const { busqueda } = inteligente;
+  const puedePreguntar = esPreguntaNatural(archive.searchInput) && busqueda?.pregunta !== archive.searchInput.replace(/\s+/g, " ").trim();
   const { pendientes, reintentarRevision, tomarRevision, descartarRevision } = useRevisiones();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [pendienteId, setPendienteId] = useState<string | null>(null);
@@ -172,9 +177,17 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
       <div className={styles.toolbar}>
         <div className={styles.titleRow}>
           <h2>Revisiones</h2>
-          <span>{archive.total}</span>
+          <span>{busqueda?.estado === "lista" ? busqueda.revisiones.length : busqueda ? "" : archive.total}</span>
         </div>
-        <div className={styles.searchRow}>
+        <form
+          className={styles.searchRow}
+          role="search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (esPreguntaNatural(archive.searchInput) && archive.online) void inteligente.preguntar(archive.searchInput);
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          }}
+        >
           <label className={styles.search}>
             <Search size={18} aria-hidden="true" />
             <input
@@ -182,8 +195,8 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
               name="buscar-revision"
               value={archive.searchInput}
               onChange={(event) => archive.setSearchInput(event.target.value)}
-              placeholder="Buscar"
-              aria-label="Buscar casita o quien revisa"
+              placeholder="Buscar o preguntar"
+              aria-label="Buscar casita o quien revisa, o hacer una pregunta"
               autoComplete="off"
               enterKeyHint="search"
             />
@@ -192,7 +205,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                 type="button"
                 className={styles.searchClear}
                 aria-label="Limpiar búsqueda"
-                onClick={() => archive.setSearchInput("")}
+                onClick={() => {
+                  archive.setSearchInput("");
+                  inteligente.cerrar();
+                }}
               >
                 <X size={14} />
               </button>
@@ -210,7 +226,18 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
               <span className={styles.filterDot}>{reportCount}</span>
             ) : null}
           </button>
-        </div>
+        </form>
+        {puedePreguntar && (
+          <button
+            type="button"
+            className={styles.askButton}
+            disabled={!archive.online}
+            onClick={() => void inteligente.preguntar(archive.searchInput)}
+          >
+            <Sparkles size={17} aria-hidden="true" />
+            <span>{archive.online ? `Preguntar «${archive.searchInput.trim()}»` : "Preguntar requiere conexión"}</span>
+          </button>
+        )}
         <div
           className={styles.segmented}
           role="group"
@@ -309,6 +336,73 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
         </section>
       )}
 
+      {busqueda ? (
+        <section className={styles.answer} aria-label="Respuesta de la búsqueda" aria-busy={busqueda.estado === "buscando"}>
+          <div className={styles.answerHeading}>
+            <Sparkles size={17} aria-hidden="true" />
+            <span>{busqueda.pregunta}</span>
+            <button type="button" aria-label="Cerrar respuesta" onClick={inteligente.cerrar}>
+              <X size={18} />
+            </button>
+          </div>
+          {busqueda.estado === "buscando" ? (
+            <div className={styles.answerBody} role="status">
+              <div className="skeleton" style={{ width: "85%", height: 14 }} />
+              <div className="skeleton" style={{ width: "55%", height: 14 }} />
+              <span className="sr-only">Buscando la respuesta</span>
+            </div>
+          ) : busqueda.estado === "error" ? (
+            <div className={styles.answerBody} role="status">
+              <p>{busqueda.error}</p>
+              <button
+                type="button"
+                className="text-action"
+                disabled={!archive.online}
+                onClick={() => void inteligente.preguntar(busqueda.pregunta)}
+              >
+                Reintentar
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className={styles.answerBody} role="status">
+                <p>{busqueda.respuesta ?? (busqueda.revisiones.length ? "Estas son las revisiones que coinciden." : "No encontramos revisiones que coincidan.")}</p>
+              </div>
+              {busqueda.revisiones.length > 0 && (
+                <div className={styles.list}>
+                  {busqueda.revisiones.map((row, index) => (
+                    <button
+                      key={revisionKey(row, index)}
+                      className={styles.row}
+                      data-tone={statusAppearance(row.caja_fuerte).tone}
+                      type="button"
+                      onClick={() => archive.openRevision(row)}
+                      aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}`}
+                    >
+                      <span className={styles.plaque}>
+                        <strong className={styles.number}>{row.casita}</strong>
+                      </span>
+                      <span className={styles.content}>
+                        <span className={styles.top}>
+                          <StatusBadge value={row.caja_fuerte} />
+                          {hasRevisionValue(row.notas) && (
+                            <MessageSquareText size={14} className={styles.noteIcon} aria-hidden="true" />
+                          )}
+                        </span>
+                        <span className={styles.name}>{row.quien_revisa}</span>
+                      </span>
+                      <span className={styles.meta}>
+                        <span className={styles.time}>{dayLabel(revisionDay(row.created_at), archive.today)} · {shortTime(row.created_at)}</span>
+                        <ChevronRight size={18} aria-hidden="true" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      ) : (<>
       <div
         key={`${archive.period}|${archive.date}`}
         className={styles.groups}
@@ -428,6 +522,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
       <div ref={sentinelRef} className="list-sentinel">
         {archive.loadingMore ? "Cargando más…" : null}
       </div>
+      </>)}
 
       <BottomSheet
         open={Boolean(porCompletar)}
