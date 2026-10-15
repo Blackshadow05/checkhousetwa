@@ -38,10 +38,11 @@
 .groupDot { width: 9px; height: 9px; flex-shrink: 0; border-radius: 50%; background: var(--shift-color); }
 .shiftTime { color: var(--shift-color); font-size: 14px; font-weight: 600; }
 .extra { color: var(--shift-color); font-size: 12px; font-weight: 600; }
-.monthBar { display: flex; align-items: center; gap: 2px; margin: 2px 0 4px; }
-.monthBar strong { flex: 1; min-width: 0; font-size: 17px; font-weight: 650; text-transform: capitalize; }
+.monthBar { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 4px; margin: 2px 0 4px; }
+.monthTitle { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; }
+.monthBar strong { min-width: 0; overflow: hidden; font-size: 17px; font-weight: 650; text-align: center; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
 .screen .monthBar button { min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; background: transparent; color: var(--foreground); }
-.screen .monthBar .todayChip { min-height: 34px; margin-inline-end: 4px; padding: 0 14px; border-radius: 999px; background: var(--secondary); color: var(--primary); font-size: 13px; animation: chipIn 240ms cubic-bezier(.2,.8,.2,1); }
+.screen .monthBar .todayChip { min-width: 0; min-height: 34px; padding: 0 14px; border-radius: 999px; background: var(--secondary); color: var(--primary); font-size: 13px; animation: chipIn 240ms cubic-bezier(.2,.8,.2,1); }
 .days { position: relative; display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x pan-y; scroll-snap-type: x proximity; padding: 6px 0 10px; -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent); }
 .dayIndicator { position: absolute; top: 6px; left: 0; z-index: 0; width: 48px; height: 70px; border-radius: 999px; background: var(--primary); box-shadow: 0 6px 16px color-mix(in srgb, var(--primary) 28%, transparent); opacity: 0; pointer-events: none; transition: transform 340ms cubic-bezier(.2,.8,.2,1), width 340ms cubic-bezier(.2,.8,.2,1); }
 .dayIndicator[data-ready] { opacity: 1; }
@@ -70,7 +71,7 @@
 .yearGroup { border-bottom: 1px solid var(--border); margin: 18px 0; }
 .yearGroup summary { padding: 12px 0; min-height: 48px; cursor: pointer; font-weight: 650; }
 .yearTotal { float: right; font-size: 13px; color: var(--shift-otros-color); }
-.dateGrid { display: grid; grid-template-columns: repeat(auto-fit,minmax(95px,1fr)); gap: 8px; padding: 0 0 14px; }
+.dateGrid { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 8px; padding: 0 0 14px; }
 .datePill { color: var(--shift-otros-color); padding: 6px 0; font-size: 13px; }
 .totals { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; }
 .range { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); margin: 12px 0 6px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); overflow: hidden; }
@@ -78,10 +79,8 @@
 .screen .range label + label { border-inline-start: 1px solid var(--border); }
 .screen .range label:focus-within { background: var(--secondary); }
 .screen .range label:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: -2px; }
-.screen .range label input { -webkit-appearance: none; appearance: none; display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 32px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--foreground); font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; text-align: left; }
-.screen .range input:focus-visible { outline: 0; }
-.screen .range input::-webkit-date-and-time-value { margin: 0; text-align: left; }
-.screen .range input::-webkit-calendar-picker-indicator { margin: 0 0 0 4px; padding: 0; opacity: .6; }
+.screen .range .rangeValue { min-height: 32px; line-height: 1.3; color: var(--foreground); font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.screen .range .rangeValue:has(> input:focus-visible) { outline: 0; }
 .range:has(input[aria-invalid=true]) { border-color: var(--destructive); }
 .total { display: grid; align-content: start; gap: 8px; padding: 16px 0; color: var(--shift-color); border-bottom: 1px solid var(--border); }
 .total > span { font-size: 12px; font-weight: 600; }

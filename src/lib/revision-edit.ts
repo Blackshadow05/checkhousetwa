@@ -5,7 +5,17 @@ import {
   QUANTITY_LIMITS,
   evidencePhotoLimit,
 } from "@/lib/revision-form";
+import { normalizeText } from "@/lib/revisiones-display";
+import { esRolAdmin } from "@/lib/usuarios-admin";
 import type { RevisionCasitaInicio } from "@/types/database";
+
+export function puedeEditarRevision(
+  usuario: { nombre: string; rol?: string | null },
+  quienRevisa: string | null | undefined,
+) {
+  if (esRolAdmin(usuario.rol)) return true;
+  return Boolean(quienRevisa?.trim()) && normalizeText(quienRevisa ?? "") === normalizeText(usuario.nombre);
+}
 
 export const REVISION_EDIT_FIELDS = [
   "casita",
@@ -195,10 +205,10 @@ export function validateRevisionFieldDependencies(
     const limit = evidencePhotoLimit(persisted ?? "");
     if (limit === 0 && photos !== 0) return "Esta opción no admite evidencias.";
     if (limit === 1 && (!row.evidencia_01?.trim() || photos !== 1)) {
-      return "Esta opción requiere solo la evidencia 01.";
+      return "Esta opción requiere solo la evidencia 1.";
     }
     if (limit > 1 && (!row.evidencia_01?.trim() || photos < 1 || photos > 3)) {
-      return "Añade la evidencia 01.";
+      return "Añade la evidencia 1.";
     }
     return undefined;
   }

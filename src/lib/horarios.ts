@@ -1,3 +1,5 @@
+import { fechaTexto } from "@/lib/fechas";
+
 export type HorarioRow = {
   id: string;
   empleado: string;
@@ -101,7 +103,9 @@ export function fechaCostaRica(date = new Date()): string {
 
 export function fechaHorario(value: string, long = false): string {
   // Date-only columns are calendar days, never timestamps in the device zone.
-  return new Intl.DateTimeFormat("es-CR", { timeZone: "UTC", day: "numeric", month: long ? "long" : "short", ...(long ? { weekday: "long" as const, year: "numeric" as const } : {}) }).format(new Date(`${value}T12:00:00Z`));
+  if (!long) return fechaTexto(value, false);
+  const weekday = new Intl.DateTimeFormat("es-CR", { timeZone: "UTC", weekday: "long" }).format(new Date(`${value}T12:00:00Z`));
+  return `${weekday.charAt(0).toLocaleUpperCase("es-CR")}${weekday.slice(1)} ${fechaTexto(value)}`;
 }
 
 export function fechaValida(value: string): boolean {

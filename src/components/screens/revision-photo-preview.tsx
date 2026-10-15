@@ -8,7 +8,7 @@ import type { FaseRevelado } from "@/hooks/use-revelado-escaneo";
 import type { RevisionPhoto, RevisionScanBox } from "@/lib/revision-form";
 
 function evidenceLabel(index: number) {
-  return `Evidencia ${String(index + 1).padStart(2, "0")}`;
+  return `Evidencia ${index + 1}`;
 }
 
 function photoSize(bytes: number) {

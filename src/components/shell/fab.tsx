@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ClipboardPen, Plus, ScanSearch } from "lucide-react";
 import type { RevisionMode } from "@/lib/revision-form";
 
-export function NewRevisionFab({ onSelect }: { onSelect: (mode: RevisionMode) => void }) {
+export function NewRevisionFab({ away = false, onSelect }: { away?: boolean; onSelect: (mode: RevisionMode) => void }) {
   const [open, setOpen] = useState(false);
   const fabRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -44,6 +44,7 @@ export function NewRevisionFab({ onSelect }: { onSelect: (mode: RevisionMode) =>
         ref={fabRef}
         type="button"
         className="new-revision-fab"
+        data-away={away && !open ? "" : undefined}
         onClick={() => setOpen((value) => !value)}
         aria-label={open ? "Cerrar opciones de revisión" : "Crear nueva revisión"}
         aria-haspopup="menu"

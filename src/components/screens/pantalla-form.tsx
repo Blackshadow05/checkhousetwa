@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Camera, ChevronLeft, ImagePlus, Maximize2, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, ChevronLeft, ImagePlus, Maximize2, Pencil, Trash2 } from "lucide-react";
 import PhotoSwipe from "photoswipe";
 import type { SlideData } from "photoswipe";
 import "photoswipe/style.css";
-import { currentUsuario, logoutUsuario } from "@/app/actions/usuarios";
+import { currentUsuario } from "@/app/actions/usuarios";
 import { LoginForm } from "@/components/auth/login-form";
 import { createPantalla } from "@/app/actions/pantallas";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -290,22 +290,23 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
   function locationFields(side: "origen" | "destino") {
     const value = side === "origen" ? origen : destino; const room = side === "origen" ? origenRoom : destinoRoom;
     return <div className="pantalla-card"><h3>{side === "origen" ? "Origen" : "Destino"}</h3>
-      <label>Ubicación<select aria-label={`Ubicación de ${side}`} required value={value} onChange={e => { if (side === "origen") { setOrigen(e.target.value); setOrigenRoom(""); } else { setDestino(e.target.value); setDestinoRoom(""); } }}><option value="">Selecciona una ubicación</option>{UBICACIONES.map(v => <option key={v} value={v}>{ubicacionLabel(v)}</option>)}</select></label>
-      {CASITAS.includes(value) && <label>Habitación<select aria-label={`Habitación de ${side}`} required value={room} onChange={e => side === "origen" ? setOrigenRoom(e.target.value) : setDestinoRoom(e.target.value)}><option value="">Selecciona una habitación</option>{habitaciones(value).map(r => <option key={r}>{r}</option>)}</select></label>}
+      <label>Ubicación<select name={`ubicacion-${side}`} aria-label={`Ubicación de ${side}`} required value={value} onChange={e => { if (side === "origen") { setOrigen(e.target.value); setOrigenRoom(""); } else { setDestino(e.target.value); setDestinoRoom(""); } }}><option value="">Selecciona una ubicación</option>{UBICACIONES.map(v => <option key={v} value={v}>{ubicacionLabel(v)}</option>)}</select></label>
+      {CASITAS.includes(value) && <label>Habitación<select name={`habitacion-${side}`} aria-label={`Habitación de ${side}`} required value={room} onChange={e => side === "origen" ? setOrigenRoom(e.target.value) : setDestinoRoom(e.target.value)}><option value="">Selecciona una habitación</option>{habitaciones(value).map(r => <option key={r}>{r}</option>)}</select></label>}
     </div>;
   }
   const classificationPhoto = classification?.photo;
   const validCount = !classification || classification.puntos === "" || (/^\d{1,3}$/.test(classification.puntos));
 
   return <div className="pantalla-form">
-    <div className="pantalla-toolbar"><button type="button" disabled={busy} onClick={onClose}>← Volver</button><h2>Nuevo registro</h2></div>
+    <button type="button" className="pantalla-back" disabled={busy} onClick={onClose}><ArrowLeft size={18} aria-hidden />Reporte de pantallas</button>
+    <h2>Nuevo registro</h2>
     {!online && <p role="status">Sin conexión. El guardado estará disponible cuando vuelvas a conectarte.</p>}
     {checking ? <p role="status">Comprobando sesión…</p> : !user ? <LoginForm online={online} variant="card" onSuccess={(usuario) => { setUser(usuario); setError(""); }} /> : <form onSubmit={e => { e.preventDefault(); void submit(); }}>
-      <div className="pantalla-toolbar"><span>Registrado por <strong>{user.nombre}</strong></span><button type="button" disabled={busy} onClick={() => { void logoutUsuario().then(() => { setUser(null); window.dispatchEvent(new Event("casitas:logout")); }).catch(() => setError("No se pudo cerrar sesión.")); }}>Salir</button></div>
+      <p className="pantalla-status">Registrado por <strong>{user.nombre}</strong></p>
       <fieldset disabled={busy}>
-        <label>Tipo<select aria-label="Tipo de registro" value={tipo} onChange={e => setTipo(e.target.value as typeof tipo)}><option value="reporte">Reporte de pantalla</option><option value="movimiento">Movimiento de pantalla</option></select></label>
+        <label>Tipo<select name="tipo-registro" aria-label="Tipo de registro" value={tipo} onChange={e => setTipo(e.target.value as typeof tipo)}><option value="reporte">Reporte de pantalla</option><option value="movimiento">Movimiento de pantalla</option></select></label>
         {tipo === "reporte" ? <>
-          <label>Casita<select aria-label="Casita" required value={casita} disabled={photos.length > 0} onChange={e => setCasita(e.target.value)}><option value="">Selecciona una casita</option>{CASITAS.map(v => <option key={v} value={v}>Casita {v}</option>)}</select></label>
+          <label>Casita<select name="casita" aria-label="Casita" required value={casita} disabled={photos.length > 0} onChange={e => setCasita(e.target.value)}><option value="">Selecciona una casita</option>{CASITAS.map(v => <option key={v} value={v}>Casita {v}</option>)}</select></label>
           {casita && <p>{habitaciones(casita).join(" · ")}. Una foto por habitación.</p>}
           {photos.length > 0 && <div className="pantalla-photo-list">{photos.map((photo, index) => <article className="pantalla-photo-item" key={photo.id}>
             <button className="pantalla-photo-thumb-button" type="button" aria-label={`Abrir foto ${index + 1} de ${photo.ubicacion}`} onClick={(event) => { viewerTriggerRef.current = event.currentTarget; void openPhoto(index); }}>
@@ -325,9 +326,9 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
               <button className="pantalla-remove-photo" type="button" title="Quitar foto" aria-label={`Quitar foto ${index + 1}`} onClick={() => removePhoto(photo)}><Trash2 size={18} aria-hidden /></button>
             </div>
           </article>)}</div>}
-          <input ref={addPhotoInputRef} aria-label="Tomar foto de pantalla" type="file" accept={PHOTO_ACCEPT} capture="environment" hidden onChange={e => { void readPhoto(e.target.files?.[0]); e.target.value = ""; }} />
-          <input ref={galleryInputRef} aria-label="Seleccionar foto de pantalla" type="file" accept={PHOTO_ACCEPT} hidden onChange={e => { void readPhoto(e.target.files?.[0]); e.target.value = ""; }} />
-          <input ref={replacePhotoInputRef} aria-label="Cambiar foto de pantalla" type="file" accept={PHOTO_ACCEPT} hidden onChange={e => { replacePhoto(e.target.files?.[0]); e.target.value = ""; }} />
+          <input name="foto-camara" ref={addPhotoInputRef} aria-label="Tomar foto de pantalla" type="file" accept={PHOTO_ACCEPT} capture="environment" hidden onChange={e => { void readPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+          <input name="foto-galeria" ref={galleryInputRef} aria-label="Seleccionar foto de pantalla" type="file" accept={PHOTO_ACCEPT} hidden onChange={e => { void readPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+          <input name="foto-reemplazo" ref={replacePhotoInputRef} aria-label="Cambiar foto de pantalla" type="file" accept={PHOTO_ACCEPT} hidden onChange={e => { replacePhoto(e.target.files?.[0]); e.target.value = ""; }} />
           {casita && photos.length < habitaciones(casita).length && <>
             <p className="pantalla-status">Fotografía la pantalla completa, oscura y de frente. Evita luces reflejadas y menús encendidos.</p>
             <div className={styles.photoActions}>
@@ -336,7 +337,7 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
             </div>
           </>}
         </> : <>{locationFields("origen")}{locationFields("destino")}</>}
-        <label>Notas <span>(opcional)</span><textarea aria-label="Notas" value={tipo === "reporte" ? notas : movementNotes} maxLength={4000} rows={3} onChange={e => tipo === "reporte" ? setNotas(e.target.value) : setMovementNotes(e.target.value)} /></label>
+        <label>Notas <span>(opcional)</span><textarea name="notas" aria-label="Notas" value={tipo === "reporte" ? notas : movementNotes} maxLength={4000} rows={3} onChange={e => tipo === "reporte" ? setNotas(e.target.value) : setMovementNotes(e.target.value)} /></label>
         {tipo === "reporte" && <p className="pantalla-status">El resumen incluye solo las pantallas con daño. Puedes editar estas notas.</p>}
         <button className="pantalla-primary" disabled={!online} type="submit">Guardar {tipo === "movimiento" ? "movimiento" : "reporte"}</button>
       </fieldset>
@@ -361,7 +362,7 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
           </div>
           {classificationPhoto.analysisError ? <p className="pantalla-notice" role="status">{classificationPhoto.analysisError}</p> : <p className="sheet-description" role="status">{detectionSummary(classificationPhoto.detection)}</p>}
           {classificationPhoto.aiNotice ? <p className="pantalla-notice" role="status">{classificationPhoto.aiNotice}</p> : null}
-          <label>Puntos blancos<input aria-label="Puntos blancos" type="number" inputMode="numeric" min={0} max={999} step={1} value={classification.puntos} placeholder="Sin contar" onChange={e => {
+          <label>Puntos blancos<input name="puntos-blancos" aria-label="Puntos blancos" type="number" inputMode="numeric" min={0} max={999} step={1} value={classification.puntos} placeholder="Sin contar" onChange={e => {
             const value = e.target.value;
             setClassification(current => current ? { ...current, puntos: value, estado: /^\d{1,3}$/.test(value) ? estadoPorPuntos(Number(value)) : "" } : current);
           }} /></label>

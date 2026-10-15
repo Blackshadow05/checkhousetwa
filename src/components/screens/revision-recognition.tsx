@@ -13,7 +13,7 @@ export { styles as recognitionStyles };
 export type FotoPrevia = { id: string; url: string };
 
 function photoLabel(index: number) {
-  return `Foto ${String(index + 1).padStart(2, "0")}`;
+  return `Foto ${index + 1}`;
 }
 
 function cantidadFotos(count: number) {
@@ -53,8 +53,8 @@ export function RecognitionScanCard({ photos, previas, limit, scan, status, mark
   const listo = !trabajando && !error && scan && scan.photoIds.length === photos.length;
   return (
     <div className={styles.recognition} data-revision-evidencias="" tabIndex={-1}>
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => { onPick(event.target.files); event.target.value = ""; }} />
-      <input ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple={restantes > 1} hidden onChange={(event) => { onPick(event.target.files); event.target.value = ""; }} />
+      <input name="reconocimiento-camara" ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => { onPick(event.target.files); event.target.value = ""; }} />
+      <input name="reconocimiento-galeria" ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple={restantes > 1} hidden onChange={(event) => { onPick(event.target.files); event.target.value = ""; }} />
       {limit === 0 ? (
         <div className={styles.empty}>
           <ScanSearch size={26} strokeWidth={1.5} aria-hidden="true" />

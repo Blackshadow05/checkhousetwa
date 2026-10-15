@@ -25,6 +25,7 @@ export type RegistroReconocimiento = {
   inventario_comparado_en: string;
   inventario_disponible: boolean;
   articulos: RegistroArticuloReconocimiento[];
+  coincidieron?: number;
 };
 
 // Pick the detector's 14 classes only: beds and USB speaker are never included.
@@ -57,13 +58,17 @@ export function registroReconocimiento(
   const originalIssues = new Set(comparison.revisar.map(item => item.key));
   const items = new Map([...comparison.revisar, ...comparison.coinciden, ...comparison.sinComparar].map(item => [item.key, item]));
   const articulos: RegistroArticuloReconocimiento[] = [];
+  let coincidieron = 0;
   for (const campo of ARTICULOS_CLASES) {
     const item = items.get(campo)!;
     const valorEscaneo = item.detectado === null ? null : valorDetectado(campo, item.detectado);
     const valorGuardado = BOOLEAN_FIELDS.has(campo) ? values[campo] : String(Number(values[campo]));
     const modificado = valorEscaneo !== null && valorEscaneo !== valorGuardado;
     // Keep original scan failures even after correction, and edits to initially correct items.
-    if (!originalIssues.has(campo) && !modificado) continue;
+    if (!originalIssues.has(campo) && !modificado) {
+      if (item.esperado !== null) coincidieron += 1;
+      continue;
+    }
     articulos.push({
       campo, detectado: item.detectado, inventario: item.esperado,
       valor_escaneo: valorEscaneo, valor_guardado: valorGuardado,
@@ -73,6 +78,6 @@ export function registroReconocimiento(
   }
   return {
     version: 1, modelo: recognition.model ?? null, escaneado_en: recognition.at,
-    inventario_comparado_en: comparedAt, inventario_disponible: inventario !== null, articulos,
+    inventario_comparado_en: comparedAt, inventario_disponible: inventario !== null, articulos, coincidieron,
   };
 }

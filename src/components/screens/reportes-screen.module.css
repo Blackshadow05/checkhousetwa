@@ -18,7 +18,7 @@
 .screen .presets button[aria-pressed=true] { color: var(--primary); }
 .dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-block: 6px 10px; }
 .screen .dates label { font-size: 12px; }
-.screen .dates input { background: var(--background); padding: 12px 9px; }
+.screen .dates .dateBox { background: var(--background); padding: 12px 9px; font-weight: 400; }
 .screen .primary, .download { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 52px; padding: 12px; border-radius: 14px; font-size: 14px; font-weight: 650; text-decoration: none; }
 .screen .primary { background: var(--primary); color: var(--primary-foreground); }
 .download { color: var(--primary-foreground); background: var(--primary); margin-top: 18px; }

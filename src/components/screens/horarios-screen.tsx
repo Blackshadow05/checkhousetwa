@@ -7,6 +7,8 @@ import { CCSS_PORCENTAJE, clasificarTurno, colones, diasEntre, esEmpleadoDeUsuar
 import type { UsuarioShell } from "@/types/database";
 import { SegmentIndicator } from "@/components/ui/segment-indicator";
 import { useSlideDirection } from "@/hooks/use-slide-direction";
+import { DateInput } from "@/components/ui/date-input";
+import { fechaTexto, fechaHora } from "@/lib/fechas";
 import styles from "./horarios-screen.module.css";
 
 const VIEWS = [
@@ -166,7 +168,7 @@ export function HorariosScreen({ visible, session, onBack }: { visible: boolean;
   const ownView = Boolean(mine) && selectedEmployee === mine;
   const pay = withSalary ? pagoConQuincena(extras.brutoExacto) : { bruto: extras.bruto, neto: extras.neto };
   const rangeRows = (rows || []).filter(row => row.empleado === selectedEmployee && row.fecha >= from && row.fecha <= to && row.fecha <= today);
-  const coverage = rows?.length ? `${fechaHorario(rows[0].fecha, true)} — ${fechaHorario(rows[rows.length - 1].fecha, true)}` : "";
+  const coverage = rows?.length ? `${fechaTexto(rows[0].fecha)} — ${fechaTexto(rows[rows.length - 1].fecha)}` : "";
   const changeView = (next: View) => {
     const scroller = rootRef.current?.closest<HTMLElement>(".app-screen");
     if (scroller) scrolls.current[view] = scroller.scrollTop;
@@ -177,16 +179,18 @@ export function HorariosScreen({ visible, session, onBack }: { visible: boolean;
   return <div ref={rootRef} className={styles.screen}>
     <button type="button" className={styles.back} onClick={onBack}><ArrowLeft size={18} aria-hidden /> Otros</button>
     <div className={styles.row}><div><p className="pantalla-eyebrow">EQUIPO</p><h1>Horario laboral</h1></div><button type="button" className={styles.refresh} aria-label="Actualizar horarios" disabled={loading || !online} onClick={() => void refresh()}><RefreshCw size={20} aria-hidden className={loading ? styles.spinning : undefined} /></button></div>
-    <p role="status" className={styles.status}>{loading ? "Actualizando horarios…" : snapshot ? !online ? "Sin conexión · Últimos datos guardados" : cached || error ? "Últimos datos guardados" : "Datos actualizados" : !online ? "Sin conexión · Sin datos guardados" : "Sin datos disponibles"}{snapshot && ` · ${new Date(snapshot.updatedAt).toLocaleString("es-CR", { timeZone: "America/Costa_Rica", dateStyle: "short", timeStyle: "short" })}`}</p>
+    <p role="status" className={styles.status}>{loading ? "Actualizando horarios…" : snapshot ? !online ? "Sin conexión · Últimos datos guardados" : cached || error ? "Últimos datos guardados" : "Datos actualizados" : !online ? "Sin conexión · Sin datos guardados" : "Sin datos disponibles"}{snapshot && ` · ${fechaHora(snapshot.updatedAt)}`}</p>
     {error && <p role="alert" className={styles.notice}>{error}</p>}{notice && <p role="status" className={styles.notice}>{notice}</p>}
     <nav className={styles.views} aria-label="Consultas del horario"><SegmentIndicator activeIndex={viewIndex} />{VIEWS.map(({ id, label, icon: Icon }) => <button type="button" key={id} aria-pressed={view === id} onClick={() => changeView(id)}><Icon size={18} aria-hidden />{label}</button>)}</nav>
-    {view !== "dia" && <label>Colaborador<select value={selectedEmployee} onChange={event => setPerson(event.target.value)} disabled={!employees.length}>{!employees.length && <option value="">Sin colaboradores disponibles</option>}{employees.map(name => <option key={name} value={name}>{name}</option>)}</select></label>}
+    {view !== "dia" && <label>Colaborador<select name="colaborador" value={selectedEmployee} onChange={event => setPerson(event.target.value)} disabled={!employees.length}>{!employees.length && <option value="">Sin colaboradores disponibles</option>}{employees.map(name => <option key={name} value={name}>{name}</option>)}</select></label>}
     {loading && !snapshot ? <div className={styles.skeletons} aria-label="Cargando horarios" aria-busy="true"><div /><div /><div /></div> : !snapshot ? <Empty title="Carga los horarios del equipo">Conéctate y pulsa actualizar. Después podrás consultar los últimos datos guardados sin conexión.</Empty> : <>
       {view === "dia" && <section key="dia" className="slide-enter" data-direction={viewDirection} aria-label="Horario del día">
         <div className={styles.monthBar}>
-          <strong>{MONTH_FORMAT.format(noon(`${month}-01`)).replace(" de ", " ")}</strong>
-          {date !== today && <button type="button" className={styles.todayChip} onClick={() => setDate(today)}>Hoy</button>}
           <button type="button" aria-label="Mes anterior" disabled={month <= firstMonth} onClick={() => goToMonth(-1)}><ChevronLeft size={20} aria-hidden /></button>
+          <div className={styles.monthTitle}>
+            <strong>{MONTH_FORMAT.format(noon(`${month}-01`)).replace(" de ", " ")}</strong>
+            {date !== today && <button type="button" className={styles.todayChip} onClick={() => setDate(today)}>Hoy</button>}
+          </div>
           <button type="button" aria-label="Mes siguiente" disabled={month >= lastMonth} onClick={() => goToMonth(1)}><ChevronRight size={20} aria-hidden /></button>
         </div>
         <DayStrip value={fechaValida(date) ? date : today} today={today} marks={marks} onChange={setDate} />
@@ -204,7 +208,7 @@ export function HorariosScreen({ visible, session, onBack }: { visible: boolean;
         {vacations.map(group => <details className={styles.yearGroup} key={group.year} open><summary><span>{group.year}</span><span className={styles.yearTotal}>{group.total} {group.total === 1 ? "día" : "días"}</span></summary><div className={styles.dateGrid}>{group.days.map(row => <span className={styles.datePill} key={row.id}>{fechaHorario(row.fecha)}</span>)}</div></details>)}
         {!vacations.length && <Empty title="Sin vacaciones registradas">{selectedEmployee || "Este colaborador"} no tiene días de vacaciones registrados hasta hoy.</Empty>}
       </section>}
-      {view === "extras" && <section key="extras" className="slide-enter" data-direction={viewDirection} aria-label="Horas extras por rango"><h2>Horas extras</h2><div className={styles.range}><label>Desde<input type="date" value={from} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "horarios-range-error" : undefined} onChange={event => setFrom(event.target.value)} /></label><label>Hasta<input type="date" value={to} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "horarios-range-error" : undefined} onChange={event => setTo(event.target.value)} /></label></div>
+      {view === "extras" && <section key="extras" className="slide-enter" data-direction={viewDirection} aria-label="Horas extras por rango"><h2>Horas extras</h2><div className={styles.range}><label>Desde<DateInput className={styles.rangeValue} name="extras-desde" value={from} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "horarios-range-error" : undefined} onValueChange={setFrom} /></label><label>Hasta<DateInput className={styles.rangeValue} name="extras-hasta" value={to} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "horarios-range-error" : undefined} onValueChange={setTo} /></label></div>
         {rangeError ? <p id="horarios-range-error" role="alert" className={styles.notice}>{rangeError}</p> : <>
           <div className={styles.totals}>
             <article data-jornada="mixto" className={styles.total}><Sun size={20} aria-hidden /><span>Extras mixtas</span><strong>{extras.mixtas}<small> h</small></strong>{ownView && <span className={styles.totalAmount}>{colones(extras.montoMixtas)}</span>}{extras.mixtasFeriado > 0 && <span className={styles.totalNote}>{extras.mixtasFeriado} h en feriado</span>}</article>
@@ -227,7 +231,7 @@ export function HorariosScreen({ visible, session, onBack }: { visible: boolean;
           {!extras.days.length && <Empty title={rangeRows.length ? "No hay horas extras calculadas" : "No hay horarios en este rango"}>{rangeRows.length ? "Los turnos con una regla definida no suman extras en estas fechas." : "Selecciona un rango con horarios registrados para consultar las horas extras."}</Empty>}
         </>}
       </section>}
-      {view === "feriados" && <section key="feriados" className="slide-enter" data-direction={viewDirection} aria-label="Feriados disfrutados"><h2>Feriados disfrutados</h2><label>Año<select value={holidayYear} onChange={event => setHolidayYear(event.target.value)}>{holidayYears.map(year => <option key={year} value={year}>{year}</option>)}</select></label><div className={styles.holidaySummary}><Sun size={22} aria-hidden /><div><strong>{yearHolidays?.total || 0} {(yearHolidays?.total || 0) === 1 ? "día feriado" : "días feriados"}</strong><span>Registrados como Feriado en {holidayYear}</span></div></div>
+      {view === "feriados" && <section key="feriados" className="slide-enter" data-direction={viewDirection} aria-label="Feriados disfrutados"><h2>Feriados disfrutados</h2><label>Año<select name="anio-feriados" value={holidayYear} onChange={event => setHolidayYear(event.target.value)}>{holidayYears.map(year => <option key={year} value={year}>{year}</option>)}</select></label><div className={styles.holidaySummary}><Sun size={22} aria-hidden /><div><strong>{yearHolidays?.total || 0} {(yearHolidays?.total || 0) === 1 ? "día feriado" : "días feriados"}</strong><span>Registrados como Feriado en {holidayYear}</span></div></div>
         <p className={styles.status}>Solo se cuentan los días marcados como Feriado hasta hoy; los futuros quedan fuera del total.</p>
         {yearHolidays?.days.map(row => <HorarioItem key={row.id} row={row} />)}
         {!yearHolidays?.days.length && <Empty title="Sin feriados registrados este año">{selectedEmployee || "Este colaborador"} no tiene feriados disfrutados registrados en {holidayYear}.</Empty>}

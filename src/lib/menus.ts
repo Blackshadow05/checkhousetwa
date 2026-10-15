@@ -1,3 +1,4 @@
+import { fechaTexto } from "@/lib/fechas";
 import type { MenuDelDia, MenuRow } from "@/types/database";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -21,12 +22,7 @@ export function weekdayName(day: string) {
 }
 
 export function menuDateHeading(day: string) {
-  const formatted = new Intl.DateTimeFormat("es-CR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  }).format(new Date(`${day}T12:00:00`));
-  return formatted.charAt(0).toLocaleUpperCase("es-CR") + formatted.slice(1);
+  return `${weekdayName(day)} ${fechaTexto(day, false)}`;
 }
 
 function parseMenuContent(contenido: string): {
@@ -81,8 +77,7 @@ export function menuChipLabel(fecha: string, today: string) {
   if (fecha === addDaysKey(today, 1)) return "Mañana";
   const weekday = new Intl.DateTimeFormat("es-CR", {
     weekday: "short",
-    day: "numeric",
   }).format(new Date(`${fecha}T12:00:00`));
   const cleaned = weekday.replace(".", "").trim();
-  return cleaned.charAt(0).toLocaleUpperCase("es-CR") + cleaned.slice(1);
+  return `${cleaned.charAt(0).toLocaleUpperCase("es-CR")}${cleaned.slice(1)} ${Number(fecha.slice(8, 10))}`;
 }

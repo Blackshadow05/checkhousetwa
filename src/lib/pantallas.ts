@@ -1,3 +1,5 @@
+import { fechaHoraRegistro } from "@/lib/fechas";
+
 export const ESTADOS_PANTALLA = ["en buen estado", "moderada", "grave", "defectuosa", "no hay pantalla"] as const;
 export type PantallaEstado = (typeof ESTADOS_PANTALLA)[number];
 export type PantallaFoto = { url: string; ubicacion: string; estado: string; puntos?: number | null };
@@ -43,7 +45,7 @@ export type PantallaInput = Omit<PantallaReport, "id" | "nombre_usuario" | "fech
 export type PantallaStock = { ubicacion: string; habitacion: string; cantidad: number; sinPantalla?: boolean };
 export type PantallaSnapshot = { reports: PantallaReport[]; stock: PantallaStock[]; updatedAt: string };
 export const CASITAS = Array.from({ length: 50 }, (_, i) => String(i + 1));
-export const UBICACIONES = [...CASITAS, "bodega", "casa_verde"];
+export const UBICACIONES = ["casa_verde", ...CASITAS];
 const SOLO_LIVING = new Set([5, 6, 16, 17, 18, 19, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 49, 50]);
 const TRES = new Set([1, 2, 3, 4, 7, 8, 9, 10]);
 const LIVING_Y_KING = new Set([15, 20, 21, 22, 23, 24, 25, 38, 39, 40, 43, 46, 47, 48]);
@@ -84,7 +86,7 @@ export function validarPantalla(input: PantallaInput): string | null {
   return null;
 }
 // Timestamps are stored as Costa Rica wall time; never parse them in the device timezone.
-export function pantallaTime(value: string) { return value.replace("T", " ").slice(0, 16); }
+export function pantallaTime(value: string) { return fechaHoraRegistro(value.replace("T", " ").slice(0, 16)); }
 
 /** Latest report per casita, using Costa Rica wall time and ID to break ties. */
 export function latestPantallaReports(reports: PantallaReport[]): PantallaReport[] {

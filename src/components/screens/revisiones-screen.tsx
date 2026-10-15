@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  CalendarDays,
   Check,
   ChevronRight,
   CircleAlert,
@@ -17,11 +18,13 @@ import {
   X,
 } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { DateInput } from "@/components/ui/date-input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
 import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
-import { CAJA_FUERTE_FILTERS, REPORT_FILTERS } from "@/lib/revisiones-archive";
+import { CAJA_FUERTE_FILTERS, REPORT_FILTERS, type ReportFilter } from "@/lib/revisiones-archive";
+import { fechaAbreviada, fechaTexto } from "@/lib/fechas";
 import {
   dayLabel,
   hasRevisionValue,
@@ -41,6 +44,21 @@ const PERIODS = [
   { id: "three-days", label: "3 días" },
   { id: "week", label: "7 días" },
 ] as const;
+
+const DATE_SEGMENT = PERIODS.length;
+
+const REPORT_GROUPS: { id: string; label: string; options: { id: ReportFilter; label: string }[] }[] = [
+  { id: "caja_fuerte", label: "Caja fuerte", options: [{ id: "caja_fuerte", label: "Todos" }] },
+  { id: "trapo", label: "Trapo de binoculares", options: [{ id: "trapo_si", label: "Hay" }, { id: "trapo_no", label: "No hay" }] },
+  { id: "sombrero", label: "Sombrero", options: [{ id: "sombrero_si", label: "Hay" }, { id: "sombrero_no", label: "No hay" }] },
+  { id: "yute", label: "Bolso de yute", options: [{ id: "yute_si", label: "Hay" }, { id: "yute_dos", label: "Hay 2" }, { id: "yute_no", label: "No hay" }] },
+  { id: "cola", label: "Cola de caballo", options: [{ id: "cola_si", label: "Hay" }, { id: "cola_no", label: "No hay" }] },
+  { id: "notas", label: "Notas", options: [{ id: "nota", label: "Con nota" }, { id: "nota_extra", label: "Con nota extra" }] },
+];
+
+function reportGroupOf(filter: ReportFilter | null) {
+  return filter ? REPORT_GROUPS.find((group) => group.options.some((option) => option.id === filter)) ?? null : null;
+}
 
 type ListDirection = "initial" | "none" | "forward" | "back";
 
@@ -82,8 +100,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   const sentinelRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => groupByDay(archive.rows), [archive.rows]);
   const periodIndex = archive.date
-    ? -1
+    ? DATE_SEGMENT
     : PERIODS.findIndex((item) => item.id === archive.period);
+  const reportCount = archive.reportFilter !== null || archive.status !== null ? 1 : 0;
+  const selectedGroup = reportGroupOf(archive.reportFilter);
   const [listTransition, setListTransition] = useState<{
     index: number;
     direction: ListDirection;
@@ -159,6 +179,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             <Search size={18} aria-hidden="true" />
             <input
               type="search"
+              name="buscar-revision"
               value={archive.searchInput}
               onChange={(event) => archive.setSearchInput(event.target.value)}
               placeholder="Buscar"
@@ -180,13 +201,13 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
           <button
             type="button"
             className={styles.filterButton}
-            data-active={archive.filterCount > 0 || undefined}
+            data-active={reportCount > 0 || undefined}
             onClick={() => setFiltersOpen(true)}
-            aria-label={`Filtrar revisiones${archive.filterCount ? `, ${archive.filterCount} filtros activos` : ""}`}
+            aria-label={`Filtrar revisiones${reportCount ? ", 1 filtro activo" : ""}`}
           >
             <SlidersHorizontal size={19} />
-            {archive.filterCount > 0 ? (
-              <span className={styles.filterDot}>{archive.filterCount}</span>
+            {reportCount > 0 ? (
+              <span className={styles.filterDot}>{reportCount}</span>
             ) : null}
           </button>
         </div>
@@ -211,16 +232,18 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
               {item.label}
             </button>
           ))}
+          <DateInput
+            className={styles.dateSegment}
+            name="fecha-revisiones"
+            aria-label={archive.date ? `Fecha elegida ${fechaTexto(archive.date)}. Cambiar fecha` : "Elegir una fecha"}
+            value={archive.date}
+            max={archive.today}
+            onValueChange={archive.setDate}
+            display={<><CalendarDays size={15} aria-hidden="true" />{archive.date ? fechaAbreviada(archive.date) : "Fecha"}</>}
+          />
         </div>
-        {(archive.reportFilter || archive.status || archive.date) && (
+        {(archive.reportFilter || archive.status) && (
           <div className={styles.chips}>
-            {archive.date && (
-              <button type="button" onClick={() => archive.setDate("")}>
-                {archive.date}
-                <X size={14} aria-hidden="true" />
-                <span className="sr-only">Quitar fecha</span>
-              </button>
-            )}
             {archive.reportFilter && (
               <button type="button" onClick={() => archive.setReportFilter(null)}>
                 {REPORT_FILTERS.find((item) => item.id === archive.reportFilter)?.label}
@@ -334,7 +357,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                       ? `Casita ${row.casita}, ${row.quien_revisa}, ${PENDING_LABEL[pendiente.status]}`
                       : marcada
                         ? `Casita ${row.casita} por completar, marcada por ${marcadaPor} a las ${shortTime(row.created_at)}. Completar`
-                      : `Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${row.created_at}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}
+                      : `Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}
                   >
                     <span className={styles.plaque}>
                       <strong className={styles.number}>{row.casita}</strong>
@@ -388,7 +411,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
           </div>
           <h3>
             {archive.searchInput || archive.filterCount
-              ? "Sin resultados"
+              ? archive.date ? `Sin resultados el ${fechaTexto(archive.date)}` : "Sin resultados"
               : "Aún no hay revisiones"}
           </h3>
           {archive.searchInput || archive.filterCount > 0 ? (
@@ -415,7 +438,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
           <>
             <p className="sheet-description">
               {porCompletar.marcada_por ?? porCompletar.quien_revisa} la marcó para completar después
-              {" "}{revisionDay(porCompletar.created_at) === archive.today ? "hoy" : dayLabel(revisionDay(porCompletar.created_at), archive.today).toLowerCase()}
+              {" "}{revisionDay(porCompletar.created_at) === archive.today ? "hoy" : dayLabel(revisionDay(porCompletar.created_at), archive.today) === "Ayer" ? "ayer" : `el ${dayLabel(revisionDay(porCompletar.created_at), archive.today)}`}
               {" "}a las {shortTime(porCompletar.created_at)}. ¿Cómo quieres completarla?
             </p>
             <div className={styles.completeOptions}>
@@ -500,27 +523,43 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
         onClose={() => setFiltersOpen(false)}
         title="Filtrar revisiones"
       >
-        <div className={styles.dateRow}>
-          <label className={styles.dateField}>
-            <span>Fecha</span>
-            <input type="date" value={archive.date} onChange={(event) => archive.setDate(event.target.value)} />
-          </label>
-          {archive.date && <button type="button" className="icon-button" aria-label="Quitar fecha" onClick={() => archive.setDate("")}><X size={18} /></button>}
-        </div>
         <h3 className="filter-section-title">Reporte</h3>
         <div className="filter-options">
-          {[{ id: null, label: "Todos" }, ...REPORT_FILTERS].map((item) => (
-            <Fragment key={item.id ?? "all"}>
-              <button type="button" aria-pressed={archive.reportFilter === item.id}
-                aria-expanded={item.id === "caja_fuerte" ? archive.reportFilter === "caja_fuerte" : undefined}
-                aria-controls={item.id === "caja_fuerte" && archive.reportFilter === "caja_fuerte" ? "caja-fuerte-options" : undefined}
-                className={archive.reportFilter === item.id ? "is-selected" : ""}
-                onClick={() => archive.setReportFilter(item.id)}>
-                <span>{item.label}</span>
-                <span className="option-check">{archive.reportFilter === item.id ? <Check size={15} /> : null}</span>
+          <button type="button" aria-pressed={archive.reportFilter === null}
+            className={archive.reportFilter === null ? "is-selected" : ""}
+            onClick={() => archive.setReportFilter(null)}>
+            <span>Todos</span>
+            <span className="option-check">{archive.reportFilter === null ? <Check size={15} /> : null}</span>
+          </button>
+          {REPORT_GROUPS.map((group) => {
+            const selected = selectedGroup?.id === group.id;
+            const optionsId = `filtro-${group.id}`;
+            return (
+            <Fragment key={group.id}>
+              <button type="button" aria-pressed={selected}
+                aria-expanded={selected}
+                aria-controls={selected ? optionsId : undefined}
+                className={selected ? "is-selected" : ""}
+                onClick={() => { if (!selected) archive.setReportFilter(group.options[0].id); }}>
+                <span>{group.label}</span>
+                <span className="option-check">{selected ? <Check size={15} /> : null}</span>
               </button>
-              {item.id === "caja_fuerte" && archive.reportFilter === "caja_fuerte" && (
-                <div id="caja-fuerte-options" className={styles.safeOptions} role="group" aria-label="Estado de caja fuerte">
+              {selected && group.id !== "caja_fuerte" && (
+                <div id={optionsId} className={styles.subOptions} role="group" aria-label={group.label}>
+                  {group.options.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={archive.reportFilter === option.id}
+                      onClick={() => archive.setReportFilter(option.id)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selected && group.id === "caja_fuerte" && (
+                <div id={optionsId} className={styles.safeOptions} role="group" aria-label="Estado de caja fuerte">
                   <h3 className="filter-section-title">Estado</h3>
                   <div className="filter-options">
                     {[null, ...CAJA_FUERTE_FILTERS].map((value) => (
@@ -545,15 +584,17 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                 </div>
               )}
             </Fragment>
-          ))}
+            );
+          })}
         </div>
         <div className="sheet-actions">
           <button
             type="button"
             className="secondary-button"
-            onClick={archive.resetFilters}
+            disabled={!reportCount}
+            onClick={() => archive.setReportFilter(null)}
           >
-            Restablecer
+            Quitar filtro
           </button>
           <button
             type="button"

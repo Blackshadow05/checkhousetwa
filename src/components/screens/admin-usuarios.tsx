@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowRight, ChevronRight, Eye, EyeOff, KeyRound, Plus, RefreshCw, Trash2, Users } from "lucide-react";
+import { fechaHora } from "@/lib/fechas";
+import { ArrowLeft, ArrowRight, ChevronRight, Eye, EyeOff, KeyRound, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 import {
   adminActualizarUsuario,
   adminCrearUsuario,
@@ -30,7 +31,7 @@ type FactorEstado = "activo" | "pendiente" | "sin-auth" | "cargando" | null;
 function fechaCorta(value: string | null): string {
   if (!value) return "";
   try {
-    return new Date(value).toLocaleString("es-CR", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Costa_Rica" });
+    return fechaHora(value);
   } catch {
     return "";
   }
@@ -304,7 +305,7 @@ export function AdminUsuariosScreen({
 
   return (
     <div>
-      <button type="button" onClick={() => navigate("/otros")}>← Otros</button>
+      <button type="button" className="pantalla-back" onClick={() => navigate("/otros")}><ArrowLeft size={18} aria-hidden />Otros</button>
       <div className="pantalla-toolbar">
         <h1>Admin Usuarios</h1>
         <button type="button" aria-label="Actualizar usuarios" disabled={loading || !online} onClick={() => void cargar()}>
@@ -313,7 +314,7 @@ export function AdminUsuariosScreen({
       </div>
       <label>
         Buscar
-        <input type="search" placeholder="Nombre o correo" value={search} onChange={(event) => setSearch(event.target.value)} />
+        <input type="search" name="buscar-usuario" placeholder="Nombre o correo" value={search} onChange={(event) => setSearch(event.target.value)} />
       </label>
       <button type="button" className="pantalla-primary" onClick={abrirNuevo}>
         <Plus size={20} aria-hidden /> Nuevo usuario

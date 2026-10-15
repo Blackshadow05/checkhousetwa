@@ -8,6 +8,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
+import { fechaHora } from "@/lib/fechas";
 
 export function SyncScreen() {
   const {
@@ -76,10 +77,7 @@ export function SyncScreen() {
       {savedAt && (
         <p className="sync-timestamp">
           Última copia:{" "}
-          {new Intl.DateTimeFormat("es-CR", {
-            dateStyle: "medium",
-            timeStyle: "short",
-          }).format(new Date(savedAt))}
+          {fechaHora(savedAt)}
         </p>
       )}
       <button

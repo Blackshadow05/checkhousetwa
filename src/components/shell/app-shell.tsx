@@ -129,6 +129,8 @@ function AppShellFrame({
   const [showTop, setShowTop] = useState<Partial<Record<ScreenId, boolean>>>(
     {},
   );
+  const [fabAway, setFabAway] = useState(false);
+  const lastScroll = useRef(0);
   const screens = {
     otros: <OtrosScreen active={navigation.screen === "otros"} session={session} />,
     inicio: (
@@ -174,7 +176,18 @@ function AppShellFrame({
                 screenElements.current[id] = element;
               }}
               onScroll={(event) => {
-                const visible = event.currentTarget.scrollTop > 500;
+                const element = event.currentTarget;
+                if (id === "revisiones") {
+                  const top = element.scrollTop;
+                  const delta = top - lastScroll.current;
+                  const atEdge = top < 80 || top + element.clientHeight >= element.scrollHeight - 24;
+                  if (atEdge || Math.abs(delta) > 8) {
+                    const away = !atEdge && delta > 0;
+                    setFabAway((previous) => (previous === away ? previous : away));
+                    lastScroll.current = top;
+                  }
+                }
+                const visible = element.scrollTop > 500;
                 setShowTop((previous) =>
                   previous[id] === visible
                     ? previous
@@ -195,7 +208,7 @@ function AppShellFrame({
             closeForm();
             if (files.length) setShareEvidence({ id: draft.id, casita: String(Number(draft.values.casita)), files });
           }} />
-          {navigation.screen === "revisiones" && !formVisible && !detailOpen && <NewRevisionFab onSelect={openForm} />}
+          {navigation.screen === "revisiones" && !formVisible && !detailOpen && <NewRevisionFab away={fabAway} onSelect={openForm} />}
           {showTop[navigation.screen] && !formVisible && !detailOpen && (
             <Fab
               onClick={() =>
@@ -215,7 +228,7 @@ function AppShellFrame({
         </AppNavigationProvider>
       </div>
       {selectedRevision && (
-        <RevisionDetailScreen key={selectedRevision.id} />
+        <RevisionDetailScreen key={selectedRevision.id} usuario={session} />
       )}
       {shareEvidence && <RevisionShareSheet casita={shareEvidence.casita} files={shareEvidence.files} status={pendientes.find((item) => item.draft.id === shareEvidence.id)?.status ?? (confirmadas.has(shareEvidence.id) ? "saved" : "error")} onClose={() => {
         setShareEvidence(null);

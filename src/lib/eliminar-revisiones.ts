@@ -1,3 +1,4 @@
+import { fechaTexto, fechaHora, horaCorta } from "@/lib/fechas";
 import type { RevisionCasita } from "@/types/database";
 
 export const DELETE_BATCH_SIZE = 200;
@@ -25,9 +26,9 @@ export function validDeleteCursor(cursor: unknown, nullableDate = true): cursor 
 // Revisions store wall-clock timestamps; preserve their recorded date/time.
 export function deletionRevisionDate(value: string | null): string {
   if (!value) return "Sin fecha";
-  return `${value.slice(0, 10).split("-").reverse().join("/")} · ${value.slice(11, 16)}`;
+  return `${fechaTexto(value)} · ${horaCorta(value)}`;
 }
 
 export function deletionHistoryDate(value: string): string {
-  return new Date(value).toLocaleString("es-CR", { timeZone: "America/Costa_Rica", dateStyle: "medium", timeStyle: "short" });
+  return fechaHora(value);
 }

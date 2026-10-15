@@ -47,7 +47,7 @@ function ChoiceField({ name, label, options, value, onChange, errors, numeric = 
           <label key={option} className={selected === option ? "is-selected" : ""}>
             <input type="radio" name={name} value={option} checked={selected === option} disabled={disabledOptions?.has(option)}
               onChange={() => onChange(name, option)} aria-describedby={errors[name] ? `error-${name}` : undefined} />
-            <span>{numeric ? (option === "0" ? "0" : option.padStart(2, "0")) : plain ? option : option === "Si" ? "Sí" : statusAppearance(option).label}</span>
+            <span>{numeric ? option : plain ? option : option === "Si" ? "Sí" : statusAppearance(option).label}</span>
             {!numeric && selected === option && <Check size={14} aria-hidden="true" />}
           </label>
         ))}
@@ -187,6 +187,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
 
   if (!draft) return open ? <div className="revision-form-screen"><p className="revision-form-loading" role="status">Preparando tu revisión…</p></div> : null;
   const { values, photos } = draft;
+  const conProgreso = revisionDraftHasProgress(draft);
   const completarDespues = draft.completarDespues === true && !draft.completa;
   const completando = draft.completa ?? null;
   const busy = !recognition && preparing;
@@ -407,7 +408,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
             <div className="revision-form-welcome-copy">
               {recognition && <p className="revision-form-kicker">POR RECONOCIMIENTO</p>}
               {completando && <p className="revision-form-completing">Completando la revisión que marcó {completando.marcadaPor}</p>}
-              <p className="revision-form-welcome-title">{values.casita ? `Casita ${String(Number(values.casita)).padStart(2, "0")}` : "Selecciona una casita"}</p>
+              <p className="revision-form-welcome-title">{values.casita ? `Casita ${Number(values.casita)}` : "Selecciona una casita"}</p>
               {revisor && <p className="revision-form-reviewer">
                 <span>Revisa: {revisor}</span>
                 {!mostrarRevisor && <><span aria-hidden="true">·</span><button type="button" disabled={busy} onClick={cambiarRevisor} aria-label={`Cambiar quién revisa, ahora ${revisor}`}>Cambiar</button></>}
@@ -416,15 +417,15 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
             <span className="revision-form-welcome-icon" aria-hidden="true"><House size={32} strokeWidth={1.25} /><Check size={14} /></span>
           </div>
           <div className={`revision-draft-status ${storage === "error" || !online ? "is-warning" : ""}`} role="status">
-            {!online ? <WifiOff size={14} /> : storage === "saved" ? <CheckCheck size={15} /> : null}
-            <span>{storage === "error" ? "No pudimos guardar el progreso en este dispositivo. Mantén la app abierta." : storage === "saving" ? "Guardando tu progreso…" : !online ? "Sin conexión. Puedes guardar; la revisión se enviará al volver la conexión." : storage === "saved" ? "Progreso guardado" : "Tu progreso se guarda mientras estás en el formulario."}</span>
+            {!online ? <WifiOff size={14} /> : storage === "saved" && conProgreso ? <CheckCheck size={15} /> : null}
+            <span>{storage === "error" ? "No pudimos guardar el progreso en este dispositivo. Mantén la app abierta." : !online ? "Sin conexión. Puedes guardar; la revisión se enviará al volver la conexión." : !conProgreso ? "Tu progreso se guardará mientras completas el formulario." : storage === "saving" ? "Guardando tu progreso…" : storage === "saved" ? "Progreso guardado" : "Tu progreso se guarda mientras estás en el formulario."}</span>
           </div>
           <fieldset className="revision-form-fields" disabled={busy}>
               <FormCard icon={<House size={18} />} title="Datos de la revisión">
                 <div className="revision-text-field"><label htmlFor="revision-casita">Número de casita</label><select id="revision-casita" name="casita" disabled={Boolean(completando)} value={values.casita ? String(Number(values.casita)) : ""} onChange={(e) => change("casita", e.target.value)} aria-invalid={Boolean(errors.casita)} aria-describedby={errors.casita ? "error-casita" : undefined}><option value="" disabled>Selecciona una casita</option>{Array.from({ length: 50 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select><FieldError name="casita" errors={errors} /></div>
                 {mostrarRevisor && <div className="revision-text-field"><label htmlFor="revision-quien_revisa">¿Quién revisa?</label><input id="revision-quien_revisa" name="quien_revisa" list="revision-reviewers" autoComplete="name" maxLength={100} value={values.quien_revisa} onChange={(e) => change("quien_revisa", e.target.value)} aria-invalid={Boolean(errors.quien_revisa)} aria-describedby={errors.quien_revisa ? "error-quien_revisa" : undefined} /><datalist id="revision-reviewers">{reviewers.map((name) => <option key={name} value={name} />)}</datalist><FieldError name="quien_revisa" errors={errors} /></div>}
                 {values.casita && !completando && <label className="revision-later-toggle" data-checked={completarDespues || undefined}>
-                  <input type="checkbox" checked={completarDespues} onChange={(event) => toggleCompletarDespues(event.target.checked)} />
+                  <input name="completar-despues" type="checkbox" checked={completarDespues} onChange={(event) => toggleCompletarDespues(event.target.checked)} />
                   <span className="revision-later-copy">
                     <strong>Completar después</strong>
                     <small>Guarda solo la casita y tu nombre. Otra persona completa el formulario.</small>
@@ -462,8 +463,8 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
                 <div data-revision-evidencias="" tabIndex={-1}>
                   {photos.length === 0 && <div className="revision-evidence-empty"><ImagePlus size={26} strokeWidth={1.5} aria-hidden="true" /></div>}
                   {photos.length > 0 && <div className="revision-photo-grid">{photos.map((photo, index) => <RevisionPhotoPreview key={photo.id} photo={photo} index={index} disabled={busy} active={open} onRemove={() => removePhoto(photo.id)} />)}</div>}
-                  <input ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple={photoLimit - photos.length > 1} hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
-                  <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
+                  <input name="evidencias-galeria" ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple={photoLimit - photos.length > 1} hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
+                  <input name="evidencias-camara" ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
                   {canAddNextEvidence && <div className="revision-photo-actions"><button className="secondary-button" type="button" onClick={() => cameraRef.current?.click()}><Camera size={17} />Tomar foto</button><button className="secondary-button" type="button" onClick={() => libraryRef.current?.click()}><ImagePlus size={17} />Elegir fotos</button></div>}
                   {preparing && <p role="status">Preparando fotos…</p>}
                   <FieldError name="evidencias" errors={errors} />

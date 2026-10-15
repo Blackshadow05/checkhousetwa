@@ -134,7 +134,7 @@ export function PantallaPdfSheet({ reports, onClose }: {
         <fieldset className={styles.selection} disabled={busy}>
           <legend className={styles.legend}>Reportes que se incluirán en el PDF</legend>
           {reports.map(report => <label className={styles.report} key={report.id}>
-            <input className={styles.checkbox} type="checkbox" checked={selected.has(report.id)} onChange={() => {
+            <input name="reportes-pdf" className={styles.checkbox} type="checkbox" checked={selected.has(report.id)} onChange={() => {
               setSelected(previous => { const next = new Set(previous); if (next.has(report.id)) next.delete(report.id); else next.add(report.id); return next; });
               setError("");
             }} />

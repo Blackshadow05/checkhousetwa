@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight, CalendarDays, Check, Download, FileSpreadsheet, House, LoaderCircle, WifiOff } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, Download, FileSpreadsheet, LoaderCircle, WifiOff } from "lucide-react";
 import { fetchReporteRevision } from "@/app/actions/reportes";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { nombreArchivoReporteRevision, reporteRevisionDateRange, todayReporteRevision } from "@/lib/reportes-revision";
 import { shiftDay } from "@/lib/revisiones-archive";
 import { useOnline } from "@/lib/use-online";
 import { SegmentIndicator } from "@/components/ui/segment-indicator";
+import { DateInput } from "@/components/ui/date-input";
+import { fechaTexto, fechaHora } from "@/lib/fechas";
 import styles from "./reportes-screen.module.css";
 
 type SavedReport = {
@@ -24,37 +26,20 @@ function readyReport(saved: SavedReport, cached: boolean): ReadyReport {
   return { ...saved, cached, url: URL.createObjectURL(new Blob([saved.csv], { type: "text/csv;charset=utf-8" })) };
 }
 
-function dateLabel(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString("es-CR", { day: "numeric", month: "short", year: "numeric" });
-}
-
-export function ReportesScreen({ path, visible, usuarioId, navigate }: {
-  path: string;
+export function ReportesScreen({ visible, usuarioId, onBack }: {
   visible: boolean;
   usuarioId: number;
-  navigate: (path: string) => void;
+  onBack: () => void;
 }) {
-  const isRevision = path === "/reportes/revision-casitas";
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (visible) heading.current?.focus({ preventScroll: true });
-  }, [path, visible]);
+  }, [visible]);
 
   return <div className={styles.screen}>
-    <div hidden={isRevision}>
-      <button type="button" className={styles.back} onClick={() => navigate("/otros")}><ArrowLeft size={18} aria-hidden />Otros</button>
-      <h1 ref={!isRevision ? heading : undefined} tabIndex={-1}>Reportes</h1>
-      <button type="button" className={styles.reportCard} onClick={() => navigate("/reportes/revision-casitas")}>
-        <span className={styles.icon}><House size={25} aria-hidden /></span>
-        <span className={styles.reportName}><strong>Revisión de casitas</strong><small>CSV por fechas</small></span>
-        <ArrowRight size={20} aria-hidden />
-      </button>
-    </div>
-    <div hidden={!isRevision}>
-      <button type="button" className={styles.back} onClick={() => navigate("/reportes")}><ArrowLeft size={18} aria-hidden />Reportes</button>
-      <div className={styles.heading}><h1 ref={isRevision ? heading : undefined} tabIndex={-1}>Revisión de casitas</h1><span className={styles.format}>CSV</span></div>
-      <RevisionReport usuarioId={usuarioId} />
-    </div>
+    <button type="button" className={styles.back} onClick={onBack}><ArrowLeft size={18} aria-hidden />Otros</button>
+    <div className={styles.heading}><h1 ref={heading} tabIndex={-1}>Reporte de revisiones</h1><span className={styles.format}>CSV</span></div>
+    <RevisionReport usuarioId={usuarioId} />
   </div>;
 }
 
@@ -130,8 +115,8 @@ function RevisionReport({ usuarioId }: { usuarioId: number }) {
       <div className={styles.sectionTitle}><CalendarDays size={18} aria-hidden /><h2>Rango de fechas</h2></div>
       <div className={styles.presets} aria-label="Rangos rápidos"><SegmentIndicator activeIndex={activePreset} />{presets.map((preset, index) => <button key={preset.label} type="button" disabled={loading} aria-pressed={activePreset === index} onClick={() => changeDates(preset.desde, preset.hasta, preset.label)}>{preset.label}</button>)}</div>
       <div className={styles.dates}>
-        <label>Desde<input type="date" required value={desde} disabled={loading} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "reporte-fechas-error" : undefined} onChange={event => changeDates(event.target.value, hasta)} /></label>
-        <label>Hasta<input type="date" required value={hasta} disabled={loading} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "reporte-fechas-error" : undefined} onChange={event => changeDates(desde, event.target.value)} /></label>
+        <label>Desde<DateInput className={`date-input-box ${styles.dateBox}`} name="desde" required value={desde} disabled={loading} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "reporte-fechas-error" : undefined} onValueChange={value => changeDates(value, hasta)} /></label>
+        <label>Hasta<DateInput className={`date-input-box ${styles.dateBox}`} name="hasta" required value={hasta} disabled={loading} aria-invalid={Boolean(rangeError)} aria-describedby={rangeError ? "reporte-fechas-error" : undefined} onValueChange={value => changeDates(desde, value)} /></label>
       </div>
       {rangeError && <p id="reporte-fechas-error" role="alert" className={styles.error}>{rangeError}</p>}
       {!online && <p role="status" className={styles.offline}><WifiOff size={17} aria-hidden />Conéctate para crear un reporte.</p>}
@@ -142,9 +127,9 @@ function RevisionReport({ usuarioId }: { usuarioId: number }) {
     {loading && <div className={styles.progress} role="status">Consultando movimientos…<div className={styles.skeleton} /></div>}
     {report && <section className={styles.result} aria-label="Resultado del reporte">
       <div className={styles.resultHeading}><span className={styles.resultIcon}>{report.count ? <Check size={22} aria-hidden /> : <CalendarDays size={22} aria-hidden />}</span><div><h2>{report.count ? report.cached ? "CSV guardado" : "CSV listo" : "Sin movimientos"}</h2><p role="status">{report.count ? `${report.count.toLocaleString("es-CR")} ${report.count === 1 ? "movimiento" : "movimientos"}` : "Prueba otro rango de fechas."}</p></div></div>
-      <p className={styles.range}>{dateLabel(report.desde)} — {dateLabel(report.hasta)}</p>
+      <p className={styles.range}>{fechaTexto(report.desde)} — {fechaTexto(report.hasta)}</p>
       {report.count > 0 && <a className={styles.download} href={report.url} download={nombreArchivoReporteRevision(report)}><Download size={20} aria-hidden />Descargar CSV</a>}
-      {report.count > 0 && <p className={styles.meta}>{report.cached ? "Último reporte guardado" : online ? "Actualizado" : "Último reporte generado"} · {new Date(report.generatedAt).toLocaleString("es-CR", { timeZone: "America/Costa_Rica", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
+      {report.count > 0 && <p className={styles.meta}>{report.cached ? "Último reporte guardado" : online ? "Actualizado" : "Último reporte generado"} · {fechaHora(report.generatedAt)}</p>}
     </section>}
   </>;
 }

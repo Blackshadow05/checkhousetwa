@@ -247,7 +247,7 @@ export function RevisionNoteSheet({
         </p>
         <label className="revision-text-field">
           Nota
-          <textarea
+          <textarea name="nota"
             aria-label="Nota"
             aria-describedby="revision-note-hint"
             disabled={busy}
@@ -296,7 +296,7 @@ export function RevisionNoteSheet({
             </div>
           )}
           {preparing ? <p role="status">Preparando foto…</p> : null}
-          <input
+          <input name="nota-foto-galeria"
             ref={libraryRef}
             type="file"
             accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
@@ -306,7 +306,7 @@ export function RevisionNoteSheet({
               event.target.value = "";
             }}
           />
-          <input
+          <input name="nota-foto-camara"
             ref={cameraRef}
             type="file"
             accept="image/*"

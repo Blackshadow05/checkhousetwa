@@ -42,6 +42,7 @@ import {
 } from "@/lib/revisiones-display";
 import {
   displayAuditValue,
+  puedeEditarRevision,
   REVISION_EDIT_LABELS,
   type RevisionEditField,
   type RevisionEditHistoryItem,
@@ -50,9 +51,10 @@ import {
   mergeNotaRevision,
   type RevisionNoteItem,
 } from "@/lib/revision-notes";
-import type { InicioRevisionRow } from "@/types/database";
+import type { InicioRevisionRow, UsuarioShell } from "@/types/database";
 import { useOnline } from "@/lib/use-online";
 import { dedupeRequest } from "@/lib/dedupe-request";
+import { fechaHoraRegistro } from "@/lib/fechas";
 
 type ValueKind = "empty" | "yes" | "no" | "count" | "status" | "text";
 
@@ -112,16 +114,11 @@ function DetailRow({
   label: string;
   field: RevisionEditField;
   valueText: string;
-  onEdit: (field: RevisionEditField) => void;
+  onEdit: ((field: RevisionEditField) => void) | null;
   children: ReactNode;
 }) {
-  return (
-    <button
-      type="button"
-      className="detail-row"
-      aria-label={`${label}: ${valueText}. Editar`}
-      onClick={() => onEdit(field)}
-    >
+  const content = (
+    <>
       <span className="detail-row-label">
         <span className="detail-row-icon">
           <Icon size={16} aria-hidden="true" />
@@ -130,8 +127,19 @@ function DetailRow({
       </span>
       <span className="detail-row-value">
         {children}
-        <Pencil size={15} className="detail-edit-icon" aria-hidden="true" />
+        {onEdit && <Pencil size={15} className="detail-edit-icon" aria-hidden="true" />}
       </span>
+    </>
+  );
+  if (!onEdit) return <div className="detail-row">{content}</div>;
+  return (
+    <button
+      type="button"
+      className="detail-row"
+      aria-label={`${label}: ${valueText}. Editar`}
+      onClick={() => onEdit(field)}
+    >
+      {content}
     </button>
   );
 }
@@ -145,8 +153,18 @@ function DetailTile({
   label: string;
   field: RevisionEditField;
   value: string | null | undefined;
-  onEdit: (field: RevisionEditField) => void;
+  onEdit: ((field: RevisionEditField) => void) | null;
 }) {
+  const content = (
+    <>
+      <span className="detail-tile-top">
+        <span className="detail-tile-label">{label}</span>
+        {onEdit && <Pencil size={14} className="detail-edit-icon" aria-hidden="true" />}
+      </span>
+      <DetailValue value={value} />
+    </>
+  );
+  if (!onEdit) return <div className="detail-tile">{content}</div>;
   return (
     <button
       type="button"
@@ -154,12 +172,26 @@ function DetailTile({
       aria-label={`${label}: ${describeValue(value).text}. Editar`}
       onClick={() => onEdit(field)}
     >
-      <span className="detail-tile-top">
-        <span className="detail-tile-label">{label}</span>
-        <Pencil size={14} className="detail-edit-icon" aria-hidden="true" />
-      </span>
-      <DetailValue value={value} />
+      {content}
     </button>
+  );
+}
+
+function DetailPerson({ row, editing }: { row: InicioRevisionRow; editing: boolean }) {
+  return (
+    <>
+      <span className="detail-avatar" aria-hidden="true">
+        {initials(row.quien_revisa)}
+      </span>
+      <span className="detail-person-copy">
+        <span>Revisó</span>
+        <strong>{row.quien_revisa}</strong>
+        {row.marcada_por && row.marcada_por !== row.quien_revisa && (
+          <span>Marcó primero: {row.marcada_por}{row.marcada_at ? ` · ${shortTime(row.marcada_at)}` : ""}</span>
+        )}
+      </span>
+      {editing && <Pencil size={15} className="detail-edit-icon" aria-hidden="true" />}
+    </>
   );
 }
 
@@ -168,7 +200,7 @@ function copyText(row: InicioRevisionRow) {
     `Casita ${row.casita}`,
     `Revisó: ${row.quien_revisa}`,
     `Caja fuerte: ${row.caja_fuerte}`,
-    `Fecha: ${row.created_at}`,
+    `Fecha: ${fechaHoraRegistro(row.created_at)}`,
   ];
   if (row.puertas_ventanas) lines.push(`Puertas y ventanas: ${row.puertas_ventanas}`);
   if (row.room_move) lines.push(`Movimiento: ${row.room_move}`);
@@ -181,8 +213,9 @@ function EditButton({
   onEdit,
 }: {
   field: RevisionEditField;
-  onEdit: (field: RevisionEditField) => void;
+  onEdit: ((field: RevisionEditField) => void) | null;
 }) {
+  if (!onEdit) return null;
   return (
     <button
       type="button"
@@ -195,7 +228,43 @@ function EditButton({
   );
 }
 
-export function RevisionDetailScreen() {
+function DetailActions({
+  editing,
+  onToggleEdit,
+  onCopy,
+}: {
+  editing: boolean;
+  onToggleEdit: (() => void) | null;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="detail-actions">
+      {!editing && (
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Copiar detalle"
+          onClick={onCopy}
+        >
+          <Copy size={17} />
+        </button>
+      )}
+      {onToggleEdit && (
+        <button
+          type="button"
+          className={`detail-edit-toggle${editing ? " is-active" : ""}`}
+          aria-pressed={editing}
+          onClick={onToggleEdit}
+        >
+          {editing ? <Check size={17} aria-hidden="true" /> : <Pencil size={16} aria-hidden="true" />}
+          {editing ? "Listo" : "Editar"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
   const { selectedRevision, closeRevision, today } = useRevisiones();
   const online = useOnline();
   const backRef = useRef<HTMLButtonElement>(null);
@@ -205,6 +274,7 @@ export function RevisionDetailScreen() {
   const loadingMoreRef = useRef(false);
   const [copyMessage, setCopyMessage] = useState("");
   const [editingField, setEditingField] = useState<RevisionEditField | null>(null);
+  const [editing, setEditing] = useState(false);
   const [history, setHistory] = useState<RevisionEditHistoryItem[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -256,6 +326,7 @@ export function RevisionDetailScreen() {
     });
     setNoteMessage(null);
     setNoteSheetOpen(false);
+    setEditing(false);
   }, [selectedRevision?.id]);
 
   useEffect(() => {
@@ -350,17 +421,20 @@ export function RevisionDetailScreen() {
         return;
       }
       if (document.querySelector(".bottom-sheet[open]")) return;
+      if (editing) {
+        setEditing(false);
+        return;
+      }
       closeRevision();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [closeRevision]);
+  }, [closeRevision, editing]);
 
   if (!selectedRevision) return null;
 
   const row = selectedRevision;
   const images = revisionEvidence(row);
-
   const copyRevision = async () => {
     try {
       await navigator.clipboard.writeText(copyText(row));
@@ -369,6 +443,22 @@ export function RevisionDetailScreen() {
       setCopyMessage("No se pudo copiar. Inténtalo de nuevo.");
     }
   };
+
+  const editable = puedeEditarRevision(usuario, row.quien_revisa);
+  const onEdit = editing && editable ? setEditingField : null;
+  const actions = (
+    <DetailActions
+      editing={editing}
+      onToggleEdit={editable ? () => setEditing((value) => !value) : null}
+      onCopy={() => void copyRevision()}
+    />
+  );
+  const title = (
+    <div className="detail-title">
+      <h1 id="detail-title">Casita {row.casita}</h1>
+      <EditButton field="casita" onEdit={onEdit} />
+    </div>
+  );
 
   const handleNoteCreated = (note: RevisionNoteItem) => {
     setNotesState((current) =>
@@ -432,7 +522,7 @@ export function RevisionDetailScreen() {
 
   return (
     <section
-      className="detail-screen"
+      className={`detail-screen${editing ? " is-editing" : ""}`}
       data-shared-entry={sharedEntry || undefined}
       role="dialog"
       aria-modal="true"
@@ -453,18 +543,8 @@ export function RevisionDetailScreen() {
             <EvidenceGallery paths={images} casita={row.casita} />
           ) : (
             <>
-              <h1 id="detail-title">Casita {row.casita}</h1>
-              <div className="detail-actions">
-                <EditButton field="casita" onEdit={setEditingField} />
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label="Copiar detalle"
-                  onClick={() => void copyRevision()}
-                >
-                  <Copy size={17} />
-                </button>
-              </div>
+              {title}
+              {actions}
             </>
           )}
         </header>
@@ -472,40 +552,32 @@ export function RevisionDetailScreen() {
         <div className="detail-body">
           {images.length > 0 && (
             <div className="detail-title-row">
-              <h1 id="detail-title">Casita {row.casita}</h1>
-              <div className="detail-actions">
-                <EditButton field="casita" onEdit={setEditingField} />
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label="Copiar detalle"
-                  onClick={() => void copyRevision()}
-                >
-                  <Copy size={17} />
-                </button>
-              </div>
+              {title}
+              {actions}
             </div>
           )}
 
+          {editing && editable && (
+            <p className="detail-edit-hint" role="status">
+              Toca el dato que quieras cambiar.
+            </p>
+          )}
+
           <div className="detail-summary">
-            <button
-              type="button"
-              className="detail-person"
-              aria-label={`Revisó ${row.quien_revisa}. Editar`}
-              onClick={() => setEditingField("quien_revisa")}
-            >
-              <span className="detail-avatar" aria-hidden="true">
-                {initials(row.quien_revisa)}
-              </span>
-              <span className="detail-person-copy">
-                <span>Revisó</span>
-                <strong>{row.quien_revisa}</strong>
-                {row.marcada_por && row.marcada_por !== row.quien_revisa && (
-                  <span>Marcó primero: {row.marcada_por}{row.marcada_at ? ` · ${shortTime(row.marcada_at)}` : ""}</span>
-                )}
-              </span>
-              <Pencil size={15} className="detail-edit-icon" aria-hidden="true" />
-            </button>
+            {onEdit ? (
+              <button
+                type="button"
+                className="detail-person"
+                aria-label={`Revisó ${row.quien_revisa}. Editar`}
+                onClick={() => setEditingField("quien_revisa")}
+              >
+                <DetailPerson row={row} editing />
+              </button>
+            ) : (
+              <div className="detail-person">
+                <DetailPerson row={row} editing={false} />
+              </div>
+            )}
             <dl className="detail-meta">
               <div>
                 <dt>
@@ -537,7 +609,7 @@ export function RevisionDetailScreen() {
                 label="Caja fuerte"
                 field="caja_fuerte"
                 valueText={describeValue(row.caja_fuerte).text}
-                onEdit={setEditingField}
+                onEdit={onEdit}
               >
                 {row.caja_fuerte?.trim() ? (
                   <StatusBadge value={row.caja_fuerte} />
@@ -550,7 +622,7 @@ export function RevisionDetailScreen() {
                 label="Movimiento"
                 field="room_move"
                 valueText={describeValue(row.room_move).text}
-                onEdit={setEditingField}
+                onEdit={onEdit}
               >
                 <DetailValue value={row.room_move} />
               </DetailRow>
@@ -559,7 +631,7 @@ export function RevisionDetailScreen() {
                 label="Puertas y ventanas"
                 field="puertas_ventanas"
                 valueText={describeValue(row.puertas_ventanas).text}
-                onEdit={setEditingField}
+                onEdit={onEdit}
               >
                 <DoorsValue value={row.puertas_ventanas} />
               </DetailRow>
@@ -580,7 +652,7 @@ export function RevisionDetailScreen() {
                   label={field.label}
                   field={field.key}
                   value={row[field.key]}
-                  onEdit={setEditingField}
+                  onEdit={onEdit}
                 />
               ))}
             </div>
@@ -600,7 +672,7 @@ export function RevisionDetailScreen() {
                   label={field.label}
                   field={field.key}
                   value={row[field.key]}
-                  onEdit={setEditingField}
+                  onEdit={onEdit}
                 />
               ))}
             </div>
@@ -612,7 +684,7 @@ export function RevisionDetailScreen() {
                 <NotebookPen size={17} aria-hidden="true" />
               </span>
               <h2>Notas de revisión</h2>
-              <EditButton field="notas" onEdit={setEditingField} />
+              <EditButton field="notas" onEdit={onEdit} />
             </div>
             <p className={`detail-notes${row.notas ? "" : " is-empty"}`}>
               {row.notas || "Sin notas"}
@@ -752,7 +824,7 @@ export function RevisionDetailScreen() {
               </p>
             ) : null}
           </section>
-          <RevisionRecognitionDetail items={row.reconocimiento} />
+          <RevisionRecognitionDetail items={row.reconocimiento} revisor={row.quien_revisa} />
         </div>
       </div>
       <p className="sr-only" role="status">

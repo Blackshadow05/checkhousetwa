@@ -2,6 +2,7 @@
 
 import {
   Check,
+  ChevronDown,
   ChevronRight,
   CloudOff,
   LoaderCircle,
@@ -265,9 +266,10 @@ export function InicioScreen({
             className={styles.avatar}
             onClick={() => setAccountOpen(true)}
             aria-haspopup="dialog"
-            aria-label={`Cuenta de ${account.nombre}`}
+            aria-label={`Abrir cuenta de ${account.nombre}`}
           >
-            {initials(account.nombre)}
+            <span className={styles.avatarInitials} aria-hidden="true">{initials(account.nombre)}</span>
+            <ChevronDown size={16} strokeWidth={2.2} aria-hidden="true" />
           </button>
         </div>
       </header>

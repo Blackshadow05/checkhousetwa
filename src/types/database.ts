@@ -307,7 +307,7 @@ export type MenuDelDia = {
 };
 
 export type InicioRevisionRow = {
-  reconocimiento?: import("@/lib/revision-recognition-detail").RecognitionDetailItem[];
+  reconocimiento?: import("@/lib/revision-recognition-detail").RecognitionDetail | import("@/lib/revision-recognition-detail").RecognitionDetailItem[];
   id: string;
   casita: string;
   quien_revisa: string;

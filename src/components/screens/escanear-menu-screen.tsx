@@ -3,12 +3,11 @@
 import { useRef } from "react";
 import { ArrowLeft, ArrowRight, Camera, Check, Images, LoaderCircle, Replace, ScanText, TriangleAlert, X } from "lucide-react";
 import { useEscanearMenu } from "@/hooks/use-escanear-menu";
+import { fechaTexto } from "@/lib/fechas";
 import styles from "./escanear-menu-screen.module.css";
 
-const DAY_MONTH = new Intl.DateTimeFormat("es-CR", { day: "numeric", month: "long" });
-
 function dayMonth(fecha: string) {
-  return DAY_MONTH.format(new Date(`${fecha}T12:00:00`));
+  return fechaTexto(fecha, false);
 }
 
 function dayCount(count: number) {
@@ -45,8 +44,8 @@ export function EscanearMenuView({ menu, onBack }: { menu: ReturnType<typeof use
       <h1>Escanear menú</h1>
       {(picked || reviewing) && <button type="button" className={styles.close} aria-label="Descartar y empezar de nuevo" disabled={saving} onClick={menu.descartar}><X size={20} aria-hidden /></button>}
     </div>
-    <input ref={camera} type="file" accept="image/*" capture="environment" hidden aria-label="Tomar foto del menú" onChange={event => { menu.elegir(event.target.files?.[0]); event.target.value = ""; }} />
-    <input ref={library} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden aria-label="Elegir foto del menú" onChange={event => { menu.elegir(event.target.files?.[0]); event.target.value = ""; }} />
+    <input name="menu-camara" ref={camera} type="file" accept="image/*" capture="environment" hidden aria-label="Tomar foto del menú" onChange={event => { menu.elegir(event.target.files?.[0]); event.target.value = ""; }} />
+    <input name="menu-galeria" ref={library} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden aria-label="Elegir foto del menú" onChange={event => { menu.elegir(event.target.files?.[0]); event.target.value = ""; }} />
 
     {menu.fase === "vacio" && <div className={styles.start}>
       <span className={styles.mark} aria-hidden><ScanText size={38} strokeWidth={1.6} /></span>

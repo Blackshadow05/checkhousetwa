@@ -210,8 +210,8 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
       <h1>Editar imagen</h1>
       {abierto && <button type="button" className={styles.close} aria-label="Descartar y empezar de nuevo" onClick={reiniciar}><X size={20} aria-hidden /></button>}
     </div>
-    <input ref={camera} type="file" accept="image/*" capture="environment" hidden aria-label="Tomar foto" onChange={event => { void elegir(event.target.files?.[0]); event.target.value = ""; }} />
-    <input ref={library} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden aria-label="Elegir imagen" onChange={event => { void elegir(event.target.files?.[0]); event.target.value = ""; }} />
+    <input name="foto-camara" ref={camera} type="file" accept="image/*" capture="environment" hidden aria-label="Tomar foto" onChange={event => { void elegir(event.target.files?.[0]); event.target.value = ""; }} />
+    <input name="foto-galeria" ref={library} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden aria-label="Elegir imagen" onChange={event => { void elegir(event.target.files?.[0]); event.target.value = ""; }} />
 
     {!abierto && <div className={styles.start}>
       <span className={styles.mark} aria-hidden><Eraser size={38} strokeWidth={1.6} /></span>
@@ -241,7 +241,7 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
 
       {vista === "local" && listo && <label className={own.slider}>
         <span><span>Sensibilidad</span><output>{tolerancia}</output></span>
-        <input type="range" min={TOLERANCIA_MIN} max={TOLERANCIA_MAX} step={1} value={tolerancia} onChange={event => setTolerancia(Number(event.target.value))} />
+        <input name="tolerancia" type="range" min={TOLERANCIA_MIN} max={TOLERANCIA_MAX} step={1} value={tolerancia} onChange={event => setTolerancia(Number(event.target.value))} />
         <small>Súbela si queda fondo; bájala si se borra parte del sujeto.</small>
       </label>}
 

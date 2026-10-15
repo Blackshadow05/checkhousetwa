@@ -1,3 +1,4 @@
+import { fechaTexto, horaCorta } from "@/lib/fechas";
 import type { InicioRevisionRow } from "@/types/database";
 
 export const INICIO_REVISION_COLUMNS =
@@ -34,6 +35,7 @@ const PUERTAS_OK = new Set([
   "sí",
   "bien",
   "todo bien",
+  "todo en orden",
   "correcto",
   "cerradas",
   "cerrado",
@@ -190,15 +192,11 @@ export function dayLabel(day: string, today: string) {
   yesterday.setDate(yesterday.getDate() - 1);
   const date = new Date(`${day}T12:00:00`);
   if (date.toDateString() === yesterday.toDateString()) return "Ayer";
-  return new Intl.DateTimeFormat("es-CR", {
-    day: "numeric",
-    month: "long",
-    ...(day.slice(0, 4) !== today.slice(0, 4) ? { year: "numeric" } : {}),
-  }).format(date);
+  return fechaTexto(day, today);
 }
 
 export function shortTime(value: string) {
-  return value.match(/[T ](\d{2}:\d{2})/)?.[1] ?? "Sin hora";
+  return horaCorta(value);
 }
 
 export function initials(name: string) {

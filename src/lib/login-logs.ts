@@ -1,3 +1,4 @@
+import { fechaTexto } from "@/lib/fechas";
 import type { Database } from "@/types/database";
 
 export type LoginLog = Pick<Database["public"]["Tables"]["login_logs"]["Row"], "id" | "usuario" | "ip_address" | "metodo" | "logged_at">;
@@ -14,7 +15,6 @@ export const LOGIN_LOGS_PAGE_SIZE = 50;
 
 const zone = "America/Costa_Rica";
 const dayFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
-const dateFormatter = new Intl.DateTimeFormat("es-CR", { timeZone: zone, day: "numeric", month: "short", year: "numeric" });
 const timeFormatter = new Intl.DateTimeFormat("es-CR", { timeZone: zone, hour: "numeric", minute: "2-digit", hour12: true });
 
 export function loginLogTime(value: string): string {
@@ -26,11 +26,10 @@ export function loginLogDay(value: string): string {
 }
 
 export function loginLogDayLabel(value: string, now = new Date()): string {
-  const date = new Date(value);
   const day = loginLogDay(value);
   const yesterday = new Date(now.getTime() - 86_400_000);
   const prefix = day === dayFormatter.format(now) ? "Hoy · " : day === dayFormatter.format(yesterday) ? "Ayer · " : "";
-  return prefix + dateFormatter.format(date);
+  return prefix + fechaTexto(day);
 }
 
 export function loginLogMethod(value: string): string {

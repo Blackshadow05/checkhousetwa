@@ -220,7 +220,7 @@ function FieldControl({
     return (
       <label className="revision-text-field">
         {label}
-        <select aria-label={label} disabled={disabled} value={selected} onChange={(event) => onChange(event.target.value)}>
+        <select name={field} aria-label={label} disabled={disabled} value={selected} onChange={(event) => onChange(event.target.value)}>
           <option value="" disabled>
             Selecciona una casita
           </option>
@@ -237,7 +237,7 @@ function FieldControl({
     return (
       <label className="revision-text-field">
         {label}
-        <select aria-label={label} disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
+        <select name={field} aria-label={label} disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
           <option value="" disabled>
             Selecciona el estado
           </option>
@@ -254,7 +254,7 @@ function FieldControl({
     return (
       <label className="revision-text-field">
         {label}
-        <select aria-label={label} disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
+        <select name={field} aria-label={label} disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
           <option value="">Sin registro</option>
           <option value="Si">Sí</option>
           <option value="No">No</option>
@@ -268,7 +268,7 @@ function FieldControl({
     return (
       <label className="revision-text-field">
         {label}
-        <select aria-label={label} disabled={disabled} value={selected} onChange={(event) => onChange(event.target.value)}>
+        <select name={field} aria-label={label} disabled={disabled} value={selected} onChange={(event) => onChange(event.target.value)}>
           <option value="">Sin registro</option>
           {Array.from({ length: max + 1 }, (_, index) => (
             <option key={index} value={index}>
@@ -284,7 +284,7 @@ function FieldControl({
     <label className="revision-text-field">
       {label}
       {multiline ? (
-        <textarea
+        <textarea name={field}
           aria-label={label}
           disabled={disabled}
           rows={field === "notas" ? 4 : 3}
@@ -292,7 +292,7 @@ function FieldControl({
           onChange={(event) => onChange(event.target.value)}
         />
       ) : (
-        <input aria-label={label} disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)} />
+        <input name={field} aria-label={label} disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)} />
       )}
     </label>
   );

@@ -113,9 +113,9 @@ export function validateRevisionForm(values: RevisionFormValues, step?: number, 
     if (step === undefined) {
       const limit = evidencePhotoLimit(values.caja_fuerte);
       if (limit === 0 && photoCount > 0) errors.evidencias = "Esta opción no admite evidencias.";
-      else if (limit === 1 && photoCount < 1) errors.evidencias = "Añade la evidencia 01.";
-      else if (limit === 1 && photoCount > 1) errors.evidencias = "Solo puedes añadir la evidencia 01.";
-      else if (limit > 1 && photoCount < 1) errors.evidencias = "Añade la evidencia 01.";
+      else if (limit === 1 && photoCount < 1) errors.evidencias = "Añade la evidencia 1.";
+      else if (limit === 1 && photoCount > 1) errors.evidencias = "Solo puedes añadir la evidencia 1.";
+      else if (limit > 1 && photoCount < 1) errors.evidencias = "Añade la evidencia 1.";
       else if (photoCount > limit) errors.evidencias = `Puedes añadir hasta ${limit} evidencias.`;
     }
   }

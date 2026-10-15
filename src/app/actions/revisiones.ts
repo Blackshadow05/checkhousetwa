@@ -5,7 +5,7 @@ import type { ArchiveQuery } from "@/lib/revisiones-archive";
 import { createPrivateClient, createPrivateSession } from "@/lib/auth/session";
 import { costaRicaDateTime, pendienteInsert, revisionInsert, validatePendienteForm, validateRevisionForm, withCurrentRevisionTime, type RevisionFormValues } from "@/lib/revision-form";
 import { isEvidenceCloudinaryPath } from "@/lib/revision-evidence";
-import { isRevisionEditField, persistRevisionFieldValue, validateRevisionField, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
+import { isRevisionEditField, persistRevisionFieldValue, puedeEditarRevision, validateRevisionField, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
 import { mapNotaRevision, noteRevisionPage, NOTAS_REVISION_PAGE_SIZE, persistNotaRevision, persistNotaRevisionImage, validateNotaRevision, validateNotaRevisionImage, type RevisionNoteItem } from "@/lib/revision-notes";
 import { saveRevision, saveNotaRevision, editRevisionCampo, type SaveNoteResult } from "@/lib/save-revision";
 import { getSesionUsuario } from "@/lib/auth/session";
@@ -189,6 +189,8 @@ export async function fetchLatestRevisionCasita(
   }
 }
 
+const SOLO_AUTOR = "Solo quien hizo esta revisión puede editarla.";
+
 export async function fetchRevisionEditor(id: string): Promise<{
   row: RevisionCasitaInicio | null;
   user: { id: number; nombre: string } | null;
@@ -202,6 +204,7 @@ export async function fetchRevisionEditor(id: string): Promise<{
     const result = await getRevisionInicioById(session.client, id);
     if (result.error) return { row: null, user, error: "No pudimos cargar la revisión. Vuelve a intentarlo." };
     if (!result.data) return { row: null, user, error: "No encontramos esta revisión." };
+    if (!puedeEditarRevision(session.usuario, result.data.quien_revisa)) return { row: null, user, error: SOLO_AUTOR };
     return { row: result.data, user, error: null };
   } catch {
     return { row: null, user: null, error: "No pudimos conectar para abrir el editor." };
@@ -225,6 +228,10 @@ export async function editRevisionField(input: {
     const campo: RevisionEditField = input.campo;
     const fieldError = validateRevisionField(campo, input.nuevo);
     if (fieldError) return { row: null, error: fieldError };
+    const actual = await getRevisionInicioById(session.client, input.id);
+    if (actual.error) return { row: null, error: "No pudimos comprobar la revisión. Vuelve a intentarlo." };
+    if (!actual.data) return { row: null, error: "No encontramos esta revisión." };
+    if (!puedeEditarRevision(session.usuario, actual.data.quien_revisa)) return { row: null, error: SOLO_AUTOR };
     return await editRevisionCampo(session.client, {
       id: input.id,
       campo,
