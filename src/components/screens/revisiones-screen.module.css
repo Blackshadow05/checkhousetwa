@@ -1,5 +1,6 @@
 .toolbar {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -27,6 +28,7 @@
 
 .searchRow {
   display: flex;
+  min-width: 0;
   gap: 8px;
 }
 
@@ -549,6 +551,7 @@
 
 .askButton {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 10px;
   min-height: 44px;
@@ -567,6 +570,7 @@
 }
 
 .askButton > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -578,6 +582,7 @@
 
 .answer {
   display: grid;
+  min-width: 0;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-bottom: 18px;

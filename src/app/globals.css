@@ -3410,3 +3410,15 @@ div.revision-photo-open { background-position: center; background-size: cover; }
 .date-input-box:has(> input[aria-invalid="true"]) {
   border-color: var(--destructive);
 }
+.theme-mode {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 0.6875rem;
+  font-weight: 550;
+  white-space: nowrap;
+}
+.theme-mode > svg {
+  flex-shrink: 0;
+}

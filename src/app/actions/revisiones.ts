@@ -12,6 +12,7 @@ import { getSesionUsuario } from "@/lib/auth/session";
 import { mapInicioRevision } from "@/lib/revisiones-map";
 import type { InicioRevisionRow, RevisionCasitaInicio } from "@/types/database";
 import { INVENTARIO_COLUMNS, mapInventarioCasita } from "@/lib/inventario-casitas";
+import { BUSQUEDA_PAGINA, buscarRevisiones, parseFiltros } from "@/lib/busqueda-revisiones";
 import { parseRevisionRecognition, registroReconocimiento, type RegistroReconocimiento, type RevisionRecognitionInput } from "@/lib/revision-recognition-log";
 
 export async function fetchInicioRevisiones() {
@@ -240,5 +241,18 @@ export async function editRevisionField(input: {
     }, session.usuario.id);
   } catch {
     return { row: null, error: "No pudimos conectar para guardar el cambio." };
+  }
+}
+
+export async function fetchBusquedaRevisiones(filtros: unknown, offset: number): Promise<{
+  rows: InicioRevisionRow[];
+  error: string | null;
+}> {
+  try {
+    const inicio = Math.max(0, Math.min(Math.trunc(offset) || 0, 100_000));
+    const { rows } = await buscarRevisiones(await createPrivateClient(), parseFiltros(filtros), { offset: inicio, limit: BUSQUEDA_PAGINA });
+    return { rows, error: null };
+  } catch {
+    return { rows: [], error: "No pudimos cargar más revisiones." };
   }
 }

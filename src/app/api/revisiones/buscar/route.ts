@@ -7,11 +7,11 @@ import {
   ARTICULOS_CANTIDAD,
   ARTICULOS_SI_NO,
   BUSCAR_REVISIONES_TOOL,
+  BUSQUEDA_PAGINA,
   buscarRevisiones,
   parseFiltros,
   resumenParaModelo,
 } from "@/lib/busqueda-revisiones";
-import type { InicioRevisionRow } from "@/types/database";
 
 export const maxDuration = 30;
 
@@ -95,25 +95,24 @@ export async function POST(request: Request) {
     { role: "system", content: instrucciones(todayKey()) },
     { role: "user", content: pregunta },
   ];
-  const vistas = new Map<string, InicioRevisionRow>();
-  let ultimas: InicioRevisionRow[] = [];
+  let filtros: unknown = null;
+  let respuesta: string | null = null;
 
   try {
     for (let ronda = 0; ronda < MAX_RONDAS; ronda++) {
       const message = await llamarModelo(apiKey, messages, ronda === 0);
       const calls = message.tool_calls ?? [];
       if (!calls.length) {
-        const respuesta = message.content?.trim() ? sinPreguntaFinal(message.content.trim()) : "";
-        if (!respuesta) break;
-        return NextResponse.json({ respuesta, revisiones: ultimas }, { headers: NO_STORE });
+        respuesta = message.content?.trim() ? sinPreguntaFinal(message.content.trim()) : null;
+        break;
       }
       messages.push({ role: "assistant", content: message.content ?? null, tool_calls: calls });
       for (const call of calls) {
         let resultado: string;
         try {
-          const { total, rows } = await buscarRevisiones(client, parseFiltros(JSON.parse(call.function.arguments || "{}")));
-          for (const row of rows) vistas.set(row.id, row);
-          ultimas = rows;
+          const args = JSON.parse(call.function.arguments || "{}") as unknown;
+          const { total, rows } = await buscarRevisiones(client, parseFiltros(args));
+          filtros = args;
           resultado = resumenParaModelo(total, rows);
         } catch {
           resultado = JSON.stringify({ error: "No se pudo ejecutar esa búsqueda." });
@@ -125,8 +124,11 @@ export async function POST(request: Request) {
     console.error("buscar-revisiones: falló", error instanceof Error ? error.message : "error");
     return fail("No pudimos completar la búsqueda. Inténtalo de nuevo.", 502);
   }
-  if (vistas.size) {
-    return NextResponse.json({ respuesta: null, revisiones: ultimas }, { headers: NO_STORE });
+  if (filtros === null) return fail("No entendimos la búsqueda. Prueba escribiéndola de otra forma.", 422);
+  try {
+    const { total, rows } = await buscarRevisiones(client, parseFiltros(filtros), { offset: 0, limit: BUSQUEDA_PAGINA });
+    return NextResponse.json({ respuesta, filtros, total, revisiones: rows }, { headers: NO_STORE });
+  } catch {
+    return fail("No pudimos cargar las revisiones encontradas. Inténtalo de nuevo.", 502);
   }
-  return fail("No entendimos la búsqueda. Prueba escribiéndola de otra forma.", 422);
 }

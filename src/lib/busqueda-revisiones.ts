@@ -37,7 +37,8 @@ type Comparacion = "=" | "!=" | "<" | "<=" | ">" | ">=";
 
 const COMPARACIONES: Comparacion[] = ["=", "!=", "<", "<=", ">", ">="];
 const MAX_CANTIDAD = 12;
-const MAX_LIMITE = 20;
+const MAX_LIMITE = 5;
+export const BUSQUEDA_PAGINA = 30;
 
 export const BUSCAR_REVISIONES_TOOL = {
   type: "function",
@@ -84,7 +85,7 @@ export const BUSCAR_REVISIONES_TOOL = {
         desde: { type: "string", description: "Fecha inicial incluida, YYYY-MM-DD." },
         hasta: { type: "string", description: "Fecha final incluida, YYYY-MM-DD." },
         orden: { type: "string", enum: ["reciente", "antigua"] },
-        limite: { type: "integer", minimum: 1, maximum: MAX_LIMITE },
+        limite: { type: "integer", minimum: 1, maximum: MAX_LIMITE, description: "Filas que recibes para redactar la respuesta. La persona ve aparte todas las coincidencias, así que pide solo las que necesites." },
       },
     },
   },
@@ -173,18 +174,18 @@ export function parseFiltros(raw: unknown): FiltrosBusqueda {
     desde: parseArchiveDate(input.desde),
     hasta: parseArchiveDate(input.hasta),
     orden: input.orden === "antigua" ? "antigua" : "reciente",
-    limite: entero(input.limite, 1, MAX_LIMITE) ?? 10,
+    limite: entero(input.limite, 1, MAX_LIMITE) ?? 3,
   };
 }
 
-export async function buscarRevisiones(client: Client, filtros: FiltrosBusqueda) {
+export async function buscarRevisiones(client: Client, filtros: FiltrosBusqueda, pagina?: { offset: number; limit: number }) {
   let request = client
     .from(REVISIONES_TABLE)
     .select(INICIO_REVISION_COLUMNS, { count: "exact" })
     .eq("pendiente", false)
     .order("created_at", { ascending: filtros.orden === "antigua", nullsFirst: false })
     .order("id", { ascending: filtros.orden === "antigua" })
-    .limit(filtros.limite);
+    .range(pagina?.offset ?? 0, (pagina?.offset ?? 0) + (pagina?.limit ?? filtros.limite) - 1);
 
   if (filtros.casitas.length) request = request.in("casita", filtros.casitas.flatMap(variantes));
   for (const { articulo, comparacion, cantidad } of filtros.cantidades) {

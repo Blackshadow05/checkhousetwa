@@ -103,6 +103,9 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
     setConfirmarDescarte(false);
   };
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const busquedaSentinelRef = useRef<HTMLDivElement>(null);
+  const busquedaConMas = busqueda?.estado === "lista" && busqueda.revisiones.length < busqueda.total && !busqueda.errorMas;
+  const { cargarMas } = inteligente;
   const groups = useMemo(() => groupByDay(archive.rows), [archive.rows]);
   const periodIndex = archive.date
     ? DATE_SEGMENT
@@ -142,6 +145,20 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
     return () => observer.disconnect();
   }, [archive.hasMore, archive.loadMore, archive.rows.length]);
 
+  useEffect(() => {
+    const node = busquedaSentinelRef.current;
+    if (!node || !busquedaConMas) return;
+    const root = node.closest(".app-screen");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void cargarMas();
+      },
+      { root: root instanceof Element ? root : null, rootMargin: "280px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [busquedaConMas, cargarMas, busqueda]);
+
   return (
     <section className="home-screen" aria-label="Revisiones">
       {!archive.online && (
@@ -177,7 +194,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
       <div className={styles.toolbar}>
         <div className={styles.titleRow}>
           <h2>Revisiones</h2>
-          <span>{busqueda?.estado === "lista" ? busqueda.revisiones.length : busqueda ? "" : archive.total}</span>
+          <span>{busqueda?.estado === "lista" ? busqueda.total : busqueda ? "" : archive.total}</span>
         </div>
         <form
           className={styles.searchRow}
@@ -399,6 +416,13 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                   ))}
                 </div>
               )}
+              <div ref={busquedaSentinelRef} className="list-sentinel">
+                {busqueda.cargandoMas ? "Cargando más…" : busqueda.errorMas ? (
+                  <button type="button" className="text-action" onClick={() => void cargarMas()}>
+                    {busqueda.errorMas} Reintentar
+                  </button>
+                ) : null}
+              </div>
             </>
           )}
         </section>
