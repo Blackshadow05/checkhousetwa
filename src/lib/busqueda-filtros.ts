@@ -40,6 +40,8 @@ export type FiltrosSerializados = {
   estado_caja_fuerte?: string;
   quien_revisa?: string;
   texto?: string;
+  // Revisiones elegidas por el modelo al leer las notas (buscar_por_significado).
+  ids?: string[];
   con_nota?: boolean;
   con_nota_extra?: boolean;
   periodo?: string;
@@ -180,6 +182,7 @@ export function chipsDeFiltros(filtros: FiltrosSerializados | null | undefined):
   }
   if (filtros.estado_caja_fuerte) chips.push({ id: "estado", etiqueta: `Caja: ${filtros.estado_caja_fuerte}` });
   if (filtros.texto) chips.push({ id: "texto", etiqueta: `Texto: ${filtros.texto}` });
+  if (filtros.ids) chips.push({ id: "ids", etiqueta: `Coincidencias por significado: ${filtros.ids.length}` });
   if (typeof filtros.con_nota === "boolean") chips.push({ id: "con_nota", etiqueta: filtros.con_nota ? "Con nota" : "Sin nota" });
   if (typeof filtros.con_nota_extra === "boolean") {
     chips.push({ id: "con_nota_extra", etiqueta: filtros.con_nota_extra ? "Con nota extra" : "Sin nota extra" });
@@ -199,6 +202,7 @@ export function quitarFiltro(filtros: FiltrosSerializados, id: string): FiltrosS
     case "presencia": nuevos.presencia = (filtros.presencia ?? []).filter((item) => item.articulo !== valor); break;
     case "estado": delete nuevos.estado_caja_fuerte; break;
     case "texto": delete nuevos.texto; break;
+    case "ids": delete nuevos.ids; break;
     case "con_nota": delete nuevos.con_nota; break;
     case "con_nota_extra": delete nuevos.con_nota_extra; break;
     case "orden": nuevos.orden = "reciente"; break;
