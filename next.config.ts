@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: cloudinaryCloudName,
     NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET: cloudinaryUploadPreset,
+    NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV,
   },
   reactStrictMode: true,
   // Next 16 blocks /_next scripts from phones on the LAN unless the IP is listed.
