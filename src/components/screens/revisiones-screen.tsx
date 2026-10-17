@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   CalendarDays,
   Check,
@@ -24,7 +24,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
-import { useDictadoVoz } from "@/hooks/use-dictado-voz";
+import { agregarTexto, useDictadoVoz } from "@/hooks/use-dictado-voz";
 import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
 import { esPreguntaNatural, useBusquedaInteligente } from "@/hooks/use-busqueda-inteligente";
 import { CAJA_FUERTE_FILTERS, REPORT_FILTERS, type ReportFilter } from "@/lib/revisiones-archive";
@@ -90,7 +90,8 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
 }) {
   const archive = useRevisionesArchive();
   const guardadas = useSavedRevisionDrafts();
-  const dictado = useDictadoVoz(archive.setSearchInput);
+  const { setSearchInput } = archive;
+  const dictado = useDictadoVoz(useCallback((texto: string) => setSearchInput((actual) => agregarTexto(actual, texto)), [setSearchInput]));
   const inteligente = useBusquedaInteligente();
   const { busqueda } = inteligente;
   const puedePreguntar = esPreguntaNatural(archive.searchInput) && busqueda?.pregunta !== archive.searchInput.replace(/\s+/g, " ").trim();
@@ -238,11 +239,23 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             <button
               type="button"
               className={styles.micButton}
-              aria-pressed={dictado.escuchando}
-              aria-label={dictado.escuchando ? "Detener dictado por voz" : "Dictar búsqueda por voz"}
-              onClick={() => dictado.alternar(archive.searchInput)}
+              data-estado={dictado.estado}
+              aria-pressed={dictado.estado === "grabando"}
+              aria-label={dictado.estado === "grabando" ? "Detener grabación" : dictado.estado === "transcribiendo" ? "Transcribiendo…" : "Dictar búsqueda"}
+              title={dictado.estado === "grabando" ? "Detener grabación" : dictado.estado === "transcribiendo" ? "Transcribiendo…" : "Dictar búsqueda"}
+              disabled={dictado.estado === "transcribiendo"}
+              onClick={dictado.alternar}
             >
-              <Mic size={18} className={dictado.escuchando ? styles.micListening : undefined} aria-hidden="true" />
+              {dictado.estado === "transcribiendo" ? (
+                <LoaderCircle size={18} className="revision-spinner" aria-hidden="true" />
+              ) : dictado.estado === "grabando" ? (
+                <>
+                  <Mic size={16} aria-hidden="true" />
+                  <span className={styles.micTimer} aria-hidden="true">{dictado.segundos} s</span>
+                </>
+              ) : (
+                <Mic size={18} aria-hidden="true" />
+              )}
             </button>
           )}
           <button

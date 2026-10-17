@@ -112,22 +112,36 @@
   color: var(--foreground);
 }
 
-.micButton[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--destructive) 15%, var(--muted));
-  color: var(--destructive);
+.micButton[data-estado="grabando"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-basis: auto;
+  min-width: 44px;
+  padding-inline: 10px;
+  background: var(--destructive);
+  color: #fff;
+  animation: micRecPulse 1.4s ease-in-out infinite;
 }
 
-.micListening {
-  animation: micPulse 1.4s ease-in-out infinite;
+.micButton:disabled {
+  opacity: 0.7;
 }
 
-@keyframes micPulse {
+.micTimer {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes micRecPulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50% { opacity: 0.7; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .micListening { animation: none; }
+  .micButton[data-estado="grabando"] { animation: none; }
 }
 
 .voiceError {
