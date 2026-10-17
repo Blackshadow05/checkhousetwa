@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBusquedaRevisiones } from "@/app/actions/revisiones";
+import { quitarFiltro, type FiltrosSerializados } from "@/lib/busqueda-filtros";
 import type { InicioRevisionRow } from "@/types/database";
 
 export type BusquedaInteligente =
@@ -10,11 +11,15 @@ export type BusquedaInteligente =
     pregunta: string;
     estado: "lista";
     respuesta: string | null;
-    filtros: unknown;
+    filtros: FiltrosSerializados | null;
     total: number;
     revisiones: InicioRevisionRow[];
     cargandoMas: boolean;
     errorMas: string | null;
+    // Tras quitar un chip la respuesta del modelo ya no describe la lista.
+    ajustada: boolean;
+    ajustando: boolean;
+    errorAjuste: string | null;
   }
   | { pregunta: string; estado: "error"; error: string };
 
@@ -49,7 +54,7 @@ export function useBusquedaInteligente() {
         signal: peticion.signal,
       });
       const body = await response.json().catch(() => null) as
-        { respuesta?: string | null; filtros?: unknown; total?: number; revisiones?: InicioRevisionRow[]; error?: string } | null;
+        { respuesta?: string | null; filtros?: FiltrosSerializados | null; total?: number; revisiones?: InicioRevisionRow[]; error?: string } | null;
       if (peticion.signal.aborted) return;
       if (!response.ok || !body) {
         setBusqueda({ pregunta, estado: "error", error: body?.error ?? "No pudimos completar la búsqueda." });
@@ -65,6 +70,9 @@ export function useBusquedaInteligente() {
         revisiones,
         cargandoMas: false,
         errorMas: null,
+        ajustada: false,
+        ajustando: false,
+        errorAjuste: null,
       });
     } catch {
       if (peticion.signal.aborted) return;
@@ -74,11 +82,12 @@ export function useBusquedaInteligente() {
 
   const cargarMas = useCallback(async () => {
     const inicial = actual.current;
-    if (cargando.current || inicial?.estado !== "lista" || inicial.revisiones.length >= inicial.total) return;
+    if (cargando.current || inicial?.estado !== "lista" || inicial.ajustando || inicial.revisiones.length >= inicial.total) return;
     cargando.current = true;
     const peticion = controller.current;
     setBusqueda({ ...inicial, cargandoMas: true, errorMas: null });
     const { rows, error } = await fetchBusquedaRevisiones(inicial.filtros, inicial.revisiones.length)
+      .then((resultado) => resultado.error ? { ...resultado, error: "No pudimos cargar más revisiones." } : resultado)
       .catch(() => ({ rows: [] as InicioRevisionRow[], error: "No pudimos cargar más revisiones." }));
     cargando.current = false;
     if (controller.current !== peticion || peticion?.signal.aborted) return;
@@ -96,10 +105,40 @@ export function useBusquedaInteligente() {
     });
   }, []);
 
+  // Se permite quitar todos los chips: sin filtros la lista muestra todas las revisiones, igual que el archivo.
+  const quitar = useCallback(async (id: string) => {
+    const inicial = actual.current;
+    if (inicial?.estado !== "lista" || !inicial.filtros || inicial.ajustando) return;
+    controller.current?.abort();
+    const peticion = new AbortController();
+    controller.current = peticion;
+    const filtros = quitarFiltro(inicial.filtros, id);
+    setBusqueda({ ...inicial, ajustando: true, errorAjuste: null });
+    const { rows, total, error } = await fetchBusquedaRevisiones(filtros, 0)
+      .catch(() => ({ rows: [] as InicioRevisionRow[], total: 0, error: "No pudimos ajustar los filtros." }));
+    if (controller.current !== peticion || peticion.signal.aborted) return;
+    setBusqueda((previa) => {
+      if (previa?.estado !== "lista" || previa.pregunta !== inicial.pregunta) return previa;
+      if (error) return { ...previa, ajustando: false, cargandoMas: false, errorAjuste: "No pudimos ajustar los filtros. Inténtalo de nuevo." };
+      return {
+        ...previa,
+        filtros,
+        revisiones: rows,
+        total,
+        respuesta: null,
+        ajustada: true,
+        ajustando: false,
+        errorAjuste: null,
+        cargandoMas: false,
+        errorMas: null,
+      };
+    });
+  }, []);
+
   const cerrar = useCallback(() => {
     controller.current?.abort();
     setBusqueda(null);
   }, []);
 
-  return { busqueda, preguntar, cargarMas, cerrar };
+  return { busqueda, preguntar, cargarMas, quitar, cerrar };
 }

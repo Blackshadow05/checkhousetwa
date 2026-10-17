@@ -354,9 +354,11 @@
 
 .top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   min-width: 0;
   gap: 6px;
+  row-gap: 4px;
 }
 
 .top :global(.status-badge) {
@@ -365,11 +367,44 @@
   border-radius: 6px;
   font-size: 0.75rem;
   font-weight: 600;
+  min-width: 0;
 }
 
 .noteIcon {
   flex-shrink: 0;
   color: var(--muted-foreground);
+}
+
+.row[data-extra-note] {
+  --extra-bg: #ffedd5;
+  --extra-text: #9a3412;
+  --extra-border: #f97316;
+}
+
+:global(:root[data-theme="dark"]) .row[data-extra-note] {
+  --extra-bg: #4a2510;
+  --extra-text: #fdba74;
+  --extra-border: #fb923c;
+}
+
+.row[data-extra-note]:not([data-tone="pendiente"]) {
+  box-shadow: inset 3px 0 0 var(--extra-border);
+}
+
+.extraChip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 3px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--extra-border) 45%, transparent);
+  border-radius: 6px;
+  background: var(--extra-bg);
+  color: var(--extra-text);
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .name {
@@ -580,6 +615,10 @@
   opacity: 0.6;
 }
 
+.answer .chips button:disabled {
+  opacity: 0.6;
+}
+
 .answer {
   display: grid;
   min-width: 0;
@@ -638,6 +677,45 @@
 
 .answerBody button {
   justify-self: start;
+}
+
+.answerBody p,
+.answerList {
+  overflow-wrap: anywhere;
+}
+
+.answerText {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.answerList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.answerList li {
+  position: relative;
+  min-width: 0;
+  padding-left: 14px;
+}
+
+.answerList li::before {
+  content: "";
+  position: absolute;
+  top: 0.62em;
+  left: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
 }
 
 @keyframes answer-in {

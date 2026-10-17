@@ -246,13 +246,14 @@ export async function editRevisionField(input: {
 
 export async function fetchBusquedaRevisiones(filtros: unknown, offset: number): Promise<{
   rows: InicioRevisionRow[];
+  total: number;
   error: string | null;
 }> {
   try {
     const inicio = Math.max(0, Math.min(Math.trunc(offset) || 0, 100_000));
-    const { rows } = await buscarRevisiones(await createPrivateClient(), parseFiltros(filtros), { offset: inicio, limit: BUSQUEDA_PAGINA });
-    return { rows, error: null };
+    const { rows, total } = await buscarRevisiones(await createPrivateClient(), parseFiltros(filtros), { offset: inicio, limit: BUSQUEDA_PAGINA });
+    return { rows, total, error: null };
   } catch {
-    return { rows: [], error: "No pudimos cargar más revisiones." };
+    return { rows: [], total: 0, error: "No pudimos cargar las revisiones." };
   }
 }

@@ -15,6 +15,7 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  StickyNote,
   WifiOff,
   X,
 } from "lucide-react";
@@ -22,10 +23,12 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { DateInput } from "@/components/ui/date-input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
+import { RespuestaBusqueda } from "@/components/screens/respuesta-busqueda";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
 import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
 import { esPreguntaNatural, useBusquedaInteligente } from "@/hooks/use-busqueda-inteligente";
 import { CAJA_FUERTE_FILTERS, REPORT_FILTERS, type ReportFilter } from "@/lib/revisiones-archive";
+import { chipsDeFiltros } from "@/lib/busqueda-filtros";
 import { fechaAbreviada, fechaTexto } from "@/lib/fechas";
 import {
   dayLabel,
@@ -105,6 +108,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   const sentinelRef = useRef<HTMLDivElement>(null);
   const busquedaSentinelRef = useRef<HTMLDivElement>(null);
   const busquedaConMas = busqueda?.estado === "lista" && busqueda.revisiones.length < busqueda.total && !busqueda.errorMas;
+  const chipsBusqueda = busqueda?.estado === "lista" ? chipsDeFiltros(busqueda.filtros) : [];
   const { cargarMas } = inteligente;
   const groups = useMemo(() => groupByDay(archive.rows), [archive.rows]);
   const periodIndex = archive.date
@@ -382,8 +386,35 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             </div>
           ) : (
             <>
-              <div className={styles.answerBody} role="status">
-                <p>{busqueda.respuesta ?? (busqueda.revisiones.length ? "Estas son las revisiones que coinciden." : "No encontramos revisiones que coincidan.")}</p>
+              {chipsBusqueda.length > 0 && (
+                <div className={styles.chips} aria-label="Filtros de la búsqueda">
+                  {chipsBusqueda.map((chip) => (
+                    <button
+                      key={chip.id}
+                      type="button"
+                      aria-label={`Quitar filtro ${chip.etiqueta}`}
+                      disabled={busqueda.ajustando}
+                      onClick={() => void inteligente.quitar(chip.id)}
+                    >
+                      {chip.etiqueta}
+                      <X size={14} aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className={styles.answerBody} role="status" aria-busy={busqueda.ajustando}>
+                {!busqueda.ajustando && !busqueda.ajustada && busqueda.respuesta ? (
+                  <RespuestaBusqueda key={busqueda.respuesta} texto={busqueda.respuesta} />
+                ) : (
+                  <p>
+                    {busqueda.ajustando
+                      ? "Ajustando filtros…"
+                      : busqueda.ajustada
+                        ? `Filtros ajustados: ${busqueda.total} ${busqueda.total === 1 ? "revisión" : "revisiones"}.`
+                        : busqueda.revisiones.length ? "Estas son las revisiones que coinciden." : "No encontramos revisiones que coincidan."}
+                  </p>
+                )}
+                {busqueda.errorAjuste && <p>{busqueda.errorAjuste}</p>}
               </div>
               {busqueda.revisiones.length > 0 && (
                 <div className={styles.list}>
@@ -392,9 +423,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                       key={revisionKey(row, index)}
                       className={styles.row}
                       data-tone={statusAppearance(row.caja_fuerte).tone}
+                      data-extra-note={hasRevisionValue(row.nota_extra) || undefined}
                       type="button"
                       onClick={() => archive.openRevision(row)}
-                      aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}`}
+                      aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}${hasRevisionValue(row.notas) ? ", con nota" : ""}${hasRevisionValue(row.nota_extra) ? ", con nota extra" : ""}`}
                     >
                       <span className={styles.plaque}>
                         <strong className={styles.number}>{row.casita}</strong>
@@ -404,6 +436,9 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                           <StatusBadge value={row.caja_fuerte} />
                           {hasRevisionValue(row.notas) && (
                             <MessageSquareText size={14} className={styles.noteIcon} aria-hidden="true" />
+                          )}
+                          {hasRevisionValue(row.nota_extra) && (
+                            <span className={styles.extraChip} aria-hidden="true"><StickyNote size={12} aria-hidden="true" /><span>Nota extra</span></span>
                           )}
                         </span>
                         <span className={styles.name}>{row.quien_revisa}</span>
@@ -457,12 +492,14 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                   const pendiente = pendingById.get(row.id);
                   const marcada = row.pendiente && !pendiente;
                   const marcadaPor = row.marcada_por ?? row.quien_revisa;
+                  const conNotaExtra = hasRevisionValue(row.nota_extra) ? ", con nota extra" : "";
                   return (
                   <button
                     key={revisionKey(row, index)}
                     className={styles.row}
                     data-tone={row.pendiente ? "pendiente" : statusAppearance(row.caja_fuerte).tone}
                     data-revision-card={row.id || undefined}
+                    data-extra-note={hasRevisionValue(row.nota_extra) || undefined}
                     data-pending={pendiente?.status}
                     type="button"
                     aria-disabled={pendiente?.status === "saving" || undefined}
@@ -472,10 +509,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                       else if (pendiente.status !== "saving") setPendienteId(row.id);
                     }}
                     aria-label={pendiente
-                      ? `Casita ${row.casita}, ${row.quien_revisa}, ${PENDING_LABEL[pendiente.status]}`
+                      ? `Casita ${row.casita}, ${row.quien_revisa}, ${PENDING_LABEL[pendiente.status]}${conNotaExtra}`
                       : marcada
-                        ? `Casita ${row.casita} por completar, marcada por ${marcadaPor} a las ${shortTime(row.created_at)}. Completar`
-                      : `Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}`}
+                        ? `Casita ${row.casita} por completar, marcada por ${marcadaPor} a las ${shortTime(row.created_at)}. Completar${conNotaExtra}`
+                      : `Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}${conNotaExtra}`}
                   >
                     <span className={styles.plaque}>
                       <strong className={styles.number}>{row.casita}</strong>
@@ -487,6 +524,9 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                           : <StatusBadge value={row.caja_fuerte} />}
                         {hasRevisionValue(row.notas) && (
                           <MessageSquareText size={14} className={styles.noteIcon} aria-hidden="true" />
+                        )}
+                        {hasRevisionValue(row.nota_extra) && (
+                          <span className={styles.extraChip} aria-hidden="true"><StickyNote size={12} aria-hidden="true" /><span>Nota extra</span></span>
                         )}
                       </span>
                       <span className={styles.name}>
