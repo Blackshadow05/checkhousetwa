@@ -22,6 +22,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { DateInput } from "@/components/ui/date-input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
+import { RespuestaBusqueda } from "@/components/screens/respuesta-busqueda";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
 import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
 import { esPreguntaNatural, useBusquedaInteligente } from "@/hooks/use-busqueda-inteligente";
@@ -401,13 +402,17 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                 </div>
               )}
               <div className={styles.answerBody} role="status" aria-busy={busqueda.ajustando}>
-                <p>
-                  {busqueda.ajustando
-                    ? "Ajustando filtros…"
-                    : busqueda.ajustada
-                      ? `Filtros ajustados: ${busqueda.total} ${busqueda.total === 1 ? "revisión" : "revisiones"}.`
-                      : busqueda.respuesta ?? (busqueda.revisiones.length ? "Estas son las revisiones que coinciden." : "No encontramos revisiones que coincidan.")}
-                </p>
+                {!busqueda.ajustando && !busqueda.ajustada && busqueda.respuesta ? (
+                  <RespuestaBusqueda key={busqueda.respuesta} texto={busqueda.respuesta} />
+                ) : (
+                  <p>
+                    {busqueda.ajustando
+                      ? "Ajustando filtros…"
+                      : busqueda.ajustada
+                        ? `Filtros ajustados: ${busqueda.total} ${busqueda.total === 1 ? "revisión" : "revisiones"}.`
+                        : busqueda.revisiones.length ? "Estas son las revisiones que coinciden." : "No encontramos revisiones que coincidan."}
+                  </p>
+                )}
                 {busqueda.errorAjuste && <p>{busqueda.errorAjuste}</p>}
               </div>
               {busqueda.revisiones.length > 0 && (

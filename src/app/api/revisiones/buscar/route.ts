@@ -11,14 +11,19 @@ import {
   BUSQUEDA_PAGINA,
   ELEGIR_IDS_TOOL,
   buscarRevisiones,
+  dependeDeNotas,
   idsElegidos,
+  limpiarRespuestaDetallada,
   notasParaLectura,
   parseFiltros,
   parseFiltrosSignificado,
+  respuestaDetalladaPlantilla,
   respuestaPlantilla,
   resumenParaModelo,
   serializarFiltros,
+  sinPreguntaFinal,
   textoLectura,
+  textoRedaccion,
   type FiltrosBusqueda,
 } from "@/lib/busqueda-revisiones";
 import type { InicioRevisionRow } from "@/types/database";
@@ -35,6 +40,10 @@ const LECTURA_MAX_TOKENS = 1_500;
 const DEADLINE_MS = 25_000;
 const RESERVA_CONSULTA_MS = 3_000;
 const MIN_LLAMADA_MS = 2_500;
+// La redacción es la última llamada (no la sigue ninguna consulta): solo deja un margen corto para responder.
+const REDACCION_MAX_MS = 10_000;
+const REDACCION_MARGEN_MS = 1_000;
+const REDACCION_MAX_TOKENS = 900;
 const MAX_PREGUNTA = 300;
 const NO_STORE = { "Cache-Control": "private, no-store" };
 
@@ -72,16 +81,18 @@ Responde en español, en una o dos oraciones cortas, con fechas legibles como "3
 Tu respuesta es final: nunca termines con preguntas, ofrecimientos ni sugerencias de seguir buscando.`;
 }
 
-function sinPreguntaFinal(texto: string) {
-  const oraciones = texto.match(/[^.!?¿¡]*(?:[¿¡][^?!]*[?!]|[.!?]+|$)/g)?.map((parte) => parte.trim()).filter(Boolean) ?? [texto];
-  while (oraciones.length > 1 && /[?]$/.test(oraciones[oraciones.length - 1])) oraciones.pop();
-  return oraciones.join(" ");
-}
+const INSTRUCCIONES_REDACCION = `Eres el redactor del buscador de revisiones de casitas de un hotel. Responde en español y solo con los datos que se te dan; nunca inventes.
+Formato de texto plano, sin markdown: nada de **, #, tablas ni backticks.
+Primera línea: un resumen breve (una o dos oraciones) con el total de coincidencias y lo esencial, incluidos los patrones si los hay (casitas que se repiten; si el problema parece resuelto o sigue pendiente, solo si las notas lo dicen o una revisión posterior de la misma casita lo indica).
+Luego una línea por revisión relevante, cada una empezando con "• " y en este orden: "Casita N · fecha corta · revisor: resumen de lo que dice la nota (qué pasó, qué se hizo)".
+Máximo 10 líneas de revisiones. Si hay más coincidencias que líneas listadas, termina con una línea "y N más." donde N es el total de coincidencias menos las líneas listadas.
+Omite las filas que no sean relevantes para la pregunta.
+No termines con preguntas ni ofrecimientos, y no menciones campos técnicos, números de fila ni ids.`;
 
 type Herramienta = typeof BUSCAR_REVISIONES_TOOL | typeof BUSCAR_POR_SIGNIFICADO_TOOL | typeof ELEGIR_IDS_TOOL;
 type Opciones = {
-  tools: Herramienta[];
-  toolChoice: "required" | "auto" | { type: "function"; function: { name: string } };
+  tools?: Herramienta[];
+  toolChoice?: "required" | "auto" | { type: "function"; function: { name: string } };
   maxTokens?: number;
 };
 
@@ -93,9 +104,7 @@ async function llamarModelo(apiKey: string, messages: Mensaje[], opciones: Opcio
     body: JSON.stringify({
       model: MODEL,
       messages,
-      tools: opciones.tools,
-      tool_choice: opciones.toolChoice,
-      parallel_tool_calls: false,
+      ...(opciones.tools?.length ? { tools: opciones.tools, tool_choice: opciones.toolChoice ?? "auto", parallel_tool_calls: false } : {}),
       reasoning: { enabled: false },
       provider: { sort: "latency" },
       temperature: 0,
@@ -107,6 +116,22 @@ async function llamarModelo(apiKey: string, messages: Mensaje[], opciones: Opcio
   const message = body.choices?.[0]?.message;
   if (!message) throw new Error("sin respuesta");
   return message;
+}
+
+// Llamada sin herramientas ni historial: redacta la respuesta final a partir de las filas encontradas.
+async function redactar(apiKey: string, pregunta: string, hoy: string, total: number, rows: InicioRevisionRow[], orden: FiltrosBusqueda["orden"], timeoutMs: number) {
+  const message = await llamarModelo(
+    apiKey,
+    [
+      { role: "system", content: INSTRUCCIONES_REDACCION },
+      { role: "user", content: textoRedaccion(pregunta, hoy, weekdayName(hoy).toLowerCase(), total, rows, orden) },
+    ],
+    { maxTokens: REDACCION_MAX_TOKENS },
+    timeoutMs,
+  );
+  const texto = limpiarRespuestaDetallada(message.content ?? "");
+  if (!texto) throw new Error("redacción vacía");
+  return texto;
 }
 
 function esTimeout(error: unknown) {
@@ -154,6 +179,7 @@ export async function POST(request: Request) {
 
   let lectura: Lectura | null = null;
   let falloLectura: unknown = null;
+  let redactarNotas = false;
 
   // Con ids elegidos, la consulta final reutiliza los filtros estructurados de la lectura.
   async function aplicarEleccion(argumentos: string, actual: Lectura) {
@@ -240,6 +266,11 @@ export async function POST(request: Request) {
         break;
       }
     }
+    // Si la respuesta depende de las notas, la redacta una llamada aparte en vez de la plantilla corta o del bucle.
+    if (valida && ultima && dependeDeNotas(pregunta, ultima.filtros, ultima.rows)) {
+      redactarNotas = true;
+      break;
+    }
     if (ronda === 0 && valida && calls.length === 1 && ultima) {
       respuesta = respuestaPlantilla(pregunta, ultima.filtros, ultima.total, ultima.rows, hoy);
       if (respuesta) break;
@@ -252,6 +283,16 @@ export async function POST(request: Request) {
   }
   if (!ultima) return fail("No entendimos la búsqueda. Prueba escribiéndola de otra forma.", 422);
   const { filtros, total, rows } = ultima;
+  if (redactarNotas) {
+    const disponible = Math.min(REDACCION_MAX_MS, DEADLINE_MS - (Date.now() - inicio) - REDACCION_MARGEN_MS);
+    try {
+      if (disponible < MIN_LLAMADA_MS) throw new DOMException("sin tiempo para redactar", "TimeoutError");
+      respuesta = await redactar(apiKey, pregunta, hoy, total, rows, filtros.orden, disponible);
+    } catch (error) {
+      console.error("buscar-revisiones: falló la redacción", error instanceof Error ? error.message : "error");
+      respuesta = respuestaDetalladaPlantilla(filtros, total, rows, hoy);
+    }
+  }
   respuesta ??= respuestaPlantilla(pregunta, filtros, total, rows, hoy, true);
   return NextResponse.json({ respuesta, filtros: serializarFiltros(filtros), total, revisiones: rows }, { headers: NO_STORE });
 }

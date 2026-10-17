@@ -36,3 +36,12 @@ export function fechaHora(value: string | number | Date): string {
   if (Number.isNaN(date.getTime())) return "Sin fecha";
   return `${fechaTexto(DIA.format(date))}, ${HORA.format(date)}`;
 }
+
+// "3 oct" o "3 oct 2025" si es de otro año. created_at ya viene en hora de Costa Rica, así que basta el día.
+export function fechaCorta(day: string, hoy: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
+  const mes = match ? MESES[Number(match[2]) - 1] : undefined;
+  if (!match || !mes) return day;
+  const texto = `${Number(match[3])} ${mes.slice(0, 3).toLowerCase()}`;
+  return match[1] === hoy.slice(0, 4) ? texto : `${texto} ${match[1]}`;
+}

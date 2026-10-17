@@ -644,6 +644,45 @@
   justify-self: start;
 }
 
+.answerBody p,
+.answerList {
+  overflow-wrap: anywhere;
+}
+
+.answerText {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.answerList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.answerList li {
+  position: relative;
+  min-width: 0;
+  padding-left: 14px;
+}
+
+.answerList li::before {
+  content: "";
+  position: absolute;
+  top: 0.62em;
+  left: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
 @keyframes answer-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
