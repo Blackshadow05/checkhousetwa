@@ -27,7 +27,8 @@ function isIos() {
 
 export function InstalledGate({ restrict, children }: { restrict: boolean; children: ReactNode }) {
   const state = useSyncExternalStore(subscribe, getState, getServerState);
-  if (!restrict) return children;
+  // Vercel Preview Deployments skip the install gate so reviewers can open links directly in a browser.
+  if (!restrict || process.env.NEXT_PUBLIC_VERCEL_ENV === "preview") return children;
   return (
     <>
       <div className="installed-gate-app" inert={state !== "installed"} aria-hidden={state !== "installed"}>
