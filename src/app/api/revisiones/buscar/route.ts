@@ -15,7 +15,7 @@ import {
 
 export const maxDuration = 30;
 
-const MODEL = "anthropic/claude-haiku-5.5";
+const MODEL = "deepseek/deepseek-v4.1-flash-1017";
 const MAX_RONDAS = 3;
 const MODEL_MAX_MS = 12_000;
 const MAX_PREGUNTA = 300;
