@@ -10,6 +10,7 @@ import {
   ClipboardPen,
   CloudOff,
   LoaderCircle,
+  Mic,
   ScanSearch,
   MessageSquareText,
   Search,
@@ -23,6 +24,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
+import { useDictadoVoz } from "@/hooks/use-dictado-voz";
 import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
 import { esPreguntaNatural, useBusquedaInteligente } from "@/hooks/use-busqueda-inteligente";
 import { CAJA_FUERTE_FILTERS, REPORT_FILTERS, type ReportFilter } from "@/lib/revisiones-archive";
@@ -88,6 +90,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
 }) {
   const archive = useRevisionesArchive();
   const guardadas = useSavedRevisionDrafts();
+  const dictado = useDictadoVoz(archive.setSearchInput);
   const inteligente = useBusquedaInteligente();
   const { busqueda } = inteligente;
   const puedePreguntar = esPreguntaNatural(archive.searchInput) && busqueda?.pregunta !== archive.searchInput.replace(/\s+/g, " ").trim();
@@ -231,6 +234,17 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
               </button>
             ) : null}
           </label>
+          {dictado.soportado && (
+            <button
+              type="button"
+              className={styles.micButton}
+              aria-pressed={dictado.escuchando}
+              aria-label={dictado.escuchando ? "Detener dictado por voz" : "Dictar búsqueda por voz"}
+              onClick={() => dictado.alternar(archive.searchInput)}
+            >
+              <Mic size={18} className={dictado.escuchando ? styles.micListening : undefined} aria-hidden="true" />
+            </button>
+          )}
           <button
             type="button"
             className={styles.filterButton}
@@ -244,6 +258,9 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             ) : null}
           </button>
         </form>
+        {dictado.error && (
+          <p className={styles.voiceError} role="status">{dictado.error}</p>
+        )}
         {puedePreguntar && (
           <button
             type="button"

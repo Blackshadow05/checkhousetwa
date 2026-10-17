@@ -102,6 +102,42 @@
   color: var(--primary-foreground);
 }
 
+.micButton {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.micButton[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--destructive) 15%, var(--muted));
+  color: var(--destructive);
+}
+
+.micListening {
+  animation: micPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes micPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .micListening { animation: none; }
+}
+
+.voiceError {
+  margin-top: -6px;
+  padding-inline: 2px;
+  color: var(--destructive);
+  font-size: 0.8125rem;
+  animation: answer-in 150ms ease-out;
+}
+
 .filterDot {
   position: absolute;
   top: -4px;
