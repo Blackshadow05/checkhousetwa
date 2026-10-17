@@ -26,6 +26,7 @@ import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
 import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
 import { esPreguntaNatural, useBusquedaInteligente } from "@/hooks/use-busqueda-inteligente";
 import { CAJA_FUERTE_FILTERS, REPORT_FILTERS, type ReportFilter } from "@/lib/revisiones-archive";
+import { chipsDeFiltros } from "@/lib/busqueda-filtros";
 import { fechaAbreviada, fechaTexto } from "@/lib/fechas";
 import {
   dayLabel,
@@ -105,6 +106,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   const sentinelRef = useRef<HTMLDivElement>(null);
   const busquedaSentinelRef = useRef<HTMLDivElement>(null);
   const busquedaConMas = busqueda?.estado === "lista" && busqueda.revisiones.length < busqueda.total && !busqueda.errorMas;
+  const chipsBusqueda = busqueda?.estado === "lista" ? chipsDeFiltros(busqueda.filtros) : [];
   const { cargarMas } = inteligente;
   const groups = useMemo(() => groupByDay(archive.rows), [archive.rows]);
   const periodIndex = archive.date
@@ -382,8 +384,31 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             </div>
           ) : (
             <>
-              <div className={styles.answerBody} role="status">
-                <p>{busqueda.respuesta ?? (busqueda.revisiones.length ? "Estas son las revisiones que coinciden." : "No encontramos revisiones que coincidan.")}</p>
+              {chipsBusqueda.length > 0 && (
+                <div className={styles.chips} aria-label="Filtros de la búsqueda">
+                  {chipsBusqueda.map((chip) => (
+                    <button
+                      key={chip.id}
+                      type="button"
+                      aria-label={`Quitar filtro ${chip.etiqueta}`}
+                      disabled={busqueda.ajustando}
+                      onClick={() => void inteligente.quitar(chip.id)}
+                    >
+                      {chip.etiqueta}
+                      <X size={14} aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className={styles.answerBody} role="status" aria-busy={busqueda.ajustando}>
+                <p>
+                  {busqueda.ajustando
+                    ? "Ajustando filtros…"
+                    : busqueda.ajustada
+                      ? `Filtros ajustados: ${busqueda.total} ${busqueda.total === 1 ? "revisión" : "revisiones"}.`
+                      : busqueda.respuesta ?? (busqueda.revisiones.length ? "Estas son las revisiones que coinciden." : "No encontramos revisiones que coincidan.")}
+                </p>
+                {busqueda.errorAjuste && <p>{busqueda.errorAjuste}</p>}
               </div>
               {busqueda.revisiones.length > 0 && (
                 <div className={styles.list}>

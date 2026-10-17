@@ -580,6 +580,10 @@
   opacity: 0.6;
 }
 
+.answer .chips button:disabled {
+  opacity: 0.6;
+}
+
 .answer {
   display: grid;
   min-width: 0;
