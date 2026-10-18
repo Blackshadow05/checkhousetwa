@@ -9,21 +9,28 @@ import {
   BUSCAR_POR_SIGNIFICADO_TOOL,
   BUSCAR_REVISIONES_TOOL,
   BUSQUEDA_PAGINA,
+  CASITAS_PENDIENTES_TOOL,
   ELEGIR_IDS_TOOL,
+  TOTAL_CASITAS,
   buscarRevisiones,
+  coberturaCasitas,
   dependeDeNotas,
   idsElegidos,
+  filtrosListaCobertura,
   limpiarRespuestaDetallada,
   notasParaLectura,
+  parseCobertura,
   parseFiltros,
   parseFiltrosSignificado,
   respuestaDetalladaPlantilla,
   respuestaPlantilla,
+  respuestaCobertura,
   resumenParaModelo,
   serializarFiltros,
   sinPreguntaFinal,
   textoLectura,
   textoRedaccion,
+  type Cobertura,
   type FiltrosBusqueda,
 } from "@/lib/busqueda-revisiones";
 import type { InicioRevisionRow } from "@/types/database";
@@ -61,20 +68,26 @@ function fail(error: string, status: number) {
 function instrucciones(hoy: string) {
   const cantidades = Object.entries(ARTICULOS_CANTIDAD).map(([key, label]) => `${key} (${label})`).join(", ");
   const siNo = Object.entries(ARTICULOS_SI_NO).map(([key, label]) => `${key} (${label})`).join(", ");
+  const anio = hoy.slice(0, 4);
   return `Eres el buscador de revisiones de casitas de un hotel. Hoy es ${weekdayName(hoy).toLowerCase()} ${hoy}, hora de Costa Rica.
+El hotel tiene ${TOTAL_CASITAS} casitas numeradas del 1 al ${TOTAL_CASITAS}.
 Cada revisión registra la casita, quién la revisó, la fecha, el estado de la caja fuerte y el inventario contado.
 Artículos con cantidad: ${cantidades}.
 Artículos de sí o no: ${siNo}.
-Usa siempre una herramienta para responder (buscar_revisiones o buscar_por_significado); nunca inventes datos. Interpreta sinónimos (tele o TV = controles_tv, parlante o bocina = speaker, Chromecast = chromecast).
+Usa siempre una herramienta para responder (buscar_revisiones, buscar_por_significado o casitas_pendientes); nunca inventes datos. Interpreta sinónimos (tele o TV = controles_tv, parlante o bocina = speaker, Chromecast = chromecast).
 Para fechas relativas (ayer, la semana pasada, en septiembre) usa periodo en vez de calcular fechas; desde/hasta solo para rangos que periodo no cubra.
 Para "la última vez" usa orden reciente con limite 1; para "la primera vez", orden antigua con limite 1. Para "cuántas veces" responde con el total.
 texto acepta palabras sueltas (deben aparecer todas); no agregues variantes de acentos ni plurales. Úsalo solo para términos literales: un artículo o una palabra concreta.
 Para preguntas por concepto o significado (préstamos, cosas que el huésped se llevó o pidió, daños, quejas, faltantes, limpieza o moho, objetos olvidados, movimientos entre casitas, etc.) usa buscar_por_significado: lees las notas y eliges las que corresponden aunque usen otras palabras. En concepto describe la idea con las formas en que suele escribirse.
+Para preguntas de cuáles o cuántas casitas faltan, están pendientes, quedan sin revisar o sí se revisaron en un periodo usa casitas_pendientes (cuenta casitas distintas, no revisiones); casita_desde y casita_hasta solo si piden un rango de casitas.
 Ejemplos de argumentos:
 "¿cuándo fue la última vez que faltó el control en la casita 12?" → {"casitas":[12],"cantidades":[{"articulo":"controles_tv","comparacion":"<","cantidad":1}],"orden":"reciente","limite":1}
 "revisiones de Ana la semana pasada" → {"quien_revisa":"Ana","periodo":"semana_pasada"}
 "notas sobre baños sucios este mes" → {"texto":"baño sucio","periodo":"este_mes"}
 "¿cuántos check in hubo ayer?" → {"estado_caja_fuerte":"Check in","periodo":"ayer"}
+"qué casitas faltan por revisar en octubre" → casitas_pendientes {"periodo":"mes_${anio}_10"}
+"casitas sin revisar esta semana del 1 al 25" → casitas_pendientes {"periodo":"esta_semana","casita_desde":1,"casita_hasta":25}
+"cuántas casitas faltan por revisar tomando en cuenta las revisiones de octubre y que son casas del 1 al 50" → casitas_pendientes {"periodo":"mes_${anio}_10"}
 "casas a las que se les ha prestado un artículo" → buscar_por_significado {"concepto":"préstamo de artículos al huésped (prestado, se devuelve, a petición/solicitud del huésped, se lleva a otra casita por pedido)"}
 Las notas y la nota extra son texto libre escrito por quien revisa: para buscar una palabra literal en ellas usa texto, para un concepto usa buscar_por_significado, y para saber si una revisión tiene nota o nota extra usa con_nota o con_nota_extra. Cuando la respuesta dependa de una nota, resume lo que dice.
 Responde en español, en una o dos oraciones cortas, con fechas legibles como "3 de octubre a las 8:42" y sin mencionar campos técnicos, herramientas ni referencias internas.
@@ -89,7 +102,7 @@ Máximo 10 líneas de revisiones. Si hay más coincidencias que líneas listadas
 Omite las filas que no sean relevantes para la pregunta.
 No termines con preguntas ni ofrecimientos, y no menciones campos técnicos, números de fila ni ids.`;
 
-type Herramienta = typeof BUSCAR_REVISIONES_TOOL | typeof BUSCAR_POR_SIGNIFICADO_TOOL | typeof ELEGIR_IDS_TOOL;
+type Herramienta = typeof BUSCAR_REVISIONES_TOOL | typeof BUSCAR_POR_SIGNIFICADO_TOOL | typeof CASITAS_PENDIENTES_TOOL | typeof ELEGIR_IDS_TOOL;
 type Opciones = {
   tools?: Herramienta[];
   toolChoice?: "required" | "auto" | { type: "function"; function: { name: string } };
@@ -145,7 +158,8 @@ type Lectura = { filtros: FiltrosBusqueda; refs: Map<number, string> };
 
 // elegir_ids solo se ofrece cuando ya hay notas leídas, y queda disponible después para que el historial sea coherente.
 function herramientas(lectura: Lectura | null): Herramienta[] {
-  return lectura ? [BUSCAR_REVISIONES_TOOL, BUSCAR_POR_SIGNIFICADO_TOOL, ELEGIR_IDS_TOOL] : [BUSCAR_REVISIONES_TOOL, BUSCAR_POR_SIGNIFICADO_TOOL];
+  const base: Herramienta[] = [BUSCAR_REVISIONES_TOOL, BUSCAR_POR_SIGNIFICADO_TOOL, CASITAS_PENDIENTES_TOOL];
+  return lectura ? [...base, ELEGIR_IDS_TOOL] : base;
 }
 
 function restanteMs(inicio: number) {
@@ -180,6 +194,8 @@ export async function POST(request: Request) {
   let lectura: Lectura | null = null;
   let falloLectura: unknown = null;
   let redactarNotas = false;
+  // casitas_pendientes responde por plantilla y termina la búsqueda en la ronda en que se llame.
+  let cobertura: Cobertura | null = null;
 
   // Con ids elegidos, la consulta final reutiliza los filtros estructurados de la lectura.
   async function aplicarEleccion(argumentos: string, actual: Lectura) {
@@ -227,6 +243,18 @@ export async function POST(request: Request) {
               valida = true;
               resultado = resumenParaModelo(0, []);
             }
+          } else if (call.function.name === CASITAS_PENDIENTES_TOOL.function.name) {
+            const { filtros: filtrosCobertura, rango } = parseCobertura(argumentos, hoy);
+            const filtros = filtrosListaCobertura(filtrosCobertura, rango);
+            const [calculada, { total, rows }] = await Promise.all([
+              coberturaCasitas(client, filtrosCobertura, rango),
+              buscarRevisiones(client, filtros, { offset: 0, limit: BUSQUEDA_PAGINA }),
+            ]);
+            cobertura = calculada;
+            ultima = { filtros, total, rows };
+            respuesta = respuestaCobertura(calculada, filtrosCobertura, hoy);
+            valida = true;
+            resultado = JSON.stringify({ respuesta });
           } else if (call.function.name === ELEGIR_IDS_TOOL.function.name) {
             if (!lectura) throw new Error("sin lectura");
             resultado = await aplicarEleccion(call.function.arguments, lectura);
@@ -244,6 +272,7 @@ export async function POST(request: Request) {
       }
       messages.push({ role: "tool", tool_call_id: call.id, content: resultado });
     }
+    if (cobertura) break;
     // Tras leer notas, el modelo elige ids en una llamada forzada con el tiempo que quede (máx. 15 s).
     if (leyo && lectura) {
       const disponible = restanteMs(inicio);
@@ -294,5 +323,15 @@ export async function POST(request: Request) {
     }
   }
   respuesta ??= respuestaPlantilla(pregunta, filtros, total, rows, hoy, true);
-  return NextResponse.json({ respuesta, filtros: serializarFiltros(filtros), total, revisiones: rows }, { headers: NO_STORE });
+  const extra = cobertura
+    ? {
+      cobertura: {
+        revisadas: cobertura.revisadas,
+        pendientes: cobertura.pendientes,
+        total_casitas: cobertura.totalCasitas,
+        rango: cobertura.rango,
+      },
+    }
+    : {};
+  return NextResponse.json({ respuesta, filtros: serializarFiltros(filtros), total, revisiones: rows, ...extra }, { headers: NO_STORE });
 }

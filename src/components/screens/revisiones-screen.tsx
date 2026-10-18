@@ -27,6 +27,7 @@ import { RespuestaBusqueda } from "@/components/screens/respuesta-busqueda";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
 import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
 import { esPreguntaNatural, useBusquedaInteligente } from "@/hooks/use-busqueda-inteligente";
+import { useCursorAlFinal } from "@/hooks/use-cursor-al-final";
 import { CAJA_FUERTE_FILTERS, REPORT_FILTERS, type ReportFilter } from "@/lib/revisiones-archive";
 import { chipsDeFiltros } from "@/lib/busqueda-filtros";
 import { fechaAbreviada, fechaTexto } from "@/lib/fechas";
@@ -92,6 +93,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   const archive = useRevisionesArchive();
   const guardadas = useSavedRevisionDrafts();
   const inteligente = useBusquedaInteligente();
+  const cursorAlFinal = useCursorAlFinal();
   const { busqueda } = inteligente;
   const puedePreguntar = esPreguntaNatural(archive.searchInput) && busqueda?.pregunta !== archive.searchInput.replace(/\s+/g, " ").trim();
   const { pendientes, reintentarRevision, tomarRevision, descartarRevision } = useRevisiones();
@@ -214,6 +216,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             <input
               type="search"
               name="buscar-revision"
+              {...cursorAlFinal}
               value={archive.searchInput}
               onChange={(event) => archive.setSearchInput(event.target.value)}
               placeholder="Buscar o preguntar"

@@ -9,6 +9,7 @@ import {
   ARTICULOS_CANTIDAD,
   ARTICULOS_SI_NO,
   COMPARACIONES,
+  TOTAL_CASITAS,
   fraseFechas,
   periodoValido,
   resolverPeriodo,
@@ -22,7 +23,7 @@ import type { Database, InicioRevisionRow, RevisionCasita, RevisionCasitaInicio 
 
 type Client = SupabaseClient<Database>;
 
-export { ARTICULOS_CANTIDAD, ARTICULOS_SI_NO };
+export { ARTICULOS_CANTIDAD, ARTICULOS_SI_NO, TOTAL_CASITAS };
 
 const MAX_CANTIDAD = 12;
 const MAX_LIMITE = 5;
@@ -126,6 +127,26 @@ export const ELEGIR_IDS_TOOL = {
         ids: { type: "array", items: { type: "integer", minimum: 1 }, description: "Ids (primer campo de cada línea) elegidos." },
       },
       required: ["ids"],
+    },
+  },
+} as const;
+
+export const CASITAS_PENDIENTES_TOOL = {
+  type: "function",
+  function: {
+    name: "casitas_pendientes",
+    description: `Calcula qué casitas (de las ${TOTAL_CASITAS}) tienen al menos una revisión en el periodo y cuáles faltan por revisar. Devuelve la respuesta completa con las listas.`,
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        periodo: { type: "string", description: DESCRIPCION_PERIODO },
+        desde: { type: "string", description: "Fecha inicial incluida, YYYY-MM-DD." },
+        hasta: { type: "string", description: "Fecha final incluida, YYYY-MM-DD." },
+        quien_revisa: { type: "string", description: "Solo cuentan las revisiones de esta persona (nombre o parte del nombre)." },
+        casita_desde: { type: "integer", minimum: 1, maximum: TOTAL_CASITAS, description: "Primera casita del rango a revisar (por defecto 1)." },
+        casita_hasta: { type: "integer", minimum: 1, maximum: TOTAL_CASITAS, description: `Última casita del rango a revisar (por defecto ${TOTAL_CASITAS}).` },
+      },
     },
   },
 } as const;
@@ -340,6 +361,154 @@ export async function buscarRevisiones(client: Client, filtros: FiltrosBusqueda,
   const { data, error, count } = await request;
   if (error) throw new Error(error.message);
   return { total: count ?? 0, rows: ((data ?? []) as RevisionCasitaInicio[]).map(mapInicioRevision) };
+}
+
+export type RangoCasitas = { desde: number; hasta: number };
+
+function numeroCasitaArgumento(valor: unknown, defecto: number) {
+  const n = typeof valor === "number" ? valor : typeof valor === "string" && valor.trim() ? Number(valor) : Number.NaN;
+  return Number.isFinite(n) ? Math.min(TOTAL_CASITAS, Math.max(1, Math.trunc(n))) : defecto;
+}
+
+// Argumentos de casitas_pendientes: periodo (manda sobre desde/hasta), revisor y rango de casitas recortado a 1..TOTAL_CASITAS.
+export function parseCobertura(raw: unknown, hoy: string): { filtros: FiltrosBusqueda; rango: RangoCasitas } {
+  const input = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const { quien_revisa, periodo, desde, hasta } = input;
+  const filtros = parseFiltros({ quien_revisa, periodo, desde, hasta }, { hoy, periodoManda: true });
+  const a = numeroCasitaArgumento(input.casita_desde, 1);
+  const b = numeroCasitaArgumento(input.casita_hasta, TOTAL_CASITAS);
+  return { filtros, rango: { desde: Math.min(a, b), hasta: Math.max(a, b) } };
+}
+
+export function rangoCompleto(rango: RangoCasitas) {
+  return rango.desde === 1 && rango.hasta === TOTAL_CASITAS;
+}
+
+export type Cobertura = {
+  rango: RangoCasitas;
+  totalCasitas: number;
+  // Ordenadas por número, con la fecha de la revisión más reciente de cada una en el periodo.
+  revisadas: { casita: number; ultima: string }[];
+  pendientes: number[];
+  // Revisiones del periodo cuyas casitas caen en el rango.
+  revisiones: number;
+  truncado: boolean;
+};
+
+// Parte pura de la cobertura: "05" y "5" son la misma casita; se ignoran valores no numéricos o fuera del rango.
+export function calcularCobertura(filas: { casita: string | null; created_at: string | null }[], rango: RangoCasitas, truncado = false): Cobertura {
+  const ultimas = new Map<number, string>();
+  let revisiones = 0;
+  for (const fila of filas) {
+    const texto = casitaNumber(fila.casita ?? "");
+    const numero = /^\d+$/.test(texto) ? Number(texto) : Number.NaN;
+    if (!Number.isInteger(numero) || numero < rango.desde || numero > rango.hasta) continue;
+    revisiones++;
+    const fecha = fila.created_at ?? "";
+    const previa = ultimas.get(numero);
+    if (previa === undefined || fecha > previa) ultimas.set(numero, fecha);
+  }
+  const revisadas = [...ultimas].sort((a, b) => a[0] - b[0]).map(([casita, ultima]) => ({ casita, ultima }));
+  const pendientes: number[] = [];
+  for (let casita = rango.desde; casita <= rango.hasta; casita++) if (!ultimas.has(casita)) pendientes.push(casita);
+  return { rango, totalCasitas: rango.hasta - rango.desde + 1, revisadas, pendientes, revisiones, truncado };
+}
+
+// [1,2,3,5,7,8] → "1–3, 5, 7, 8": solo se comprimen tramos de 3 o más consecutivos.
+export function comprimirRangos(numeros: number[]) {
+  const ordenados = [...new Set(numeros)].sort((a, b) => a - b);
+  const partes: string[] = [];
+  for (let i = 0; i < ordenados.length;) {
+    let j = i;
+    while (j + 1 < ordenados.length && ordenados[j + 1] === ordenados[j] + 1) j++;
+    if (j - i >= 2) partes.push(`${ordenados[i]}–${ordenados[j]}`);
+    else partes.push(...ordenados.slice(i, j + 1).map(String));
+    i = j + 1;
+  }
+  return partes.join(", ");
+}
+
+// Con más casitas los chips "Casita N" se vuelven ilegibles: la lista queda sin filtro de casitas.
+const MAX_CASITAS_LISTA = 10;
+
+// Filtros de la lista que acompaña a casitas_pendientes: mismas fechas y revisor, y el rango solo si es corto.
+export function filtrosListaCobertura(filtros: FiltrosBusqueda, rango: RangoCasitas): FiltrosBusqueda {
+  const cantidad = rango.hasta - rango.desde + 1;
+  const casitas = !rangoCompleto(rango) && cantidad <= MAX_CASITAS_LISTA
+    ? Array.from({ length: cantidad }, (_, i) => rango.desde + i)
+    : [];
+  return { ...filtros, casitas, ids: null };
+}
+
+const COBERTURA_BLOQUE = 1_000;
+const COBERTURA_MAX_FILAS = 20_000;
+
+// Solo id, casita y created_at de las revisiones del periodo (sin filtro de casitas), paginado para no truncar en 1000.
+export async function coberturaCasitas(client: Client, filtros: FiltrosBusqueda, rango: RangoCasitas) {
+  const filas: { casita: string | null; created_at: string | null }[] = [];
+  let truncado = false;
+  for (let offset = 0; ; offset += COBERTURA_BLOQUE) {
+    if (offset >= COBERTURA_MAX_FILAS) {
+      truncado = true;
+      break;
+    }
+    const { data, error } = await aplicarFiltros(
+      client.from(REVISIONES_TABLE).select("id, casita, created_at"),
+      { ...filtros, casitas: [], ids: null },
+    )
+      .order("created_at", { ascending: true, nullsFirst: false })
+      .order("id", { ascending: true })
+      .range(offset, offset + COBERTURA_BLOQUE - 1);
+    if (error) throw new Error(error.message);
+    filas.push(...(data ?? []));
+    if ((data ?? []).length < COBERTURA_BLOQUE) break;
+  }
+  return calcularCobertura(filas, rango, truncado);
+}
+
+// "de octubre de 2026" → "en octubre de 2026", "de esta semana" → "esta semana": la frase de fraseFechas tras un verbo.
+export function fechasTrasVerbo(fechas: string) {
+  if (!fechas) return "";
+  if (/^de (hoy|ayer|esta semana|este mes|este año)$/.test(fechas)) return fechas.slice(3);
+  if (/^de la /.test(fechas)) return fechas.slice(3);
+  if (/^del (mes pasado|año pasado|último día)$/.test(fechas)) return `${fechas.startsWith("del último") ? "en el" : "el"} ${fechas.slice(4)}`;
+  if (/^de los /.test(fechas)) return `en ${fechas.slice(3)}`;
+  if (/^de \p{L}+ de \d{4}$/u.test(fechas)) return `en ${fechas.slice(3)}`;
+  if (/^del \d+ de /.test(fechas)) return `el ${fechas.slice(4)}`;
+  return fechas;
+}
+
+function dePlural(n: number, singular: string, plural: string) {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+// Respuesta final de casitas_pendientes, siempre por plantilla: el modelo no redacta ni lista casitas.
+export function respuestaCobertura(cobertura: Cobertura, filtros: FiltrosBusqueda, hoy: string) {
+  const { rango, totalCasitas, revisadas, pendientes, revisiones, truncado } = cobertura;
+  const cuando = fechasTrasVerbo(fraseFechas(serializarFiltros(filtros)));
+  const revisor = filtros.quien ? ` de ${filtros.quien}` : "";
+  const contexto = `${revisor}${cuando ? ` ${cuando}` : ""}`;
+  const parcial = !rangoCompleto(rango);
+  const aviso = truncado ? ` (Se contaron solo las primeras ${COBERTURA_MAX_FILAS} revisiones del periodo.)` : "";
+  if (totalCasitas === 1) {
+    const ultima = revisadas[0]?.ultima;
+    return ultima
+      ? `La casita ${rango.desde} tiene revisión${contexto} (la última, ${fechaCorta(ultima, hoy)}).${aviso}`
+      : `La casita ${rango.desde} está pendiente: no tiene revisión${contexto}.${aviso}`;
+  }
+  const casitas = parcial ? `las casitas de la ${rango.desde} a la ${rango.hasta}` : `las ${totalCasitas} casitas`;
+  if (!pendientes.length) {
+    return `Todas ${casitas} tienen revisión${contexto}, con ${dePlural(revisiones, "revisión", "revisiones")}.${aviso}`;
+  }
+  if (!revisadas.length) {
+    return `Ninguna de ${casitas} tiene revisión${contexto}: faltan todas (${comprimirRangos(pendientes)}).${aviso}`;
+  }
+  const de = `de ${totalCasitas} casitas${parcial ? ` (de la ${rango.desde} a la ${rango.hasta})` : ""}`;
+  const porRevisar = `por revisar${filtros.quien ? ` por ${filtros.quien}` : ""}${cuando ? ` ${cuando}` : ""}`;
+  return [
+    `${pendientes.length === 1 ? "Falta" : "Faltan"} ${pendientes.length} ${de} ${porRevisar}: ${comprimirRangos(pendientes)}.${aviso}`,
+    `Revisadas (${dePlural(revisadas.length, "casita", "casitas")}, ${dePlural(revisiones, "revisión", "revisiones")}): ${comprimirRangos(revisadas.map((item) => item.casita))}.`,
+  ].join("\n");
 }
 
 // Argumentos de buscar_por_significado: solo los filtros estructurados que acepta esa herramienta.

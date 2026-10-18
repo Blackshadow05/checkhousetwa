@@ -1,7 +1,11 @@
 import { fechaTexto } from "@/lib/fechas";
+import { CASITAS } from "@/lib/pantallas";
 import { shiftDay } from "@/lib/revisiones-archive";
 
 // Compartido entre servidor y cliente (sin "server-only"): catálogos, periodos y chips de la búsqueda inteligente.
+
+// Casitas del hotel, numeradas del 1 al TOTAL_CASITAS (las mismas que CASITAS de pantallas).
+export const TOTAL_CASITAS = CASITAS.length;
 
 export const ARTICULOS_CANTIDAD = {
   chromecast: "Chromecast",
