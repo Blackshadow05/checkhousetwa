@@ -3,25 +3,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRight,
-  ArrowRightLeft,
   CalendarDays,
   Check,
   ChevronLeft,
   CircleAlert,
   Clock3,
   Copy,
-  DoorClosed,
-  History,
-  Lock,
-  MessageSquareText,
-  NotebookPen,
-  Package,
   Pencil,
   Plus,
-  ShieldCheck,
-  Tv,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import { EvidenceGallery } from "@/components/screens/evidence-gallery";
 import { RevisionEditSheet } from "@/components/screens/revision-edit-sheet";
@@ -31,6 +21,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { fetchRevisionEdits, fetchRevisionNotes } from "@/app/actions/revisiones";
 import {
+  casitaNumber,
   dayLabel,
   ELECTRONIC_FIELDS,
   EQUIPMENT_FIELDS,
@@ -53,6 +44,8 @@ import {
 } from "@/lib/revision-notes";
 import type { InicioRevisionRow, UsuarioShell } from "@/types/database";
 import { useOnline } from "@/lib/use-online";
+import { useInventarioCasitas } from "@/hooks/use-inventario-casitas";
+import { faltantesRevision, resumenFaltantes, resumenNoLleva } from "@/lib/revision-faltantes";
 import { dedupeRequest } from "@/lib/dedupe-request";
 import { fechaHoraRegistro } from "@/lib/fechas";
 
@@ -77,11 +70,11 @@ function describeValue(value: string | null | undefined): { kind: ValueKind; tex
 function DetailValue({ value }: { value: string | null | undefined }) {
   const { kind, text } = describeValue(value);
   if (kind === "status") return <StatusBadge value={text} />;
-  if (kind === "yes" || kind === "no") {
-    const Icon = kind === "yes" ? Check : X;
+  // Solo el "No" se resalta; "Sí" es lo normal y va con estilo neutro.
+  if (kind === "no") {
     return (
-      <span className={`detail-pill is-${kind}`}>
-        <Icon size={13} strokeWidth={2.6} aria-hidden="true" />
+      <span className="detail-pill is-no">
+        <X size={13} strokeWidth={2.6} aria-hidden="true" />
         {text}
       </span>
     );
@@ -92,25 +85,22 @@ function DetailValue({ value }: { value: string | null | undefined }) {
 function DoorsValue({ value }: { value: string | null }) {
   const text = value?.trim();
   if (!text) return <span className="detail-value is-empty">Sin registro</span>;
-  const ok = puertasVentanasOk(text);
-  const Icon = ok ? Check : CircleAlert;
+  if (puertasVentanasOk(text)) return <span className="detail-value is-text">{text}</span>;
   return (
-    <span className={`detail-pill ${ok ? "is-yes" : "is-no"}`}>
-      <Icon size={13} strokeWidth={2.6} aria-hidden="true" />
+    <span className="detail-pill is-no">
+      <CircleAlert size={13} strokeWidth={2.6} aria-hidden="true" />
       {text}
     </span>
   );
 }
 
 function DetailRow({
-  icon: Icon,
   label,
   field,
   valueText,
   onEdit,
   children,
 }: {
-  icon: LucideIcon;
   label: string;
   field: RevisionEditField;
   valueText: string;
@@ -119,12 +109,7 @@ function DetailRow({
 }) {
   const content = (
     <>
-      <span className="detail-row-label">
-        <span className="detail-row-icon">
-          <Icon size={16} aria-hidden="true" />
-        </span>
-        {label}
-      </span>
+      <span className="detail-row-label">{label}</span>
       <span className="detail-row-value">
         {children}
         {onEdit && <Pencil size={15} className="detail-edit-icon" aria-hidden="true" />}
@@ -267,6 +252,7 @@ function DetailActions({
 export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
   const { selectedRevision, closeRevision, today } = useRevisiones();
   const online = useOnline();
+  const inventario = useInventarioCasitas(true);
   const backRef = useRef<HTMLButtonElement>(null);
   const [sharedEntry] = useState(
     () => document.documentElement.dataset.detailTransition === "open",
@@ -444,6 +430,14 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
     }
   };
 
+  // Mientras llega el inventario (con conexión y sin copia guardada) no se adivina el resumen.
+  const inventarioPendiente =
+    inventario.rows === null && online && (inventario.status === "idle" || inventario.status === "loading");
+  const casitaInventario =
+    inventario.rows?.find((item) => item.casita === Number(casitaNumber(row.casita))) ?? null;
+  const faltantes = inventarioPendiente ? null : faltantesRevision(row, casitaInventario);
+  const noLleva = faltantes && resumenNoLleva(faltantes.noLleva);
+
   const editable = puedeEditarRevision(usuario, row.quien_revisa);
   const onEdit = editing && editable ? setEditingField : null;
   const actions = (
@@ -563,6 +557,23 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
             </p>
           )}
 
+          {faltantes ? (
+            <div
+              className={`detail-faltantes${faltantes.faltan.length ? " is-missing" : ""}`}
+              role="status"
+            >
+              {faltantes.faltan.length ? (
+                <CircleAlert size={20} className="detail-faltantes-icon" aria-hidden="true" />
+              ) : (
+                <Check size={20} className="detail-faltantes-icon" aria-hidden="true" />
+              )}
+              <div>
+                <p>{resumenFaltantes(faltantes.faltan)}</p>
+                {noLleva && <p className="detail-faltantes-nota">{noLleva}</p>}
+              </div>
+            </div>
+          ) : null}
+
           <div className="detail-summary">
             {onEdit ? (
               <button
@@ -598,14 +609,10 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
           <section className="detail-card" aria-label="Seguridad">
             <div className="detail-card-heading">
-              <span className="detail-card-icon">
-                <ShieldCheck size={17} aria-hidden="true" />
-              </span>
               <h2>Seguridad</h2>
             </div>
             <div className="detail-rows">
               <DetailRow
-                icon={Lock}
                 label="Caja fuerte"
                 field="caja_fuerte"
                 valueText={describeValue(row.caja_fuerte).text}
@@ -618,7 +625,6 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
                 )}
               </DetailRow>
               <DetailRow
-                icon={ArrowRightLeft}
                 label="Movimiento"
                 field="room_move"
                 valueText={describeValue(row.room_move).text}
@@ -627,7 +633,6 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
                 <DetailValue value={row.room_move} />
               </DetailRow>
               <DetailRow
-                icon={DoorClosed}
                 label="Puertas y ventanas"
                 field="puertas_ventanas"
                 valueText={describeValue(row.puertas_ventanas).text}
@@ -640,9 +645,6 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
           <section className="detail-card" aria-label="Electrónicos">
             <div className="detail-card-heading">
-              <span className="detail-card-icon">
-                <Tv size={17} aria-hidden="true" />
-              </span>
               <h2>Electrónicos</h2>
             </div>
             <div className="detail-tiles">
@@ -660,9 +662,6 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
           <section className="detail-card" aria-label="Equipamiento">
             <div className="detail-card-heading">
-              <span className="detail-card-icon">
-                <Package size={17} aria-hidden="true" />
-              </span>
               <h2>Equipamiento</h2>
             </div>
             <div className="detail-tiles">
@@ -680,9 +679,6 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
           <section className="detail-card" aria-label="Notas">
             <div className="detail-card-heading">
-              <span className="detail-card-icon">
-                <NotebookPen size={17} aria-hidden="true" />
-              </span>
               <h2>Notas de revisión</h2>
               <EditButton field="notas" onEdit={onEdit} />
             </div>
@@ -693,9 +689,6 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
           <section className="detail-card" aria-label="Historial de ediciones">
             <div className="detail-card-heading">
-              <span className="detail-card-icon">
-                <History size={17} aria-hidden="true" />
-              </span>
               <h2>Historial de ediciones</h2>
               {history.length > 0 && <span className="detail-card-count">{history.length}</span>}
             </div>
@@ -738,9 +731,6 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
           <section className="detail-card" aria-label="Notas adicionales">
             <div className="detail-card-heading">
-              <span className="detail-card-icon">
-                <MessageSquareText size={17} aria-hidden="true" />
-              </span>
               <h2>Notas adicionales</h2>
               {notes.length > 0 && <span className="detail-card-count">{notes.length}</span>}
             </div>

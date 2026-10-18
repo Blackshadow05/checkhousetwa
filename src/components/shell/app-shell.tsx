@@ -196,7 +196,7 @@ function AppShellFrame({
               }}
               hidden={navigation.screen !== id || formVisible}
               inert={navigation.screen !== id || formVisible ? true : undefined}
-              className={`app-screen${id === "revisiones" ? " app-screen-with-create" : ""}`}
+              className="app-screen"
               aria-label={SCREENS[id].title}
               tabIndex={-1}
             >

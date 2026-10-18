@@ -1,3 +1,10 @@
+/* Usa todo el ancho de la columna de la app (igual que el detalle); la columna ya está limitada en .app-shell.
+   El espacio inferior va en el contenido y no en el contenedor con scroll, para que siempre se aplique:
+   deja libres el "+" y "Arriba" apilados (18 + 56 + 12 + 48 px), más un respiro. */
+.screen {
+  padding-bottom: calc(124px + env(safe-area-inset-bottom));
+}
+
 .toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -302,7 +309,15 @@
   text-align: left;
   color: var(--foreground);
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   transition: background-color 120ms ease;
+}
+
+/* Toda la fila es un solo blanco de clic: ni el chip "Nota", ni la placa, ni los textos capturan el puntero. */
+.row > * {
+  pointer-events: none;
 }
 
 .row + .row::before {
@@ -370,39 +385,14 @@
   min-width: 0;
 }
 
-.noteIcon {
+.noteChip {
   flex-shrink: 0;
-  color: var(--muted-foreground);
-}
-
-.row[data-extra-note] {
-  --extra-bg: #ffedd5;
-  --extra-text: #9a3412;
-  --extra-border: #f97316;
-}
-
-:global(:root[data-theme="dark"]) .row[data-extra-note] {
-  --extra-bg: #4a2510;
-  --extra-text: #fdba74;
-  --extra-border: #fb923c;
-}
-
-.row[data-extra-note]:not([data-tone="pendiente"]) {
-  box-shadow: inset 3px 0 0 var(--extra-border);
-}
-
-.extraChip {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 3px;
   padding: 2px 7px;
-  border: 1px solid color-mix(in srgb, var(--extra-border) 45%, transparent);
   border-radius: 6px;
-  background: var(--extra-bg);
-  color: var(--extra-text);
+  background: var(--muted);
+  color: var(--muted-foreground);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -429,7 +419,10 @@
   white-space: nowrap;
 }
 
-.row:active:not(:disabled) {
+/* .list sube la especificidad sobre el "scale" global de button:active: al encogerse, la fila se
+   separaba del puntero en los bordes y el clic caía en la lista en vez de abrir la revisión. */
+.list .row:active:not(:disabled) {
+  transform: none;
   background: var(--muted);
 }
 

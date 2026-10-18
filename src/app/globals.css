@@ -1926,16 +1926,6 @@ svg {
   font-weight: 650;
   letter-spacing: -0.3px;
 }
-.detail-card-icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
-  background: var(--secondary);
-  color: var(--primary);
-}
 .detail-card-count {
   min-width: 28px;
   padding: 3px 9px;
@@ -1973,26 +1963,13 @@ svg {
   position: absolute;
   top: 0;
   right: 8px;
-  left: 48px;
+  left: 8px;
   height: 1px;
   background: var(--border);
 }
 .detail-row-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   min-width: 0;
   font-weight: 550;
-}
-.detail-row-icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--muted);
-  color: var(--muted-foreground);
 }
 .detail-row-value {
   display: flex;
@@ -2071,15 +2048,45 @@ svg {
   line-height: 1.3;
   overflow-wrap: break-word;
 }
-.detail-pill.is-yes {
-  background: var(--sage-bg);
-  color: var(--sage-text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sage-text) 16%, transparent);
-}
 .detail-pill.is-no {
-  background: var(--rose-bg);
-  color: var(--rose-text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose-text) 16%, transparent);
+  background: color-mix(in srgb, var(--destructive) 12%, var(--card));
+  color: var(--destructive);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--destructive) 28%, transparent);
+}
+/* Resumen en lenguaje sencillo de lo que falta en la revisión. */
+/* El texto va en el color normal (legible en claro y oscuro); el rojo solo marca el borde y el icono. */
+.detail-faltantes {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.detail-faltantes > div {
+  min-width: 0;
+}
+.detail-faltantes-icon {
+  margin-top: 1px;
+  color: var(--sage-text);
+}
+.detail-faltantes.is-missing {
+  border-left: 4px solid var(--destructive);
+}
+.detail-faltantes.is-missing .detail-faltantes-icon {
+  color: var(--destructive);
+}
+.detail-faltantes-nota {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 .detail-screen .status-badge {
   gap: 5px;
@@ -2320,12 +2327,6 @@ button.detail-tile:active {
 @media (max-width: 360px) {
   .detail-card {
     padding: 14px;
-  }
-  .detail-row-icon {
-    display: none;
-  }
-  .detail-row + .detail-row::before {
-    left: 8px;
   }
   .detail-tile {
     min-height: 76px;
@@ -2818,6 +2819,13 @@ button.detail-tile:active {
     --screen-padding-top: 24px;
     padding: var(--screen-padding-top) 32px 36px;
   }
+  /* Mismo ancho de contenido que las pantallas de la app (borde de .app-shell + 32px). */
+  .detail-screen {
+    border-inline: 1px solid var(--border);
+  }
+  .detail-body {
+    padding-inline: max(32px, env(safe-area-inset-left)) max(32px, env(safe-area-inset-right));
+  }
   .revision-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2930,7 +2938,6 @@ button.detail-tile:active {
 }
 
 /* Create a revision without leaving the persistent mobile shell. */
-.app-screen-with-create { padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
 .new-revision-fab {
   position: absolute;
   right: max(20px, env(safe-area-inset-right));
@@ -2992,6 +2999,14 @@ button.detail-tile:active {
 }
 .new-revision-options[hidden] {
   display: none;
+}
+/* Los botones flotantes se alinean con el borde derecho de las cards (mismo margen que .app-screen). */
+@media (min-width: 640px) {
+  .scroll-top-fab,
+  .new-revision-fab,
+  .new-revision-options {
+    right: max(32px, env(safe-area-inset-right));
+  }
 }
 .new-revision-options button {
   display: flex;

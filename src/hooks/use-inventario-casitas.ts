@@ -5,7 +5,8 @@ import { fetchInventarioCasitas } from "@/app/actions/inventario";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { isInventarioCasita, type InventarioCasita } from "@/lib/inventario-casitas";
 
-const SNAPSHOT_KEY = "inventario-casitas-v1";
+// v2: los artículos sin dato en el inventario se guardan como null (antes 0 = "no lleva").
+const SNAPSHOT_KEY = "inventario-casitas-v2";
 type Snapshot = { id: typeof SNAPSHOT_KEY; rows: InventarioCasita[]; savedAt: string };
 export type InventarioStatus = "idle" | "loading" | "guardado" | "actualizado" | "error";
 

@@ -11,11 +11,9 @@ import {
   CloudOff,
   LoaderCircle,
   ScanSearch,
-  MessageSquareText,
   Search,
   SlidersHorizontal,
   Sparkles,
-  StickyNote,
   WifiOff,
   X,
 } from "lucide-react";
@@ -85,6 +83,15 @@ function groupByDay(rows: InicioRevisionRow[]) {
     else result.set(day, [row]);
   }
   return result;
+}
+
+// "Nota" y "nota extra" se muestran como un único indicador en la fila.
+function tieneNota(row: InicioRevisionRow) {
+  return hasRevisionValue(row.notas) || hasRevisionValue(row.nota_extra);
+}
+
+function NotaChip() {
+  return <span className={styles.noteChip} aria-hidden="true">📝 Nota</span>;
 }
 
 const PENDING_LABEL: Record<PendingRevision["status"], string> = {
@@ -176,7 +183,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   }, [busquedaConMas, cargarMas, busqueda]);
 
   return (
-    <section className="home-screen" aria-label="Revisiones">
+    <section className={`home-screen ${styles.screen}`} aria-label="Revisiones">
       {!archive.online && (
         <div className="inline-notice" role="status">
           <WifiOff size={17} />
@@ -454,10 +461,9 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                       key={revisionKey(row, index)}
                       className={styles.row}
                       data-tone={statusAppearance(row.caja_fuerte).tone}
-                      data-extra-note={hasRevisionValue(row.nota_extra) || undefined}
                       type="button"
                       onClick={() => archive.openRevision(row)}
-                      aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}${hasRevisionValue(row.notas) ? ", con nota" : ""}${hasRevisionValue(row.nota_extra) ? ", con nota extra" : ""}`}
+                      aria-label={`Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}${tieneNota(row) ? ", con nota" : ""}`}
                     >
                       <span className={styles.plaque}>
                         <strong className={styles.number}>{row.casita}</strong>
@@ -465,12 +471,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                       <span className={styles.content}>
                         <span className={styles.top}>
                           <StatusBadge value={row.caja_fuerte} />
-                          {hasRevisionValue(row.notas) && (
-                            <MessageSquareText size={14} className={styles.noteIcon} aria-hidden="true" />
-                          )}
-                          {hasRevisionValue(row.nota_extra) && (
-                            <span className={styles.extraChip} aria-hidden="true"><StickyNote size={12} aria-hidden="true" /><span>Nota extra</span></span>
-                          )}
+                          {tieneNota(row) && <NotaChip />}
                         </span>
                         <span className={styles.name}>{row.quien_revisa}</span>
                       </span>
@@ -527,14 +528,13 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                   const pendiente = pendingById.get(row.id);
                   const marcada = row.pendiente && !pendiente;
                   const marcadaPor = row.marcada_por ?? row.quien_revisa;
-                  const conNotaExtra = hasRevisionValue(row.nota_extra) ? ", con nota extra" : "";
+                  const conNota = tieneNota(row) ? ", con nota" : "";
                   return (
                   <button
                     key={revisionKey(row, index)}
                     className={styles.row}
                     data-tone={row.pendiente ? "pendiente" : statusAppearance(row.caja_fuerte).tone}
                     data-revision-card={row.id || undefined}
-                    data-extra-note={hasRevisionValue(row.nota_extra) || undefined}
                     data-pending={pendiente?.status}
                     type="button"
                     aria-disabled={pendiente?.status === "saving" || undefined}
@@ -544,10 +544,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                       else if (pendiente.status !== "saving") setPendienteId(row.id);
                     }}
                     aria-label={pendiente
-                      ? `Casita ${row.casita}, ${row.quien_revisa}, ${PENDING_LABEL[pendiente.status]}${conNotaExtra}`
+                      ? `Casita ${row.casita}, ${row.quien_revisa}, ${PENDING_LABEL[pendiente.status]}${conNota}`
                       : marcada
-                        ? `Casita ${row.casita} por completar, marcada por ${marcadaPor} a las ${shortTime(row.created_at)}. Completar${conNotaExtra}`
-                      : `Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}, ${statusAppearance(row.caja_fuerte).label}${hasRevisionValue(row.notas) ? ", con nota" : ""}${conNotaExtra}`}
+                        ? `Casita ${row.casita} por completar, marcada por ${marcadaPor} a las ${shortTime(row.created_at)}. Completar${conNota}`
+                      : `Ver revisión de Casita ${row.casita}, ${row.quien_revisa}, ${dayLabel(revisionDay(row.created_at), archive.today)} ${shortTime(row.created_at)}, ${statusAppearance(row.caja_fuerte).label}${conNota}`}
                   >
                     <span className={styles.plaque}>
                       <strong className={styles.number}>{row.casita}</strong>
@@ -557,12 +557,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                         {row.pendiente
                           ? <span className={styles.laterChip}>Por completar</span>
                           : <StatusBadge value={row.caja_fuerte} />}
-                        {hasRevisionValue(row.notas) && (
-                          <MessageSquareText size={14} className={styles.noteIcon} aria-hidden="true" />
-                        )}
-                        {hasRevisionValue(row.nota_extra) && (
-                          <span className={styles.extraChip} aria-hidden="true"><StickyNote size={12} aria-hidden="true" /><span>Nota extra</span></span>
-                        )}
+                        {tieneNota(row) && <NotaChip />}
                       </span>
                       <span className={styles.name}>
                         {row.pendiente
