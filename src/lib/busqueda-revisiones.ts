@@ -1218,22 +1218,6 @@ function textoEstadisticas(stats: Estadisticas, hoy: string) {
   ];
 }
 
-// Garantiza que, con pocas casitas, la respuesta las nombre todas: si falta alguna se agrega una línea.
-// No aplica a respuestas de una sola fila (limite 1), a una sola casita ni cuando el filtro ya eran justo esas casitas.
-export function asegurarCasitas(respuesta: string, stats: Estadisticas | null, filtros: FiltrosBusqueda) {
-  if (!stats || stats.casitas.length < 2 || stats.casitas.length > MAX_CASITAS_NOMBRADAS) return respuesta;
-  if (filtros.limite === 1 || stats.total <= 1) return respuesta;
-  const permitidas = casitasPermitidas(filtros);
-  if (permitidas && permitidas.length === stats.casitas.length
-    && stats.casitas.every(([casita]) => permitidas.includes(Number(casita)))) return respuesta;
-  const falta = stats.casitas.some(([casita]) => {
-    const numero = /^\d+$/.test(casita) ? `0*${casita}` : casita.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return !new RegExp(`(?<![\\d:])${numero}(?![\\d:])`, "i").test(respuesta);
-  });
-  if (!falta) return respuesta;
-  return `${respuesta}\nCasitas con coincidencias: ${listaCasitas(stats.casitas.map(([casita]) => casita))}.`;
-}
-
 const REF_VINETA = /^•\s*\[(\d{1,3})\]\s*/;
 
 // La redacción lista solo las filas más relevantes, cada viñeta con su número de fila ("• [3] Casita…").

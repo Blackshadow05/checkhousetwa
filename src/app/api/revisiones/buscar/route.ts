@@ -15,7 +15,6 @@ import {
   MAX_CASITAS_NOMBRADAS,
   TOTAL_CASITAS,
   agrupacionDePregunta,
-  asegurarCasitas,
   buscarRevisiones,
   coberturaCasitas,
   completarVinetas,
@@ -79,6 +78,8 @@ function fail(error: string, status: number) {
   return NextResponse.json({ error }, { status, headers: NO_STORE });
 }
 
+const UNA_VEZ = /[uú]ltima vez|primera vez/i;
+
 const NOMBRES_MES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 
 // Un mes sin año es su ocurrencia más reciente que ya empezó: en octubre, "noviembre" es el del año pasado.
@@ -127,6 +128,7 @@ Ejemplos de argumentos:
 "casas a las que se les ha prestado un artículo" → buscar_por_significado {"concepto":"préstamo de artículos al huésped (prestado, se coloca o se lleva un artículo extra, a petición/solicitud del huésped, se lleva a casita N; devolución: se recoge el artículo extra, se devuelve)"}
 "¿qué cosas se prestaron en septiembre?" → buscar_por_significado {"concepto":"préstamo o devolución de artículos al huésped (prestado, se coloca o se recoge un artículo extra, a solicitud del huésped, se lleva a casita N, se devuelve)","periodo":"mes_${anio}_09"}
 Las notas y la nota extra son texto libre escrito por quien revisa: para buscar una palabra literal en ellas usa texto, para un concepto usa buscar_por_significado, y para saber si una revisión tiene nota o nota extra usa con_nota o con_nota_extra. Cuando la respuesta dependa de una nota, resume lo que dice.
+Cada nota que cites o resumas pertenece solo a su propia revisión: atribúyela únicamente a la casita y fecha de esa misma fila. Nunca combines datos de revisiones distintas en una oración; si mencionas otra revisión, va en su propia oración con su casita y su fecha. Di "además la nota dice" solo si la nota es de esa misma revisión.
 Responde en español, en una o dos oraciones cortas, con fechas legibles como "3 de octubre a las 8:42" y sin mencionar campos técnicos, herramientas ni referencias internas.
 Usa los números exactos que devuelven las herramientas. Si mencionas casitas y son ${MAX_CASITAS_NOMBRADAS} o menos, nómbralas todas por número (están en coincidencias.casitas_todas); nunca escribas "y una más", "y otras" ni resúmenes parecidos.
 No generalices fechas ("casi todas de septiembre", "a mediados de mes"): solo di lo que muestran fecha_mas_antigua, fecha_mas_reciente y revisiones_por_mes.
@@ -138,6 +140,7 @@ Formato de texto plano, sin markdown: nada de **, #, tablas ni backticks.
 Primera línea: un resumen breve (una o dos oraciones) con el total de coincidencias y lo esencial, incluidos los patrones si los hay (casitas que se repiten; si el problema parece resuelto o sigue pendiente, solo si las notas lo dicen o una revisión posterior de la misma casita lo indica).
 Si en el resumen nombras casitas y son ${MAX_CASITAS_NOMBRADAS} o menos, nómbralas todas por número (usa "Casitas con coincidencias"); nunca escribas "y una más", "y otras" ni resúmenes parecidos.
 Fechas: no generalices ("casi todas de septiembre", "a mediados de mes", "recientemente"). Si hablas del periodo, usa exactamente la fecha más antigua, la más reciente y el conteo por mes que se te dan.
+Cada nota que cites o resumas pertenece solo a su propia fila: atribúyela únicamente a la casita y fecha de esa fila. Nunca combines datos de revisiones distintas en una oración; si mencionas otra revisión, va en su propia oración o línea con su casita y su fecha. Di "además la nota dice" solo si la nota es de esa misma revisión.
 Luego una línea por revisión, cada una empezando con "• [n] " (n = número de fila) y en este orden: "• [n] Casita N · fecha corta · revisor: resumen breve de lo que dice la nota (qué pasó, qué se hizo)".
 Máximo 12 líneas de revisiones, las más relevantes, de no más de 25 palabras cada una. El sistema agrega después las filas que no listes, así que no escribas "y N más".
 No termines con preguntas ni ofrecimientos, y no menciones campos técnicos, números de fila ni ids.`;
@@ -404,9 +407,10 @@ export async function POST(request: Request) {
   // Búsqueda por significado sin coincidencias: respuesta clara por plantilla aunque el modelo haya redactado otra.
   if (!total && !cobertura && !conteo) respuesta = respuestaSignificadoVacia(filtros) ?? respuesta;
   respuesta ??= respuestaPlantilla(pregunta, filtros, total, rows, hoy, true);
-  // Las plantillas de cobertura y conteo ya son exactas; las demás deben nombrar todas las casitas si son pocas.
-  if (respuesta && !cobertura && !conteo) respuesta = asegurarCasitas(respuesta, stats, filtros);
   const tipo = cobertura ? "cobertura" : conteo ? "conteo" : "lista";
+  // "La última/primera vez" con limite 1: la lista muestra solo esa revisión (sin "Ver más").
+  const soloUna = tipo === "lista" && filtros.limite === 1 && total > 1 && UNA_VEZ.test(pregunta) && !/cu[aá]nt/i.test(pregunta);
+  const revisiones = soloUna ? rows.slice(0, 1) : rows;
   const extra = cobertura
     ? {
       cobertura: {
@@ -417,5 +421,5 @@ export async function POST(request: Request) {
       },
     }
     : {};
-  return NextResponse.json({ respuesta, tipo, filtros: serializarFiltros(filtros), total, revisiones: rows, ...extra }, { headers: NO_STORE });
+  return NextResponse.json({ respuesta, tipo, filtros: serializarFiltros(filtros), total: soloUna ? revisiones.length : total, revisiones, ...extra }, { headers: NO_STORE });
 }
