@@ -9,22 +9,42 @@ import {
   BUSCAR_POR_SIGNIFICADO_TOOL,
   BUSCAR_REVISIONES_TOOL,
   BUSQUEDA_PAGINA,
+  CASITAS_PENDIENTES_TOOL,
+  CONTAR_REVISIONES_TOOL,
   ELEGIR_IDS_TOOL,
+  MAX_CASITAS_NOMBRADAS,
+  TOTAL_CASITAS,
+  agrupacionDePregunta,
   buscarRevisiones,
+  coberturaCasitas,
+  completarVinetas,
+  contarRevisiones,
   dependeDeNotas,
+  estadisticasCoincidencias,
   idsElegidos,
+  filtrosListaCobertura,
   limpiarRespuestaDetallada,
   notasParaLectura,
+  parseCobertura,
+  parseConteo,
   parseFiltros,
   parseFiltrosSignificado,
   respuestaDetalladaPlantilla,
   respuestaPlantilla,
+  respuestaCobertura,
+  respuestaConteo,
+  respuestaSignificadoVacia,
   resumenParaModelo,
   serializarFiltros,
   sinPreguntaFinal,
   textoLectura,
   textoRedaccion,
+  type Agrupacion,
+  type Cobertura,
+  type Conteo,
+  type Estadisticas,
   type FiltrosBusqueda,
+  type ModoConteo,
 } from "@/lib/busqueda-revisiones";
 import type { InicioRevisionRow } from "@/types/database";
 
@@ -43,7 +63,7 @@ const MIN_LLAMADA_MS = 2_500;
 // La redacción es la última llamada (no la sigue ninguna consulta): solo deja un margen corto para responder.
 const REDACCION_MAX_MS = 10_000;
 const REDACCION_MARGEN_MS = 1_000;
-const REDACCION_MAX_TOKENS = 900;
+const REDACCION_MAX_TOKENS = 1_100;
 const MAX_PREGUNTA = 300;
 const NO_STORE = { "Cache-Control": "private, no-store" };
 
@@ -58,38 +78,81 @@ function fail(error: string, status: number) {
   return NextResponse.json({ error }, { status, headers: NO_STORE });
 }
 
+const UNA_VEZ = /[uú]ltima vez|primera vez/i;
+
+const NOMBRES_MES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+// Un mes sin año es su ocurrencia más reciente que ya empezó: en octubre, "noviembre" es el del año pasado.
+function mesesSinAnio(hoy: string) {
+  const anio = Number(hoy.slice(0, 4));
+  const mesActual = Number(hoy.slice(5, 7));
+  return NOMBRES_MES.map((nombre, i) => {
+    const mes = i + 1;
+    return `${nombre} → mes_${mes <= mesActual ? anio : anio - 1}_${String(mes).padStart(2, "0")}`;
+  }).join(", ");
+}
+
 function instrucciones(hoy: string) {
   const cantidades = Object.entries(ARTICULOS_CANTIDAD).map(([key, label]) => `${key} (${label})`).join(", ");
   const siNo = Object.entries(ARTICULOS_SI_NO).map(([key, label]) => `${key} (${label})`).join(", ");
+  const anio = hoy.slice(0, 4);
   return `Eres el buscador de revisiones de casitas de un hotel. Hoy es ${weekdayName(hoy).toLowerCase()} ${hoy}, hora de Costa Rica.
+El hotel tiene ${TOTAL_CASITAS} casitas numeradas del 1 al ${TOTAL_CASITAS}.
 Cada revisión registra la casita, quién la revisó, la fecha, el estado de la caja fuerte y el inventario contado.
 Artículos con cantidad: ${cantidades}.
 Artículos de sí o no: ${siNo}.
-Usa siempre una herramienta para responder (buscar_revisiones o buscar_por_significado); nunca inventes datos. Interpreta sinónimos (tele o TV = controles_tv, parlante o bocina = speaker, Chromecast = chromecast).
-Para fechas relativas (ayer, la semana pasada, en septiembre) usa periodo en vez de calcular fechas; desde/hasta solo para rangos que periodo no cubra.
+Usa siempre una herramienta para responder (buscar_revisiones, buscar_por_significado, casitas_pendientes o contar_revisiones); nunca inventes datos. Interpreta sinónimos y variantes (singular o plural, con o sin acentos): tele o TV = controles_tv, parlante o bocina = speaker, Chromecast = chromecast; casa, cabina, cabaña, villa o habitación = casita; revisor, revisora, persona, compañero, empleado o "quién" = quien revisa.
+Para fechas relativas (hoy, ayer, anteayer, esta semana, la semana pasada, este mes, el mes pasado, los últimos N días) usa periodo en vez de calcular fechas; desde/hasta solo para rangos que periodo no cubra (p. ej. un día concreto: desde y hasta iguales).
+Meses sin año: ${mesesSinAnio(hoy)}. Con año explícito usa ese año.
 Para "la última vez" usa orden reciente con limite 1; para "la primera vez", orden antigua con limite 1. Para "cuántas veces" responde con el total.
 texto acepta palabras sueltas (deben aparecer todas); no agregues variantes de acentos ni plurales. Úsalo solo para términos literales: un artículo o una palabra concreta.
 Para preguntas por concepto o significado (préstamos, cosas que el huésped se llevó o pidió, daños, quejas, faltantes, limpieza o moho, objetos olvidados, movimientos entre casitas, etc.) usa buscar_por_significado: lees las notas y eliges las que corresponden aunque usen otras palabras. En concepto describe la idea con las formas en que suele escribirse.
+Préstamos: casi nunca se escribe "prestar". Cuenta como préstamo colocar o llevar un artículo extra para el huésped ("se coloca un speaker extra", "a solicitud del huésped", "se lleva a casita N") y como devolución recogerlo ("se recoge binoculares extra", "se devuelve").
+Para preguntas de cuáles o cuántas casitas faltan, están pendientes, quedan sin revisar o sí se revisaron en un periodo usa casitas_pendientes (cuenta casitas distintas, no revisiones); casita_desde y casita_hasta solo si piden un rango de casitas.
+Para rankings y conteos por grupo usa contar_revisiones, que cuenta exacto en el servidor: quién hizo más o menos revisiones, cuántas hizo cada persona (agrupar_por revisor); qué casita se revisó más o menos veces (agrupar_por casita); qué día hubo más revisiones (agrupar_por dia). Sí se puede contar por persona: nunca respondas que no se puede ni des solo el total.
+En contar_revisiones usa modo desglose cuando piden el conteo de cada grupo ("cuántas hizo cada persona", "por persona", "por casita", "por día", "desglose", "lista") y modo ranking cuando preguntan quién o qué tiene más o menos ("quién hizo más", "el que más", "top").
+Para un rango de casitas ("de la 1 a la 25") usa casita_desde y casita_hasta en vez de listar casitas.
 Ejemplos de argumentos:
 "¿cuándo fue la última vez que faltó el control en la casita 12?" → {"casitas":[12],"cantidades":[{"articulo":"controles_tv","comparacion":"<","cantidad":1}],"orden":"reciente","limite":1}
 "revisiones de Ana la semana pasada" → {"quien_revisa":"Ana","periodo":"semana_pasada"}
 "notas sobre baños sucios este mes" → {"texto":"baño sucio","periodo":"este_mes"}
 "¿cuántos check in hubo ayer?" → {"estado_caja_fuerte":"Check in","periodo":"ayer"}
-"casas a las que se les ha prestado un artículo" → buscar_por_significado {"concepto":"préstamo de artículos al huésped (prestado, se devuelve, a petición/solicitud del huésped, se lleva a otra casita por pedido)"}
+"qué casitas faltan por revisar en octubre" → casitas_pendientes {"periodo":"mes_${anio}_10"}
+"casitas sin revisar esta semana del 1 al 25" → casitas_pendientes {"periodo":"esta_semana","casita_desde":1,"casita_hasta":25}
+"cuántas casitas faltan por revisar tomando en cuenta las revisiones de octubre y que son casas del 1 al 50" → casitas_pendientes {"periodo":"mes_${anio}_10"}
+"¿quién hizo más revisiones en septiembre?" → contar_revisiones {"agrupar_por":"revisor","modo":"ranking","periodo":"mes_${anio}_09"}
+"¿cuántas revisiones hizo cada persona en octubre?" → contar_revisiones {"agrupar_por":"revisor","modo":"desglose","periodo":"mes_${anio}_10"}
+"¿cuántas revisiones hizo cada uno el mes pasado?" → contar_revisiones {"agrupar_por":"revisor","modo":"desglose","periodo":"mes_pasado"}
+"revisiones por día esta semana" → contar_revisiones {"agrupar_por":"dia","modo":"desglose","periodo":"esta_semana"}
+"¿qué casita se revisó menos esta semana?" → contar_revisiones {"agrupar_por":"casita","modo":"ranking","orden":"menos","periodo":"esta_semana"}
+"casas a las que se les ha prestado un artículo" → buscar_por_significado {"concepto":"préstamo de artículos al huésped (prestado, se coloca o se lleva un artículo extra, a petición/solicitud del huésped, se lleva a casita N; devolución: se recoge el artículo extra, se devuelve)"}
+"¿qué cosas se prestaron en septiembre?" → buscar_por_significado {"concepto":"préstamo o devolución de artículos al huésped (prestado, se coloca o se recoge un artículo extra, a solicitud del huésped, se lleva a casita N, se devuelve)","periodo":"mes_${anio}_09"}
 Las notas y la nota extra son texto libre escrito por quien revisa: para buscar una palabra literal en ellas usa texto, para un concepto usa buscar_por_significado, y para saber si una revisión tiene nota o nota extra usa con_nota o con_nota_extra. Cuando la respuesta dependa de una nota, resume lo que dice.
+Cada nota que cites o resumas pertenece solo a su propia revisión: atribúyela únicamente a la casita y fecha de esa misma fila. Nunca combines datos de revisiones distintas en una oración; si mencionas otra revisión, va en su propia oración con su casita y su fecha. Di "además la nota dice" solo si la nota es de esa misma revisión.
 Responde en español, en una o dos oraciones cortas, con fechas legibles como "3 de octubre a las 8:42" y sin mencionar campos técnicos, herramientas ni referencias internas.
+Usa los números exactos que devuelven las herramientas. Si mencionas casitas y son ${MAX_CASITAS_NOMBRADAS} o menos, nómbralas todas por número (están en coincidencias.casitas_todas); nunca escribas "y una más", "y otras" ni resúmenes parecidos.
+Cuando listes números de casitas, escribe cada uno por separado, en orden, separados por comas y con "y" antes del último ("3, 5, 6, 7 y 8"); nunca uses rangos como "5–8" o "5-8".
+No generalices fechas ("casi todas de septiembre", "a mediados de mes"): solo di lo que muestran fecha_mas_antigua, fecha_mas_reciente y revisiones_por_mes.
 Tu respuesta es final: nunca termines con preguntas, ofrecimientos ni sugerencias de seguir buscando.`;
 }
 
 const INSTRUCCIONES_REDACCION = `Eres el redactor del buscador de revisiones de casitas de un hotel. Responde en español y solo con los datos que se te dan; nunca inventes.
 Formato de texto plano, sin markdown: nada de **, #, tablas ni backticks.
 Primera línea: un resumen breve (una o dos oraciones) con el total de coincidencias y lo esencial, incluidos los patrones si los hay (casitas que se repiten; si el problema parece resuelto o sigue pendiente, solo si las notas lo dicen o una revisión posterior de la misma casita lo indica).
-Luego una línea por revisión relevante, cada una empezando con "• " y en este orden: "Casita N · fecha corta · revisor: resumen de lo que dice la nota (qué pasó, qué se hizo)".
-Máximo 10 líneas de revisiones. Si hay más coincidencias que líneas listadas, termina con una línea "y N más." donde N es el total de coincidencias menos las líneas listadas.
-Omite las filas que no sean relevantes para la pregunta.
+Si en el resumen nombras casitas y son ${MAX_CASITAS_NOMBRADAS} o menos, nómbralas todas por número (usa "Casitas con coincidencias"); nunca escribas "y una más", "y otras" ni resúmenes parecidos.
+Cuando listes números de casitas, escribe cada uno por separado, en orden, separados por comas y con "y" antes del último ("3, 5, 6, 7 y 8"); nunca uses rangos como "5–8" o "5-8".
+Fechas: no generalices ("casi todas de septiembre", "a mediados de mes", "recientemente"). Si hablas del periodo, usa exactamente la fecha más antigua, la más reciente y el conteo por mes que se te dan.
+Cada nota que cites o resumas pertenece solo a su propia fila: atribúyela únicamente a la casita y fecha de esa fila. Nunca combines datos de revisiones distintas en una oración; si mencionas otra revisión, va en su propia oración o línea con su casita y su fecha. Di "además la nota dice" solo si la nota es de esa misma revisión.
+Luego una línea por revisión, cada una empezando con "• [n] " (n = número de fila) y en este orden: "• [n] Casita N · fecha corta · revisor: resumen breve de lo que dice la nota (qué pasó, qué se hizo)".
+Máximo 12 líneas de revisiones, las más relevantes, de no más de 25 palabras cada una. El sistema agrega después las filas que no listes, así que no escribas "y N más".
 No termines con preguntas ni ofrecimientos, y no menciones campos técnicos, números de fila ni ids.`;
 
-type Herramienta = typeof BUSCAR_REVISIONES_TOOL | typeof BUSCAR_POR_SIGNIFICADO_TOOL | typeof ELEGIR_IDS_TOOL;
+type Herramienta =
+  | typeof BUSCAR_REVISIONES_TOOL
+  | typeof BUSCAR_POR_SIGNIFICADO_TOOL
+  | typeof CASITAS_PENDIENTES_TOOL
+  | typeof CONTAR_REVISIONES_TOOL
+  | typeof ELEGIR_IDS_TOOL;
 type Opciones = {
   tools?: Herramienta[];
   toolChoice?: "required" | "auto" | { type: "function"; function: { name: string } };
@@ -119,19 +182,28 @@ async function llamarModelo(apiKey: string, messages: Mensaje[], opciones: Opcio
 }
 
 // Llamada sin herramientas ni historial: redacta la respuesta final a partir de las filas encontradas.
-async function redactar(apiKey: string, pregunta: string, hoy: string, total: number, rows: InicioRevisionRow[], orden: FiltrosBusqueda["orden"], timeoutMs: number) {
+async function redactar(
+  apiKey: string,
+  pregunta: string,
+  hoy: string,
+  total: number,
+  rows: InicioRevisionRow[],
+  orden: FiltrosBusqueda["orden"],
+  stats: Estadisticas | null,
+  timeoutMs: number,
+) {
   const message = await llamarModelo(
     apiKey,
     [
       { role: "system", content: INSTRUCCIONES_REDACCION },
-      { role: "user", content: textoRedaccion(pregunta, hoy, weekdayName(hoy).toLowerCase(), total, rows, orden) },
+      { role: "user", content: textoRedaccion(pregunta, hoy, weekdayName(hoy).toLowerCase(), total, rows, orden, stats) },
     ],
     { maxTokens: REDACCION_MAX_TOKENS },
     timeoutMs,
   );
   const texto = limpiarRespuestaDetallada(message.content ?? "");
   if (!texto) throw new Error("redacción vacía");
-  return texto;
+  return completarVinetas(texto, rows, total, hoy);
 }
 
 function esTimeout(error: unknown) {
@@ -145,7 +217,8 @@ type Lectura = { filtros: FiltrosBusqueda; refs: Map<number, string> };
 
 // elegir_ids solo se ofrece cuando ya hay notas leídas, y queda disponible después para que el historial sea coherente.
 function herramientas(lectura: Lectura | null): Herramienta[] {
-  return lectura ? [BUSCAR_REVISIONES_TOOL, BUSCAR_POR_SIGNIFICADO_TOOL, ELEGIR_IDS_TOOL] : [BUSCAR_REVISIONES_TOOL, BUSCAR_POR_SIGNIFICADO_TOOL];
+  const base: Herramienta[] = [BUSCAR_REVISIONES_TOOL, BUSCAR_POR_SIGNIFICADO_TOOL, CASITAS_PENDIENTES_TOOL, CONTAR_REVISIONES_TOOL];
+  return lectura ? [...base, ELEGIR_IDS_TOOL] : base;
 }
 
 function restanteMs(inicio: number) {
@@ -174,19 +247,42 @@ export async function POST(request: Request) {
     { role: "user", content: pregunta },
   ];
   // Última búsqueda válida: ya trae la primera página, así no hace falta repetir la consulta al final.
-  let ultima: { filtros: FiltrosBusqueda; total: number; rows: InicioRevisionRow[] } | null = null;
+  // stats resume todas las coincidencias (casitas y fechas), no solo la página.
+  let ultima: { filtros: FiltrosBusqueda; total: number; rows: InicioRevisionRow[]; stats: Estadisticas | null } | null = null;
   let respuesta: string | null = null;
 
   let lectura: Lectura | null = null;
   let falloLectura: unknown = null;
   let redactarNotas = false;
+  // casitas_pendientes y contar_revisiones responden por plantilla y terminan la búsqueda en la ronda en que se llamen.
+  let cobertura: Cobertura | null = null;
+  let conteo: Conteo | null = null;
+
+  // Primera página y, si no trae todas las coincidencias, las estadísticas de todas (consulta ligera).
+  async function buscarConStats(filtros: FiltrosBusqueda) {
+    const { total, rows } = await buscarRevisiones(client, filtros, { offset: 0, limit: BUSQUEDA_PAGINA });
+    const stats = total ? await estadisticasCoincidencias(client, filtros, total, rows) : null;
+    ultima = { filtros, total, rows, stats };
+    return resumenParaModelo(total, rows.slice(0, filtros.limite), stats, hoy);
+  }
+
+  // Conteo agrupado exacto + la lista de revisiones contadas (mismos filtros).
+  async function aplicarConteo(filtros: FiltrosBusqueda, agruparPor: Agrupacion, orden: Conteo["orden"], modo: ModoConteo) {
+    const lista: FiltrosBusqueda = { ...filtros, ids: null };
+    const [calculado, { total, rows }] = await Promise.all([
+      contarRevisiones(client, lista, agruparPor, orden, modo),
+      buscarRevisiones(client, lista, { offset: 0, limit: BUSQUEDA_PAGINA }),
+    ]);
+    conteo = calculado;
+    ultima = { filtros: lista, total, rows, stats: null };
+    respuesta = respuestaConteo(calculado, lista, hoy);
+    return JSON.stringify({ respuesta });
+  }
 
   // Con ids elegidos, la consulta final reutiliza los filtros estructurados de la lectura.
   async function aplicarEleccion(argumentos: string, actual: Lectura) {
     const filtros: FiltrosBusqueda = { ...actual.filtros, ids: idsElegidos(JSON.parse(argumentos || "{}") as unknown, actual.refs) };
-    const { total, rows } = await buscarRevisiones(client, filtros, { offset: 0, limit: BUSQUEDA_PAGINA });
-    ultima = { filtros, total, rows };
-    return resumenParaModelo(total, rows.slice(0, filtros.limite));
+    return buscarConStats(filtros);
   }
 
   for (let ronda = 0; ronda < MAX_RONDAS; ronda++) {
@@ -223,20 +319,36 @@ export async function POST(request: Request) {
               leyo = true;
               resultado = textoLectura((argumentos as { concepto?: unknown } | null)?.concepto, lineas, truncado);
             } else {
-              ultima = { filtros: { ...filtros, ids: [] }, total: 0, rows: [] };
+              ultima = { filtros: { ...filtros, ids: [] }, total: 0, rows: [], stats: null };
               valida = true;
               resultado = resumenParaModelo(0, []);
             }
+          } else if (call.function.name === CASITAS_PENDIENTES_TOOL.function.name) {
+            const { filtros: filtrosCobertura, rango } = parseCobertura(argumentos, hoy);
+            const filtros = filtrosListaCobertura(filtrosCobertura, rango);
+            const [calculada, { total, rows }] = await Promise.all([
+              coberturaCasitas(client, filtrosCobertura, rango),
+              buscarRevisiones(client, filtros, { offset: 0, limit: BUSQUEDA_PAGINA }),
+            ]);
+            cobertura = calculada;
+            ultima = { filtros, total, rows, stats: null };
+            respuesta = respuestaCobertura(calculada, filtrosCobertura, hoy);
+            valida = true;
+            resultado = JSON.stringify({ respuesta });
+          } else if (call.function.name === CONTAR_REVISIONES_TOOL.function.name) {
+            const { filtros, agruparPor, orden, modo } = parseConteo(argumentos, hoy, pregunta);
+            resultado = await aplicarConteo(filtros, agruparPor, orden, modo);
+            valida = true;
           } else if (call.function.name === ELEGIR_IDS_TOOL.function.name) {
             if (!lectura) throw new Error("sin lectura");
             resultado = await aplicarEleccion(call.function.arguments, lectura);
             valida = true;
           } else {
             const filtros = parseFiltros(argumentos, { hoy, periodoManda: true });
-            const { total, rows } = await buscarRevisiones(client, filtros, { offset: 0, limit: BUSQUEDA_PAGINA });
-            ultima = { filtros, total, rows };
+            // Si la pregunta es de ranking (quién hizo más, qué casita se revisó menos…) se cuenta igual en el servidor.
+            const ranking = !filtros.texto ? agrupacionDePregunta(pregunta) : null;
+            resultado = ranking ? await aplicarConteo(filtros, ranking.agruparPor, ranking.orden, ranking.modo) : await buscarConStats(filtros);
             valida = true;
-            resultado = resumenParaModelo(total, rows.slice(0, filtros.limite));
           }
         } catch {
           resultado = JSON.stringify({ error: "No se pudo ejecutar esa búsqueda." });
@@ -244,6 +356,7 @@ export async function POST(request: Request) {
       }
       messages.push({ role: "tool", tool_call_id: call.id, content: resultado });
     }
+    if (cobertura || conteo) break;
     // Tras leer notas, el modelo elige ids en una llamada forzada con el tiempo que quede (máx. 15 s).
     if (leyo && lectura) {
       const disponible = restanteMs(inicio);
@@ -282,17 +395,33 @@ export async function POST(request: Request) {
       : fail("No pudimos completar la búsqueda. Inténtalo de nuevo.", 502);
   }
   if (!ultima) return fail("No entendimos la búsqueda. Prueba escribiéndola de otra forma.", 422);
-  const { filtros, total, rows } = ultima;
+  const { filtros, total, rows, stats } = ultima;
   if (redactarNotas) {
     const disponible = Math.min(REDACCION_MAX_MS, DEADLINE_MS - (Date.now() - inicio) - REDACCION_MARGEN_MS);
     try {
       if (disponible < MIN_LLAMADA_MS) throw new DOMException("sin tiempo para redactar", "TimeoutError");
-      respuesta = await redactar(apiKey, pregunta, hoy, total, rows, filtros.orden, disponible);
+      respuesta = await redactar(apiKey, pregunta, hoy, total, rows, filtros.orden, stats, disponible);
     } catch (error) {
       console.error("buscar-revisiones: falló la redacción", error instanceof Error ? error.message : "error");
       respuesta = respuestaDetalladaPlantilla(filtros, total, rows, hoy);
     }
   }
+  // Búsqueda por significado sin coincidencias: respuesta clara por plantilla aunque el modelo haya redactado otra.
+  if (!total && !cobertura && !conteo) respuesta = respuestaSignificadoVacia(filtros) ?? respuesta;
   respuesta ??= respuestaPlantilla(pregunta, filtros, total, rows, hoy, true);
-  return NextResponse.json({ respuesta, filtros: serializarFiltros(filtros), total, revisiones: rows }, { headers: NO_STORE });
+  const tipo = cobertura ? "cobertura" : conteo ? "conteo" : "lista";
+  // "La última/primera vez" con limite 1: la lista muestra solo esa revisión (sin "Ver más").
+  const soloUna = tipo === "lista" && filtros.limite === 1 && total > 1 && UNA_VEZ.test(pregunta) && !/cu[aá]nt/i.test(pregunta);
+  const revisiones = soloUna ? rows.slice(0, 1) : rows;
+  const extra = cobertura
+    ? {
+      cobertura: {
+        revisadas: cobertura.revisadas,
+        pendientes: cobertura.pendientes,
+        total_casitas: cobertura.totalCasitas,
+        rango: cobertura.rango,
+      },
+    }
+    : {};
+  return NextResponse.json({ respuesta, tipo, filtros: serializarFiltros(filtros), total: soloUna ? revisiones.length : total, revisiones, ...extra }, { headers: NO_STORE });
 }

@@ -27,6 +27,7 @@ import { RespuestaBusqueda } from "@/components/screens/respuesta-busqueda";
 import { useRevisionesArchive } from "@/hooks/use-revisiones-archive";
 import { useSavedRevisionDrafts } from "@/hooks/use-revision-draft";
 import { esPreguntaNatural, useBusquedaInteligente } from "@/hooks/use-busqueda-inteligente";
+import { useCursorAlFinal } from "@/hooks/use-cursor-al-final";
 import { CAJA_FUERTE_FILTERS, REPORT_FILTERS, type ReportFilter } from "@/lib/revisiones-archive";
 import { chipsDeFiltros } from "@/lib/busqueda-filtros";
 import { fechaAbreviada, fechaTexto } from "@/lib/fechas";
@@ -42,6 +43,14 @@ import type { RevisionDraft, RevisionMode } from "@/lib/revision-form";
 import type { PendingRevision } from "@/lib/revision-outbox";
 import type { InicioRevisionRow } from "@/types/database";
 import styles from "./revisiones-screen.module.css";
+
+// Encabezado de la lista de la búsqueda inteligente según qué representan sus revisiones.
+function etiquetaConteoBusqueda(tipo: "lista" | "cobertura" | "conteo", total: number) {
+  const revisiones = `${total} ${total === 1 ? "revisión" : "revisiones"}`;
+  if (tipo === "cobertura") return `${revisiones} en el periodo y rango de casitas`;
+  if (tipo === "conteo") return `${revisiones} ${total === 1 ? "contada" : "contadas"}`;
+  return `${revisiones} ${total === 1 ? "encontrada" : "encontradas"}`;
+}
 
 const PERIODS = [
   { id: "all", label: "Todas" },
@@ -92,6 +101,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   const archive = useRevisionesArchive();
   const guardadas = useSavedRevisionDrafts();
   const inteligente = useBusquedaInteligente();
+  const cursorAlFinal = useCursorAlFinal();
   const { busqueda } = inteligente;
   const puedePreguntar = esPreguntaNatural(archive.searchInput) && busqueda?.pregunta !== archive.searchInput.replace(/\s+/g, " ").trim();
   const { pendientes, reintentarRevision, tomarRevision, descartarRevision } = useRevisiones();
@@ -110,6 +120,8 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   const busquedaConMas = busqueda?.estado === "lista" && busqueda.revisiones.length < busqueda.total && !busqueda.errorMas;
   const chipsBusqueda = busqueda?.estado === "lista" ? chipsDeFiltros(busqueda.filtros) : [];
   const { cargarMas } = inteligente;
+  // archive es un objeto nuevo en cada render; loadMore es un useCallback estable, así que el efecto depende solo de él.
+  const { hasMore: archiveHasMore, loadMore: archiveLoadMore } = archive;
   const groups = useMemo(() => groupByDay(archive.rows), [archive.rows]);
   const periodIndex = archive.date
     ? DATE_SEGMENT
@@ -134,11 +146,11 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
 
   useEffect(() => {
     const node = sentinelRef.current;
-    if (!node || !archive.hasMore) return;
+    if (!node || !archiveHasMore) return;
     const root = node.closest(".app-screen");
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) archive.loadMore();
+        if (entries[0]?.isIntersecting) archiveLoadMore();
       },
       {
         root: root instanceof Element ? root : null,
@@ -147,7 +159,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [archive.hasMore, archive.loadMore, archive.rows.length]);
+  }, [archiveHasMore, archiveLoadMore, archive.rows.length]);
 
   useEffect(() => {
     const node = busquedaSentinelRef.current;
@@ -214,6 +226,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             <input
               type="search"
               name="buscar-revision"
+              {...cursorAlFinal}
               value={archive.searchInput}
               onChange={(event) => archive.setSearchInput(event.target.value)}
               placeholder="Buscar o preguntar"
@@ -309,11 +322,21 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
           </div>
         )}
         <span className="sr-only" role="status">
-          {archive.loading
-            ? "Buscando revisiones"
-            : archive.loadingMore
-              ? "Cargando más revisiones"
-              : `${archive.total} revisiones encontradas`}
+          {busqueda
+            ? busqueda.estado === "buscando"
+              ? "Buscando la respuesta"
+              : busqueda.estado === "error"
+                ? busqueda.error
+                : busqueda.ajustando
+                  ? "Ajustando filtros"
+                  : busqueda.cargandoMas
+                    ? "Cargando más revisiones"
+                    : etiquetaConteoBusqueda(busqueda.tipo, busqueda.total)
+            : archive.loading
+              ? "Buscando revisiones"
+              : archive.loadingMore
+                ? "Cargando más revisiones"
+                : `${archive.total} ${archive.total === 1 ? "revisión encontrada" : "revisiones encontradas"}`}
         </span>
       </div>
 
@@ -416,6 +439,14 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                 )}
                 {busqueda.errorAjuste && <p>{busqueda.errorAjuste}</p>}
               </div>
+              {busqueda.total > 0 && !busqueda.ajustando && (
+                <div className={styles.dayHeading}>
+                  <h3>{etiquetaConteoBusqueda(busqueda.tipo, busqueda.total)}</h3>
+                  {busqueda.revisiones.length < busqueda.total && (
+                    <span>{busqueda.revisiones.length} de {busqueda.total}</span>
+                  )}
+                </div>
+              )}
               {busqueda.revisiones.length > 0 && (
                 <div className={styles.list}>
                   {busqueda.revisiones.map((row, index) => (
@@ -455,6 +486,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                 {busqueda.cargandoMas ? "Cargando más…" : busqueda.errorMas ? (
                   <button type="button" className="text-action" onClick={() => void cargarMas()}>
                     {busqueda.errorMas} Reintentar
+                  </button>
+                ) : busquedaConMas && !busqueda.ajustando ? (
+                  <button type="button" className="text-action" onClick={() => void cargarMas()}>
+                    Ver más revisiones ({busqueda.total - busqueda.revisiones.length})
                   </button>
                 ) : null}
               </div>
