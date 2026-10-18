@@ -52,7 +52,7 @@ export function faltantesRevision(row: InicioRevisionRow, inventario: Inventario
 const LISTA = new Intl.ListFormat("es", { style: "long", type: "conjunction" });
 
 export function resumenFaltantes(faltan: string[]) {
-  return faltan.length ? `Falta: ${LISTA.format(faltan)}` : "Todo completo ✓";
+  return faltan.length ? `Falta: ${LISTA.format(faltan)}` : "Todo completo";
 }
 
 export function resumenNoLleva(noLleva: string[]) {
