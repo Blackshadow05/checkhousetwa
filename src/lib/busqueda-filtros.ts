@@ -39,6 +39,9 @@ export const COMPARACIONES: Comparacion[] = ["=", "!=", "<", "<=", ">", ">="];
 // El servidor siempre los revalida con parseFiltros.
 export type FiltrosSerializados = {
   casitas?: number[];
+  // Rango de casitas (ambos incluidos), p. ej. "de la 1 a la 25".
+  casita_desde?: number;
+  casita_hasta?: number;
   cantidades?: { articulo: ArticuloCantidad; comparacion: Comparacion; cantidad: number }[];
   presencia?: { articulo: ArticuloSiNo; hay: boolean }[];
   estado_caja_fuerte?: string;
@@ -58,6 +61,7 @@ export type FiltrosSerializados = {
 const PERIODOS_FIJOS = {
   hoy: "Hoy",
   ayer: "Ayer",
+  anteayer: "Anteayer",
   esta_semana: "Esta semana",
   semana_pasada: "Semana pasada",
   este_mes: "Este mes",
@@ -95,6 +99,7 @@ export function resolverPeriodo(periodo: string, hoy: string): { desde: string; 
   switch (periodo) {
     case "hoy": return { desde: hoy, hasta: hoy };
     case "ayer": return { desde: shiftDay(hoy, -1), hasta: shiftDay(hoy, -1) };
+    case "anteayer": return { desde: shiftDay(hoy, -2), hasta: shiftDay(hoy, -2) };
     case "esta_semana": return { desde: lunes, hasta: hoy };
     case "semana_pasada": return { desde: shiftDay(lunes, -7), hasta: shiftDay(lunes, -1) };
     case "este_mes": return { desde: inicioMes, hasta: hoy };
@@ -144,7 +149,7 @@ export function etiquetaFechas(desde?: string, hasta?: string) {
 export function fraseFechas(filtros: FiltrosSerializados) {
   const periodo = filtros.periodo ?? "";
   const fijas: Record<string, string> = {
-    hoy: "de hoy", ayer: "de ayer", esta_semana: "de esta semana", semana_pasada: "de la semana pasada",
+    hoy: "de hoy", ayer: "de ayer", anteayer: "de anteayer", esta_semana: "de esta semana", semana_pasada: "de la semana pasada",
     este_mes: "de este mes", mes_pasado: "del mes pasado", este_anio: "de este año", anio_pasado: "del año pasado",
   };
   if (fijas[periodo]) return fijas[periodo];
@@ -175,6 +180,12 @@ export function chipsDeFiltros(filtros: FiltrosSerializados | null | undefined):
   if (!filtros) return [];
   const chips: ChipFiltro[] = [];
   for (const casita of filtros.casitas ?? []) chips.push({ id: `casita:${casita}`, etiqueta: `Casita ${casita}` });
+  if (filtros.casita_desde !== undefined && filtros.casita_hasta !== undefined) {
+    chips.push({
+      id: "rango",
+      etiqueta: filtros.casita_desde === filtros.casita_hasta ? `Casita ${filtros.casita_desde}` : `Casitas ${filtros.casita_desde}–${filtros.casita_hasta}`,
+    });
+  }
   if (filtros.quien_revisa) chips.push({ id: "quien", etiqueta: filtros.quien_revisa });
   const fechas = (filtros.periodo && etiquetaPeriodo(filtros.periodo)) || etiquetaFechas(filtros.desde, filtros.hasta);
   if (fechas) chips.push({ id: "fechas", etiqueta: fechas });
@@ -200,6 +211,7 @@ export function quitarFiltro(filtros: FiltrosSerializados, id: string): FiltrosS
   const [tipo, valor] = id.split(":");
   switch (tipo) {
     case "casita": nuevos.casitas = (filtros.casitas ?? []).filter((casita) => String(casita) !== valor); break;
+    case "rango": delete nuevos.casita_desde; delete nuevos.casita_hasta; break;
     case "quien": delete nuevos.quien_revisa; break;
     case "fechas": delete nuevos.periodo; delete nuevos.desde; delete nuevos.hasta; break;
     case "cantidad": nuevos.cantidades = (filtros.cantidades ?? []).filter((item) => `${item.articulo}${item.comparacion}${item.cantidad}` !== valor); break;

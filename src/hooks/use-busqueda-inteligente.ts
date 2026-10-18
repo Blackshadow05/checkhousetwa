@@ -5,12 +5,16 @@ import { fetchBusquedaRevisiones } from "@/app/actions/revisiones";
 import { quitarFiltro, type FiltrosSerializados } from "@/lib/busqueda-filtros";
 import type { InicioRevisionRow } from "@/types/database";
 
+// lista: revisiones que coinciden; cobertura: revisiones que cuentan para casitas pendientes; conteo: revisiones contadas.
+export type TipoBusqueda = "lista" | "cobertura" | "conteo";
+
 export type BusquedaInteligente =
   | { pregunta: string; estado: "buscando" }
   | {
     pregunta: string;
     estado: "lista";
     respuesta: string | null;
+    tipo: TipoBusqueda;
     filtros: FiltrosSerializados | null;
     total: number;
     revisiones: InicioRevisionRow[];
@@ -54,7 +58,7 @@ export function useBusquedaInteligente() {
         signal: peticion.signal,
       });
       const body = await response.json().catch(() => null) as
-        { respuesta?: string | null; filtros?: FiltrosSerializados | null; total?: number; revisiones?: InicioRevisionRow[]; error?: string } | null;
+        { respuesta?: string | null; tipo?: string; filtros?: FiltrosSerializados | null; total?: number; revisiones?: InicioRevisionRow[]; error?: string } | null;
       if (peticion.signal.aborted) return;
       if (!response.ok || !body) {
         setBusqueda({ pregunta, estado: "error", error: body?.error ?? "No pudimos completar la búsqueda." });
@@ -65,6 +69,7 @@ export function useBusquedaInteligente() {
         pregunta,
         estado: "lista",
         respuesta: typeof body.respuesta === "string" ? body.respuesta : null,
+        tipo: body.tipo === "cobertura" || body.tipo === "conteo" ? body.tipo : "lista",
         filtros: body.filtros ?? null,
         total: typeof body.total === "number" ? body.total : revisiones.length,
         revisiones,
@@ -126,6 +131,7 @@ export function useBusquedaInteligente() {
         revisiones: rows,
         total,
         respuesta: null,
+        tipo: "lista",
         ajustada: true,
         ajustando: false,
         errorAjuste: null,

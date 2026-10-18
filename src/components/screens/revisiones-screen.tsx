@@ -44,6 +44,14 @@ import type { PendingRevision } from "@/lib/revision-outbox";
 import type { InicioRevisionRow } from "@/types/database";
 import styles from "./revisiones-screen.module.css";
 
+// Encabezado de la lista de la búsqueda inteligente según qué representan sus revisiones.
+function etiquetaConteoBusqueda(tipo: "lista" | "cobertura" | "conteo", total: number) {
+  const revisiones = `${total} ${total === 1 ? "revisión" : "revisiones"}`;
+  if (tipo === "cobertura") return `${revisiones} en el periodo y rango de casitas`;
+  if (tipo === "conteo") return `${revisiones} ${total === 1 ? "contada" : "contadas"}`;
+  return `${revisiones} ${total === 1 ? "encontrada" : "encontradas"}`;
+}
+
 const PERIODS = [
   { id: "all", label: "Todas" },
   { id: "today", label: "Hoy" },
@@ -312,11 +320,21 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
           </div>
         )}
         <span className="sr-only" role="status">
-          {archive.loading
-            ? "Buscando revisiones"
-            : archive.loadingMore
-              ? "Cargando más revisiones"
-              : `${archive.total} revisiones encontradas`}
+          {busqueda
+            ? busqueda.estado === "buscando"
+              ? "Buscando la respuesta"
+              : busqueda.estado === "error"
+                ? busqueda.error
+                : busqueda.ajustando
+                  ? "Ajustando filtros"
+                  : busqueda.cargandoMas
+                    ? "Cargando más revisiones"
+                    : etiquetaConteoBusqueda(busqueda.tipo, busqueda.total)
+            : archive.loading
+              ? "Buscando revisiones"
+              : archive.loadingMore
+                ? "Cargando más revisiones"
+                : `${archive.total} ${archive.total === 1 ? "revisión encontrada" : "revisiones encontradas"}`}
         </span>
       </div>
 
@@ -419,6 +437,14 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                 )}
                 {busqueda.errorAjuste && <p>{busqueda.errorAjuste}</p>}
               </div>
+              {busqueda.total > 0 && !busqueda.ajustando && (
+                <div className={styles.dayHeading}>
+                  <h3>{etiquetaConteoBusqueda(busqueda.tipo, busqueda.total)}</h3>
+                  {busqueda.revisiones.length < busqueda.total && (
+                    <span>{busqueda.revisiones.length} de {busqueda.total}</span>
+                  )}
+                </div>
+              )}
               {busqueda.revisiones.length > 0 && (
                 <div className={styles.list}>
                   {busqueda.revisiones.map((row, index) => (
@@ -458,6 +484,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                 {busqueda.cargandoMas ? "Cargando más…" : busqueda.errorMas ? (
                   <button type="button" className="text-action" onClick={() => void cargarMas()}>
                     {busqueda.errorMas} Reintentar
+                  </button>
+                ) : busquedaConMas && !busqueda.ajustando ? (
+                  <button type="button" className="text-action" onClick={() => void cargarMas()}>
+                    Ver más revisiones ({busqueda.total - busqueda.revisiones.length})
                   </button>
                 ) : null}
               </div>
