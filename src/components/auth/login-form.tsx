@@ -88,7 +88,14 @@ function AuthenticatorCodeField({ value, disabled, onChange }: {
   const pastePending = useRef(false);
   const [pasting, setPasting] = useState(false);
   const [message, setMessage] = useState("");
+  const [valorPrevio, setValorPrevio] = useState(value);
   const messageId = useId();
+
+  // A rejected code is cleared by the form; drop the stale "Código pegado." with it.
+  if (value !== valorPrevio) {
+    setValorPrevio(value);
+    if (!value) setMessage("");
+  }
 
   async function pegarCodigo() {
     const field = input.current;
@@ -109,7 +116,7 @@ function AuthenticatorCodeField({ value, disabled, onChange }: {
         prepararPegadoManual(field);
         return;
       }
-      const code = (await navigator.clipboard.readText()).replace(/\s/g, "");
+      const code = (await navigator.clipboard.readText()).replace(/\D/g, "");
       // A pending clipboard read must not replace edits or a different login step.
       if (input.current !== field || field.readOnly || field.value !== previousValue) return;
       if (!/^\d{6}$/.test(code)) {
@@ -200,6 +207,8 @@ export function LoginForm({
   const [done, setDone] = useState(false);
   const form = useRef<HTMLFormElement>(null);
   const pending = useRef(false);
+  const codigoFallido = useRef("");
+  const reenfocarCodigo = useRef(false);
   const googleContinuado = useRef(false);
   const messageId = useId();
 
@@ -237,6 +246,7 @@ export function LoginForm({
     setQrCode("");
     setSecret("");
     setCodigo("");
+    codigoFallido.current = "";
   }
 
   function cambiarMetodo(next: Metodo) {
@@ -260,7 +270,10 @@ export function LoginForm({
   }
 
   function actualizarCodigo(valor: string) {
-    setCodigo(valor.replace(/\D/g, "").slice(0, 6));
+    const code = valor.replace(/\D/g, "").slice(0, 6);
+    setCodigo(code);
+    // Typing, pasting or OTP autofill submits on its own, but never retries a rejected code.
+    if (code.length === 6 && code !== codigoFallido.current) void verificarCodigo(code);
   }
 
   async function ingresarUsuario() {
@@ -331,12 +344,18 @@ export function LoginForm({
     }
   }
 
-  async function verificarCodigo() {
-    if (!factorId || codigo.length !== 6 || !beginRequest("Verificando código…")) return;
+  async function verificarCodigo(code = codigo) {
+    if (!factorId || code.length !== 6 || !beginRequest("Verificando código…")) return;
     try {
-      const result = await verificarCodigoAuthenticator(factorId, codigo);
+      const result = await verificarCodigoAuthenticator(factorId, code);
       if (result.error) {
-        if (result.restartAuthenticator) limpiarMfa();
+        if (result.restartAuthenticator) {
+          limpiarMfa();
+        } else {
+          codigoFallido.current = code;
+          setCodigo("");
+          reenfocarCodigo.current = true;
+        }
         setError(result.error);
         return;
       }
@@ -382,6 +401,13 @@ export function LoginForm({
       finishRequest();
     }
   }
+
+  // Refocus only once the field is editable again; a read-only input won't bring up the mobile keyboard.
+  useEffect(() => {
+    if (busy || !reenfocarCodigo.current) return;
+    reenfocarCodigo.current = false;
+    form.current?.querySelector<HTMLInputElement>("input[name='code']")?.focus({ preventScroll: variant === "sheet" });
+  }, [busy, variant]);
 
   useEffect(() => {
     if (retornoGoogle !== "continuar" || googleContinuado.current) return;
