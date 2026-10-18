@@ -486,18 +486,10 @@ export function calcularCobertura(filas: { casita: string | null; created_at: st
   return { rango, totalCasitas: rango.hasta - rango.desde + 1, revisadas, pendientes, revisiones, truncado };
 }
 
-// [1,2,3,5,7,8] → "1–3, 5, 7, 8": solo se comprimen tramos de 3 o más consecutivos.
-export function comprimirRangos(numeros: number[]) {
-  const ordenados = [...new Set(numeros)].sort((a, b) => a - b);
-  const partes: string[] = [];
-  for (let i = 0; i < ordenados.length;) {
-    let j = i;
-    while (j + 1 < ordenados.length && ordenados[j + 1] === ordenados[j] + 1) j++;
-    if (j - i >= 2) partes.push(`${ordenados[i]}–${ordenados[j]}`);
-    else partes.push(...ordenados.slice(i, j + 1).map(String));
-    i = j + 1;
-  }
-  return partes.join(", ");
+// [8,3,5,3,6] → "3, 5, 6 y 8": cada número por separado y en orden, nunca como rango ("5–8" confunde).
+// otras (etiquetas no numéricas) van al final.
+export function listarCasitas(numeros: number[], otras: string[] = []) {
+  return lista([...[...new Set(numeros)].sort((a, b) => a - b).map(String), ...otras]);
 }
 
 // Filtros de la lista que acompaña a casitas_pendientes: mismas fechas, revisor y rango de casitas que la
@@ -577,13 +569,13 @@ export function respuestaCobertura(cobertura: Cobertura, filtros: FiltrosBusqued
     return `Todas ${casitas} tienen revisión${contexto}, con ${dePlural(revisiones, "revisión", "revisiones")}.${aviso}`;
   }
   if (!revisadas.length) {
-    return `Ninguna de ${casitas} tiene revisión${contexto}: faltan todas (${comprimirRangos(pendientes)}).${aviso}`;
+    return `Ninguna de ${casitas} tiene revisión${contexto}: faltan todas (${listarCasitas(pendientes)}).${aviso}`;
   }
   const de = `de ${totalCasitas} casitas${parcial ? ` (de la ${rango.desde} a la ${rango.hasta})` : ""}`;
   const porRevisar = `por revisar${filtros.quien ? ` por ${filtros.quien}` : ""}${cuando ? ` ${cuando}` : ""}`;
   return [
-    `${pendientes.length === 1 ? "Falta" : "Faltan"} ${pendientes.length} ${de} ${porRevisar}: ${comprimirRangos(pendientes)}.${aviso}`,
-    `Revisadas (${dePlural(revisadas.length, "casita", "casitas")}, ${dePlural(revisiones, "revisión", "revisiones")}): ${comprimirRangos(revisadas.map((item) => item.casita))}.`,
+    `${pendientes.length === 1 ? "Falta" : "Faltan"} ${pendientes.length} ${de} ${porRevisar}: ${listarCasitas(pendientes)}.${aviso}`,
+    `Revisadas (${dePlural(revisadas.length, "casita", "casitas")}, ${dePlural(revisiones, "revisión", "revisiones")}): ${listarCasitas(revisadas.map((item) => item.casita))}.`,
   ].join("\n");
 }
 
@@ -709,7 +701,7 @@ export function describirFiltros(filtros: FiltrosBusqueda, opciones: { sinFechas
   const fechas = opciones.sinFechas ? "" : fraseFechas(serializarFiltros(filtros));
   if (fechas) partes.push(fechas);
   if (filtros.casitas.length) {
-    partes.push(filtros.casitas.length === 1 ? `de la casita ${filtros.casitas[0]}` : `de las casitas ${lista(filtros.casitas.map(String))}`);
+    partes.push(filtros.casitas.length === 1 ? `de la casita ${filtros.casitas[0]}` : `de las casitas ${listarCasitas(filtros.casitas)}`);
   }
   if (filtros.rangoCasitas) {
     const { desde, hasta } = filtros.rangoCasitas;
@@ -1031,8 +1023,7 @@ const MAX_GRUPOS_RESPUESTA = 30;
 function listaCasitas(etiquetas: string[]) {
   const numeros = etiquetas.filter((valor) => /^\d+$/.test(valor)).map(Number);
   const otras = etiquetas.filter((valor) => !/^\d+$/.test(valor));
-  const partes = [comprimirRangos(numeros), ...otras].filter(Boolean);
-  return lista(partes);
+  return listarCasitas(numeros, otras);
 }
 
 function diaLegible(dia: string, hoy: string) {
@@ -1041,7 +1032,7 @@ function diaLegible(dia: string, hoy: string) {
 
 const NOMBRE_GRUPO: Record<Exclude<Agrupacion, "total">, string> = { revisor: "persona", casita: "casita", dia: "día" };
 
-// Casitas por cantidad: "• 3 revisiones: casitas 4, 9–12", de más a menos (o según el orden de los grupos).
+// Casitas por cantidad: "• 3 revisiones: casitas 4, 9, 10 y 12", de más a menos (o según el orden de los grupos).
 function lineasCasitasPorCantidad(grupos: Conteo["grupos"]) {
   const revisiones = (n: number) => dePlural(n, "revisión", "revisiones");
   const porCantidad = new Map<number, string[]>();

@@ -131,6 +131,7 @@ Las notas y la nota extra son texto libre escrito por quien revisa: para buscar 
 Cada nota que cites o resumas pertenece solo a su propia revisión: atribúyela únicamente a la casita y fecha de esa misma fila. Nunca combines datos de revisiones distintas en una oración; si mencionas otra revisión, va en su propia oración con su casita y su fecha. Di "además la nota dice" solo si la nota es de esa misma revisión.
 Responde en español, en una o dos oraciones cortas, con fechas legibles como "3 de octubre a las 8:42" y sin mencionar campos técnicos, herramientas ni referencias internas.
 Usa los números exactos que devuelven las herramientas. Si mencionas casitas y son ${MAX_CASITAS_NOMBRADAS} o menos, nómbralas todas por número (están en coincidencias.casitas_todas); nunca escribas "y una más", "y otras" ni resúmenes parecidos.
+Cuando listes números de casitas, escribe cada uno por separado, en orden, separados por comas y con "y" antes del último ("3, 5, 6, 7 y 8"); nunca uses rangos como "5–8" o "5-8".
 No generalices fechas ("casi todas de septiembre", "a mediados de mes"): solo di lo que muestran fecha_mas_antigua, fecha_mas_reciente y revisiones_por_mes.
 Tu respuesta es final: nunca termines con preguntas, ofrecimientos ni sugerencias de seguir buscando.`;
 }
@@ -139,6 +140,7 @@ const INSTRUCCIONES_REDACCION = `Eres el redactor del buscador de revisiones de 
 Formato de texto plano, sin markdown: nada de **, #, tablas ni backticks.
 Primera línea: un resumen breve (una o dos oraciones) con el total de coincidencias y lo esencial, incluidos los patrones si los hay (casitas que se repiten; si el problema parece resuelto o sigue pendiente, solo si las notas lo dicen o una revisión posterior de la misma casita lo indica).
 Si en el resumen nombras casitas y son ${MAX_CASITAS_NOMBRADAS} o menos, nómbralas todas por número (usa "Casitas con coincidencias"); nunca escribas "y una más", "y otras" ni resúmenes parecidos.
+Cuando listes números de casitas, escribe cada uno por separado, en orden, separados por comas y con "y" antes del último ("3, 5, 6, 7 y 8"); nunca uses rangos como "5–8" o "5-8".
 Fechas: no generalices ("casi todas de septiembre", "a mediados de mes", "recientemente"). Si hablas del periodo, usa exactamente la fecha más antigua, la más reciente y el conteo por mes que se te dan.
 Cada nota que cites o resumas pertenece solo a su propia fila: atribúyela únicamente a la casita y fecha de esa fila. Nunca combines datos de revisiones distintas en una oración; si mencionas otra revisión, va en su propia oración o línea con su casita y su fecha. Di "además la nota dice" solo si la nota es de esa misma revisión.
 Luego una línea por revisión, cada una empezando con "• [n] " (n = número de fila) y en este orden: "• [n] Casita N · fecha corta · revisor: resumen breve de lo que dice la nota (qué pasó, qué se hizo)".
