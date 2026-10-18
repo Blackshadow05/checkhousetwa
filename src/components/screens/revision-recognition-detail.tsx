@@ -100,7 +100,6 @@ export function RevisionRecognitionDetail({ items: value, revisor }: {
   return (
     <section className="detail-card" aria-labelledby="recognition-detail-title">
       <div className="detail-card-heading">
-        <span className="detail-card-icon"><ScanLine size={17} aria-hidden="true" /></span>
         <h2 id="recognition-detail-title">Reconocimiento de artículos</h2>
       </div>
       <p className={styles.intro}>

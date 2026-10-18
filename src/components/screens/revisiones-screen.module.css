@@ -1,3 +1,10 @@
+/* En pantallas anchas la lista no se estira de borde a borde: columna compacta y centrada. */
+.screen {
+  width: 100%;
+  max-width: 600px;
+  margin-inline: auto;
+}
+
 .toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -370,39 +377,14 @@
   min-width: 0;
 }
 
-.noteIcon {
+.noteChip {
   flex-shrink: 0;
-  color: var(--muted-foreground);
-}
-
-.row[data-extra-note] {
-  --extra-bg: #ffedd5;
-  --extra-text: #9a3412;
-  --extra-border: #f97316;
-}
-
-:global(:root[data-theme="dark"]) .row[data-extra-note] {
-  --extra-bg: #4a2510;
-  --extra-text: #fdba74;
-  --extra-border: #fb923c;
-}
-
-.row[data-extra-note]:not([data-tone="pendiente"]) {
-  box-shadow: inset 3px 0 0 var(--extra-border);
-}
-
-.extraChip {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 3px;
   padding: 2px 7px;
-  border: 1px solid color-mix(in srgb, var(--extra-border) 45%, transparent);
   border-radius: 6px;
-  background: var(--extra-bg);
-  color: var(--extra-text);
+  background: var(--muted);
+  color: var(--muted-foreground);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
 }
