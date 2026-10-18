@@ -170,10 +170,42 @@ export function fraseFechas(filtros: FiltrosSerializados) {
 
 export type ChipFiltro = { id: string; etiqueta: string };
 
-const SIMBOLOS: Record<Comparacion, string> = { "=": "=", "!=": "≠", "<": "<", "<=": "≤", ">": ">", ">=": "≥" };
-
-function minuscula(texto: string) {
+// Sigla al inicio ("USB del speaker") se deja igual.
+export function minuscula(texto: string) {
+  if (/^\p{Lu}{2}/u.test(texto)) return texto;
   return texto.charAt(0).toLocaleLowerCase("es-CR") + texto.slice(1);
+}
+
+// Condiciones que equivalen a "no hay ninguno" o "hay al menos uno" (cantidad mínima 0).
+export function sentidoCantidad(comparacion: Comparacion, cantidad: number): "falta" | "hay" | null {
+  if ((comparacion === "=" || comparacion === "<=") && cantidad === 0) return "falta";
+  if (comparacion === "<" && cantidad === 1) return "falta";
+  if ((comparacion === ">" || comparacion === "!=") && cantidad === 0) return "hay";
+  if (comparacion === ">=" && cantidad === 1) return "hay";
+  return null;
+}
+
+// "Binoculares", "Controles de TV": plural si la primera palabra termina en s.
+export function articuloPlural(etiqueta: string) {
+  return /s$/i.test(etiqueta.split(" ")[0] ?? "");
+}
+
+const CANTIDAD_LEGIBLE: Record<Comparacion, (n: number) => string> = {
+  "=": (n) => `${n}`,
+  "!=": (n) => `distinto de ${n}`,
+  "<": (n) => `menos de ${n}`,
+  "<=": (n) => `${n} o menos`,
+  ">": (n) => `más de ${n}`,
+  ">=": (n) => `${n} o más`,
+};
+
+// "Falta chromecast", "Faltan controles de TV", "Con chromecast", "Chromecast: 2 o más".
+export function etiquetaCantidad(articulo: ArticuloCantidad, comparacion: Comparacion, cantidad: number) {
+  const nombre = ARTICULOS_CANTIDAD[articulo] ?? articulo;
+  const sentido = sentidoCantidad(comparacion, cantidad);
+  if (sentido === "falta") return `${articuloPlural(nombre) ? "Faltan" : "Falta"} ${minuscula(nombre)}`;
+  if (sentido === "hay") return `Con ${minuscula(nombre)}`;
+  return `${nombre}: ${CANTIDAD_LEGIBLE[comparacion]?.(cantidad) ?? `${comparacion} ${cantidad}`}`;
 }
 
 export function chipsDeFiltros(filtros: FiltrosSerializados | null | undefined): ChipFiltro[] {
@@ -190,7 +222,7 @@ export function chipsDeFiltros(filtros: FiltrosSerializados | null | undefined):
   const fechas = (filtros.periodo && etiquetaPeriodo(filtros.periodo)) || etiquetaFechas(filtros.desde, filtros.hasta);
   if (fechas) chips.push({ id: "fechas", etiqueta: fechas });
   for (const { articulo, comparacion, cantidad } of filtros.cantidades ?? []) {
-    chips.push({ id: `cantidad:${articulo}${comparacion}${cantidad}`, etiqueta: `${ARTICULOS_CANTIDAD[articulo] ?? articulo} ${SIMBOLOS[comparacion] ?? comparacion} ${cantidad}` });
+    chips.push({ id: `cantidad:${articulo}${comparacion}${cantidad}`, etiqueta: etiquetaCantidad(articulo, comparacion, cantidad) });
   }
   for (const { articulo, hay } of filtros.presencia ?? []) {
     chips.push({ id: `presencia:${articulo}`, etiqueta: `${hay ? "Con" : "Sin"} ${minuscula(ARTICULOS_SI_NO[articulo] ?? articulo)}` });

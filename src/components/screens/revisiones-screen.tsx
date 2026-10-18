@@ -120,6 +120,8 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   const busquedaConMas = busqueda?.estado === "lista" && busqueda.revisiones.length < busqueda.total && !busqueda.errorMas;
   const chipsBusqueda = busqueda?.estado === "lista" ? chipsDeFiltros(busqueda.filtros) : [];
   const { cargarMas } = inteligente;
+  // archive es un objeto nuevo en cada render; loadMore es un useCallback estable, así que el efecto depende solo de él.
+  const { hasMore: archiveHasMore, loadMore: archiveLoadMore } = archive;
   const groups = useMemo(() => groupByDay(archive.rows), [archive.rows]);
   const periodIndex = archive.date
     ? DATE_SEGMENT
@@ -144,11 +146,11 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
 
   useEffect(() => {
     const node = sentinelRef.current;
-    if (!node || !archive.hasMore) return;
+    if (!node || !archiveHasMore) return;
     const root = node.closest(".app-screen");
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) archive.loadMore();
+        if (entries[0]?.isIntersecting) archiveLoadMore();
       },
       {
         root: root instanceof Element ? root : null,
@@ -157,7 +159,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [archive.hasMore, archive.loadMore, archive.rows.length]);
+  }, [archiveHasMore, archiveLoadMore, archive.rows.length]);
 
   useEffect(() => {
     const node = busquedaSentinelRef.current;

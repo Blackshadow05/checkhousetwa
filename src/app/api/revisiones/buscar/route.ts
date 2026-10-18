@@ -34,6 +34,7 @@ import {
   respuestaPlantilla,
   respuestaCobertura,
   respuestaConteo,
+  respuestaSignificadoVacia,
   resumenParaModelo,
   serializarFiltros,
   sinPreguntaFinal,
@@ -44,6 +45,7 @@ import {
   type Conteo,
   type Estadisticas,
   type FiltrosBusqueda,
+  type ModoConteo,
 } from "@/lib/busqueda-revisiones";
 import type { InicioRevisionRow } from "@/types/database";
 
@@ -104,8 +106,10 @@ Meses sin año: ${mesesSinAnio(hoy)}. Con año explícito usa ese año.
 Para "la última vez" usa orden reciente con limite 1; para "la primera vez", orden antigua con limite 1. Para "cuántas veces" responde con el total.
 texto acepta palabras sueltas (deben aparecer todas); no agregues variantes de acentos ni plurales. Úsalo solo para términos literales: un artículo o una palabra concreta.
 Para preguntas por concepto o significado (préstamos, cosas que el huésped se llevó o pidió, daños, quejas, faltantes, limpieza o moho, objetos olvidados, movimientos entre casitas, etc.) usa buscar_por_significado: lees las notas y eliges las que corresponden aunque usen otras palabras. En concepto describe la idea con las formas en que suele escribirse.
+Préstamos: casi nunca se escribe "prestar". Cuenta como préstamo colocar o llevar un artículo extra para el huésped ("se coloca un speaker extra", "a solicitud del huésped", "se lleva a casita N") y como devolución recogerlo ("se recoge binoculares extra", "se devuelve").
 Para preguntas de cuáles o cuántas casitas faltan, están pendientes, quedan sin revisar o sí se revisaron en un periodo usa casitas_pendientes (cuenta casitas distintas, no revisiones); casita_desde y casita_hasta solo si piden un rango de casitas.
 Para rankings y conteos por grupo usa contar_revisiones, que cuenta exacto en el servidor: quién hizo más o menos revisiones, cuántas hizo cada persona (agrupar_por revisor); qué casita se revisó más o menos veces (agrupar_por casita); qué día hubo más revisiones (agrupar_por dia). Sí se puede contar por persona: nunca respondas que no se puede ni des solo el total.
+En contar_revisiones usa modo desglose cuando piden el conteo de cada grupo ("cuántas hizo cada persona", "por persona", "por casita", "por día", "desglose", "lista") y modo ranking cuando preguntan quién o qué tiene más o menos ("quién hizo más", "el que más", "top").
 Para un rango de casitas ("de la 1 a la 25") usa casita_desde y casita_hasta en vez de listar casitas.
 Ejemplos de argumentos:
 "¿cuándo fue la última vez que faltó el control en la casita 12?" → {"casitas":[12],"cantidades":[{"articulo":"controles_tv","comparacion":"<","cantidad":1}],"orden":"reciente","limite":1}
@@ -115,10 +119,13 @@ Ejemplos de argumentos:
 "qué casitas faltan por revisar en octubre" → casitas_pendientes {"periodo":"mes_${anio}_10"}
 "casitas sin revisar esta semana del 1 al 25" → casitas_pendientes {"periodo":"esta_semana","casita_desde":1,"casita_hasta":25}
 "cuántas casitas faltan por revisar tomando en cuenta las revisiones de octubre y que son casas del 1 al 50" → casitas_pendientes {"periodo":"mes_${anio}_10"}
-"¿quién hizo más revisiones en septiembre?" → contar_revisiones {"agrupar_por":"revisor","periodo":"mes_${anio}_09"}
-"¿cuántas revisiones hizo cada uno el mes pasado?" → contar_revisiones {"agrupar_por":"revisor","periodo":"mes_pasado"}
-"¿qué casita se revisó menos esta semana?" → contar_revisiones {"agrupar_por":"casita","orden":"menos","periodo":"esta_semana"}
-"casas a las que se les ha prestado un artículo" → buscar_por_significado {"concepto":"préstamo de artículos al huésped (prestado, se devuelve, a petición/solicitud del huésped, se lleva a otra casita por pedido)"}
+"¿quién hizo más revisiones en septiembre?" → contar_revisiones {"agrupar_por":"revisor","modo":"ranking","periodo":"mes_${anio}_09"}
+"¿cuántas revisiones hizo cada persona en octubre?" → contar_revisiones {"agrupar_por":"revisor","modo":"desglose","periodo":"mes_${anio}_10"}
+"¿cuántas revisiones hizo cada uno el mes pasado?" → contar_revisiones {"agrupar_por":"revisor","modo":"desglose","periodo":"mes_pasado"}
+"revisiones por día esta semana" → contar_revisiones {"agrupar_por":"dia","modo":"desglose","periodo":"esta_semana"}
+"¿qué casita se revisó menos esta semana?" → contar_revisiones {"agrupar_por":"casita","modo":"ranking","orden":"menos","periodo":"esta_semana"}
+"casas a las que se les ha prestado un artículo" → buscar_por_significado {"concepto":"préstamo de artículos al huésped (prestado, se coloca o se lleva un artículo extra, a petición/solicitud del huésped, se lleva a casita N; devolución: se recoge el artículo extra, se devuelve)"}
+"¿qué cosas se prestaron en septiembre?" → buscar_por_significado {"concepto":"préstamo o devolución de artículos al huésped (prestado, se coloca o se recoge un artículo extra, a solicitud del huésped, se lleva a casita N, se devuelve)","periodo":"mes_${anio}_09"}
 Las notas y la nota extra son texto libre escrito por quien revisa: para buscar una palabra literal en ellas usa texto, para un concepto usa buscar_por_significado, y para saber si una revisión tiene nota o nota extra usa con_nota o con_nota_extra. Cuando la respuesta dependa de una nota, resume lo que dice.
 Responde en español, en una o dos oraciones cortas, con fechas legibles como "3 de octubre a las 8:42" y sin mencionar campos técnicos, herramientas ni referencias internas.
 Usa los números exactos que devuelven las herramientas. Si mencionas casitas y son ${MAX_CASITAS_NOMBRADAS} o menos, nómbralas todas por número (están en coincidencias.casitas_todas); nunca escribas "y una más", "y otras" ni resúmenes parecidos.
@@ -255,10 +262,10 @@ export async function POST(request: Request) {
   }
 
   // Conteo agrupado exacto + la lista de revisiones contadas (mismos filtros).
-  async function aplicarConteo(filtros: FiltrosBusqueda, agruparPor: Agrupacion, orden: Conteo["orden"]) {
+  async function aplicarConteo(filtros: FiltrosBusqueda, agruparPor: Agrupacion, orden: Conteo["orden"], modo: ModoConteo) {
     const lista: FiltrosBusqueda = { ...filtros, ids: null };
     const [calculado, { total, rows }] = await Promise.all([
-      contarRevisiones(client, lista, agruparPor, orden),
+      contarRevisiones(client, lista, agruparPor, orden, modo),
       buscarRevisiones(client, lista, { offset: 0, limit: BUSQUEDA_PAGINA }),
     ]);
     conteo = calculado;
@@ -324,8 +331,8 @@ export async function POST(request: Request) {
             valida = true;
             resultado = JSON.stringify({ respuesta });
           } else if (call.function.name === CONTAR_REVISIONES_TOOL.function.name) {
-            const { filtros, agruparPor, orden } = parseConteo(argumentos, hoy);
-            resultado = await aplicarConteo(filtros, agruparPor, orden);
+            const { filtros, agruparPor, orden, modo } = parseConteo(argumentos, hoy, pregunta);
+            resultado = await aplicarConteo(filtros, agruparPor, orden, modo);
             valida = true;
           } else if (call.function.name === ELEGIR_IDS_TOOL.function.name) {
             if (!lectura) throw new Error("sin lectura");
@@ -335,7 +342,7 @@ export async function POST(request: Request) {
             const filtros = parseFiltros(argumentos, { hoy, periodoManda: true });
             // Si la pregunta es de ranking (quién hizo más, qué casita se revisó menos…) se cuenta igual en el servidor.
             const ranking = !filtros.texto ? agrupacionDePregunta(pregunta) : null;
-            resultado = ranking ? await aplicarConteo(filtros, ranking.agruparPor, ranking.orden) : await buscarConStats(filtros);
+            resultado = ranking ? await aplicarConteo(filtros, ranking.agruparPor, ranking.orden, ranking.modo) : await buscarConStats(filtros);
             valida = true;
           }
         } catch {
@@ -394,9 +401,11 @@ export async function POST(request: Request) {
       respuesta = respuestaDetalladaPlantilla(filtros, total, rows, hoy);
     }
   }
+  // Búsqueda por significado sin coincidencias: respuesta clara por plantilla aunque el modelo haya redactado otra.
+  if (!total && !cobertura && !conteo) respuesta = respuestaSignificadoVacia(filtros) ?? respuesta;
   respuesta ??= respuestaPlantilla(pregunta, filtros, total, rows, hoy, true);
   // Las plantillas de cobertura y conteo ya son exactas; las demás deben nombrar todas las casitas si son pocas.
-  if (respuesta && !cobertura && !conteo) respuesta = asegurarCasitas(respuesta, stats);
+  if (respuesta && !cobertura && !conteo) respuesta = asegurarCasitas(respuesta, stats, filtros);
   const tipo = cobertura ? "cobertura" : conteo ? "conteo" : "lista";
   const extra = cobertura
     ? {
