@@ -2054,7 +2054,11 @@ svg {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--destructive) 28%, transparent);
 }
 /* Resumen en lenguaje sencillo de lo que falta en la revisión. */
+/* El texto va en el color normal (legible en claro y oscuro); el rojo solo marca el borde y el icono. */
 .detail-faltantes {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -2065,10 +2069,24 @@ svg {
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+.detail-faltantes > div {
+  min-width: 0;
+}
+.detail-faltantes-icon {
+  margin-top: 1px;
+  color: var(--sage-text);
+}
 .detail-faltantes.is-missing {
-  border-color: color-mix(in srgb, var(--destructive) 35%, var(--border));
-  background: color-mix(in srgb, var(--destructive) 8%, var(--card));
+  border-left: 4px solid var(--destructive);
+}
+.detail-faltantes.is-missing .detail-faltantes-icon {
   color: var(--destructive);
+}
+.detail-faltantes-nota {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 .detail-screen .status-badge {
   gap: 5px;
@@ -2801,6 +2819,13 @@ button.detail-tile:active {
     --screen-padding-top: 24px;
     padding: var(--screen-padding-top) 32px 36px;
   }
+  /* Mismo ancho de contenido que las pantallas de la app (borde de .app-shell + 32px). */
+  .detail-screen {
+    border-inline: 1px solid var(--border);
+  }
+  .detail-body {
+    padding-inline: max(32px, env(safe-area-inset-left)) max(32px, env(safe-area-inset-right));
+  }
   .revision-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2913,8 +2938,6 @@ button.detail-tile:active {
 }
 
 /* Create a revision without leaving the persistent mobile shell. */
-/* Deja libre el alto de los dos botones flotantes ("+" y "Arriba") apilados, para que no tapen la hora de las últimas filas. */
-.app-screen-with-create { padding-bottom: calc(156px + env(safe-area-inset-bottom)); }
 .new-revision-fab {
   position: absolute;
   right: max(20px, env(safe-area-inset-right));
@@ -2976,6 +2999,14 @@ button.detail-tile:active {
 }
 .new-revision-options[hidden] {
   display: none;
+}
+/* Los botones flotantes se alinean con el borde derecho de las cards (mismo margen que .app-screen). */
+@media (min-width: 640px) {
+  .scroll-top-fab,
+  .new-revision-fab,
+  .new-revision-options {
+    right: max(32px, env(safe-area-inset-right));
+  }
 }
 .new-revision-options button {
   display: flex;

@@ -1,8 +1,8 @@
-/* En pantallas anchas la lista no se estira de borde a borde: columna compacta y centrada. */
+/* Usa todo el ancho de la columna de la app (igual que el detalle); la columna ya está limitada en .app-shell.
+   El espacio inferior va en el contenido y no en el contenedor con scroll, para que siempre se aplique:
+   deja libres el "+" y "Arriba" apilados (18 + 56 + 12 + 48 px), más un respiro. */
 .screen {
-  width: 100%;
-  max-width: 600px;
-  margin-inline: auto;
+  padding-bottom: calc(124px + env(safe-area-inset-bottom));
 }
 
 .toolbar {
@@ -309,7 +309,15 @@
   text-align: left;
   color: var(--foreground);
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   transition: background-color 120ms ease;
+}
+
+/* Toda la fila es un solo blanco de clic: ni el chip "Nota", ni la placa, ni los textos capturan el puntero. */
+.row > * {
+  pointer-events: none;
 }
 
 .row + .row::before {
@@ -411,7 +419,10 @@
   white-space: nowrap;
 }
 
-.row:active:not(:disabled) {
+/* .list sube la especificidad sobre el "scale" global de button:active: al encogerse, la fila se
+   separaba del puntero en los bordes y el clic caía en la lista en vez de abrir la revisión. */
+.list .row:active:not(:disabled) {
+  transform: none;
   background: var(--muted);
 }
 

@@ -45,7 +45,7 @@ import {
 import type { InicioRevisionRow, UsuarioShell } from "@/types/database";
 import { useOnline } from "@/lib/use-online";
 import { useInventarioCasitas } from "@/hooks/use-inventario-casitas";
-import { faltantesRevision, resumenFaltantes } from "@/lib/revision-faltantes";
+import { faltantesRevision, resumenFaltantes, resumenNoLleva } from "@/lib/revision-faltantes";
 import { dedupeRequest } from "@/lib/dedupe-request";
 import { fechaHoraRegistro } from "@/lib/fechas";
 
@@ -436,6 +436,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
   const casitaInventario =
     inventario.rows?.find((item) => item.casita === Number(casitaNumber(row.casita))) ?? null;
   const faltantes = inventarioPendiente ? null : faltantesRevision(row, casitaInventario);
+  const noLleva = faltantes && resumenNoLleva(faltantes.noLleva);
 
   const editable = puedeEditarRevision(usuario, row.quien_revisa);
   const onEdit = editing && editable ? setEditingField : null;
@@ -557,12 +558,20 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
           )}
 
           {faltantes ? (
-            <p
-              className={`detail-faltantes${faltantes.length ? " is-missing" : ""}`}
+            <div
+              className={`detail-faltantes${faltantes.faltan.length ? " is-missing" : ""}`}
               role="status"
             >
-              {resumenFaltantes(faltantes)}
-            </p>
+              {faltantes.faltan.length ? (
+                <CircleAlert size={20} className="detail-faltantes-icon" aria-hidden="true" />
+              ) : (
+                <Check size={20} className="detail-faltantes-icon" aria-hidden="true" />
+              )}
+              <div>
+                <p>{resumenFaltantes(faltantes.faltan)}</p>
+                {noLleva && <p className="detail-faltantes-nota">{noLleva}</p>}
+              </div>
+            </div>
           ) : null}
 
           <div className="detail-summary">

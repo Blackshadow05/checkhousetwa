@@ -21,7 +21,8 @@ export const INVENTARIO_KEYS = [
 ] as const satisfies readonly InventoryKey[];
 
 export type InventarioKey = (typeof INVENTARIO_KEYS)[number];
-export type InventarioCasita = { casita: number; cantidades: Record<InventarioKey, number> };
+// null = el inventario no tiene dato para ese artículo (desconocido, no "no lleva").
+export type InventarioCasita = { casita: number; cantidades: Record<InventarioKey, number | null> };
 export const INVENTARIO_COLUMNS = "casita, chromecast, controles_tv, speaker, usb_speaker, binoculares, trapo_binoculares, secadora, accesorios_secadora, steamer, bolsa_vapor, plancha_cabello, bulto, sombrero, bolso_yute, cola_caballo";
 
 const RECONOCIBLES = new Set<InventoryKey>(ARTICULOS_CLASES);
@@ -34,9 +35,10 @@ export function mapInventarioCasita(row: InventarioCasitaRow): InventarioCasita 
   return {
     casita: Number(row.casita),
     cantidades: Object.fromEntries(INVENTARIO_KEYS.map((key) => {
-      const value = Number(row[key]);
-      return [key, Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0];
-    })) as Record<InventarioKey, number>,
+      const raw: unknown = row[key];
+      const value = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
+      return [key, Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : null];
+    })) as Record<InventarioKey, number | null>,
   };
 }
 
@@ -44,7 +46,7 @@ export function isInventarioCasita(value: unknown): value is InventarioCasita {
   if (!value || typeof value !== "object") return false;
   const { casita, cantidades } = value as Partial<InventarioCasita>;
   return Number.isSafeInteger(casita) && !!cantidades && typeof cantidades === "object" &&
-    INVENTARIO_KEYS.every((key) => Number.isSafeInteger(cantidades[key]));
+    INVENTARIO_KEYS.every((key) => cantidades[key] === null || Number.isSafeInteger(cantidades[key]));
 }
 
 export function valorDetectado(key: ArticuloKey, count: number) {
@@ -87,7 +89,7 @@ export function compararInventario(
   const sinComparar: ComparacionArticulo[] = [];
   for (const key of INVENTARIO_KEYS) {
     const detectado = isReconocible(key) && typeof detectados[key] === "number" ? detectados[key] : null;
-    const esperado = inventario ? inventario.cantidades[key] : null;
+    const esperado = inventario?.cantidades[key] ?? null;
     const escaneoCoincide = esperado !== null && detectado !== null && mismaCantidad(key, detectado, esperado);
     const sinCambios = detectado !== null && isReconocible(key) && values[key] === valorDetectado(key, detectado);
     const item: ComparacionArticulo = {
