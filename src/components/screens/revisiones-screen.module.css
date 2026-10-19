@@ -24,43 +24,19 @@
 
 /* Solo la fila de búsqueda queda fija arriba del área con scroll (.app-screen); el header de la app está fuera
    de ese contenedor y ya respeta el safe area superior. top negativo = se pega al borde, no al relleno.
-   Pegada, se esconde al bajar y vuelve al subir (data-hidden); el desplazamiento extra oculta también la sombra. */
+   Pegada, se esconde al bajar y vuelve al subir (data-hidden): sube exactamente su altura animando top, igual que
+   los encabezados de fecha (.dayHeading), así ambos se mueven juntos sin dejar hueco. */
 .searchBar {
   position: sticky;
   top: calc(-1 * var(--screen-padding-top));
   z-index: 5;
   padding-block: 8px;
-  transition: transform 200ms ease;
+  transition: top 200ms ease;
 }
 
 .searchBar[data-hidden] {
-  transform: translateY(calc(-100% - 16px));
+  top: calc(-1 * var(--screen-padding-top) - var(--search-bar-height, 60px));
   pointer-events: none;
-}
-
-/* El fondo sólido se extiende por los márgenes laterales de la pantalla para que la lista no asome por los lados. */
-.searchBar::before {
-  content: "";
-  position: absolute;
-  inset: 0 calc(-1 * max(20px, env(safe-area-inset-right))) 0 calc(-1 * max(20px, env(safe-area-inset-left)));
-  z-index: -1;
-  border-bottom: 1px solid transparent;
-  background: var(--background);
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease;
-  pointer-events: none;
-}
-
-.searchBar[data-stuck]::before {
-  border-bottom-color: var(--border);
-  box-shadow: 0 8px 14px -12px #00000059;
-}
-
-@media (min-width: 640px) {
-  .searchBar::before {
-    inset-inline: -32px;
-  }
 }
 
 .titleRow h2 {
@@ -308,7 +284,7 @@
   gap: 20px;
 }
 
-/* Se pega justo debajo de la barra de búsqueda; con la barra escondida sube al borde, al mismo ritmo que ella. */
+/* Se pega justo debajo de la barra de búsqueda; con la barra escondida sube al borde con la misma transición. */
 .dayHeading {
   position: sticky;
   top: calc(var(--search-bar-height, 60px) - var(--screen-padding-top));
@@ -318,7 +294,6 @@
   justify-content: space-between;
   min-height: 40px;
   padding: 8px 4px;
-  background: var(--background);
   transition: top 200ms ease;
 }
 
@@ -326,33 +301,74 @@
   top: calc(-1 * var(--screen-padding-top));
 }
 
-/* Igual que la barra: fondo a todo el ancho y borde/sombra solo mientras está pegado (data-stuck lo pone el scroll). */
-.dayHeading::before {
+/* Barra y encabezados: ::before es el fondo sólido, extendido por los márgenes laterales de la pantalla para que
+   la lista no asome por los lados; ::after es el divisor (borde y sombra), visible solo mientras está pegado. */
+.searchBar::before,
+.searchBar::after,
+.dayHeading::before,
+.dayHeading::after {
   content: "";
   position: absolute;
   inset: 0 calc(-1 * max(20px, env(safe-area-inset-right))) 0 calc(-1 * max(20px, env(safe-area-inset-left)));
   z-index: -1;
-  border-bottom: 1px solid transparent;
-  background: var(--background);
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease;
   pointer-events: none;
 }
 
-.dayHeading[data-stuck]::before {
-  border-bottom-color: var(--border);
-  box-shadow: 0 8px 14px -12px #00000059;
+.searchBar::before,
+.dayHeading::before {
+  background: var(--background);
+}
+
+.searchBar::after,
+.dayHeading::after {
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--sticky-shadow);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.searchBar[data-stuck]::after,
+.dayHeading[data-stuck]::after {
+  opacity: 1;
+}
+
+/* Escondida, la barra no lleva divisor; con un encabezado pegado justo debajo, solo él lo muestra (sin doble línea). */
+.searchBar[data-hidden]::after,
+.screen:has(.dayHeading[data-stuck]) .searchBar::after {
+  opacity: 0;
+  transition-duration: 200ms;
+}
+
+@media (max-width: 359px) {
+  .searchBar::before,
+  .searchBar::after,
+  .dayHeading::before,
+  .dayHeading::after {
+    inset-inline: -16px;
+  }
 }
 
 @media (min-width: 640px) {
-  .dayHeading::before {
+  .searchBar::before,
+  .searchBar::after,
+  .dayHeading::before,
+  .dayHeading::after {
     inset-inline: -32px;
   }
 }
 
+/* El foco de teclado no queda tapado por la barra y el encabezado de fecha pegados. */
+:global(.app-screen):has(> .screen) {
+  scroll-padding-top: calc(var(--search-bar-height, 60px) + 48px);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .searchBar, .dayHeading, .searchBar::before, .dayHeading::before { transition: none; }
+  .searchBar,
+  .dayHeading,
+  .searchBar::after,
+  .dayHeading::after {
+    transition: none;
+  }
 }
 
 .dayHeading h3 {

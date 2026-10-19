@@ -277,6 +277,7 @@
   --accent: #e4eee4;
   --accent-foreground: #285542;
   --border: #e5e9e1;
+  --sticky-shadow: 0 8px 14px -12px #00000059;
   --input: #d7dfd4;
   --ring: #5c8465;
   --radius: 1rem;
@@ -2893,6 +2894,7 @@ button.detail-tile:active {
   --muted: #263129;
   --muted-foreground: #a2afa2;
   --border: #2e3a30;
+  --sticky-shadow: 0 10px 16px -10px #000000b3;
   --input: #485d47;
   --ring: #a1c294;
   --sage-bg: #2e4030;
