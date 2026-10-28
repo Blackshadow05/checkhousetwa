@@ -18,7 +18,6 @@ import { GoogleIcon } from "@/components/ui/google-icon";
 import { preserveKeyboardFocus } from "@/lib/keyboard-focus";
 import {
   cancelarAuthenticator,
-  iniciarLoginGoogle,
   loginConAuthenticator,
   loginUsuario,
   regenerarQrAuthenticator,
@@ -415,20 +414,14 @@ export function LoginForm({
     void prepararAuthenticator("Preparando Google Authenticator…");
   });
 
-  async function entrarGoogle() {
-    if (!beginRequest("Abriendo Google…")) return;
-    try {
-      const result = await iniciarLoginGoogle();
-      if (!result.url) {
-        setError(result.error || "No se pudo abrir Google");
-        return;
-      }
-      window.location.assign(result.url);
-    } catch {
-      setError("No se pudo conectar. Inténtalo de nuevo.");
-    } finally {
-      finishRequest();
-    }
+  function entrarGoogle() {
+    if (busy || done || !online) return;
+    setBusy(true);
+    setBusyMessage("Abriendo Google…");
+    setError("");
+    // Hard navigation so iOS does not abort a React server-action flight mid-handoff.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- OAuth start must leave the App Router
+    window.location.assign("/auth/google");
   }
 
   const submitDisabled = busy || !online;

@@ -287,35 +287,6 @@ export async function verificarCodigoAuthenticator(factorId: string, codigo: str
   }
 }
 
-export async function iniciarLoginGoogle(): Promise<{ error: string | null; url: string | null }> {
-  try {
-    const requestHeaders = await headers();
-    const host = (requestHeaders.get("x-forwarded-host") || requestHeaders.get("host"))?.split(",")[0].trim();
-    if (!host) return { error: "No se pudo abrir Google", url: null };
-    const hostname = new URL(`http://${host}`).hostname;
-    const local = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
-    const protocol = requestHeaders.get("x-forwarded-proto")?.split(",")[0].trim() || (local ? "http" : "https");
-    const origin = new URL(`${protocol}://${host}`);
-    if (!["http:", "https:"].includes(origin.protocol) || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
-      return { error: "No se pudo abrir Google", url: null };
-    }
-    const client = await createClient();
-    await clearStartedAt();
-    const { data, error } = await client.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${origin.origin}/auth/callback`,
-        skipBrowserRedirect: true,
-        queryParams: { prompt: "select_account" },
-      },
-    });
-    if (error || !data.url) return { error: error?.message || "No se pudo abrir Google", url: null };
-    return { error: null, url: data.url };
-  } catch {
-    return { error: "No se pudo abrir Google", url: null };
-  }
-}
-
 export async function cancelarAuthenticator() {
   try {
     await signOutLocal(await createClient());
