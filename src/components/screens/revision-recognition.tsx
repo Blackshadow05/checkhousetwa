@@ -29,7 +29,7 @@ function FotoPreparando({ url, label }: { url: string; label: string }) {
   );
 }
 
-export function RecognitionScanCard({ photos, previas, limit, scan, status, marks, progreso, error, disabled, active, onPick, onRemove, onRetry, children }: {
+export function RecognitionScanCard({ photos, previas, limit, scan, status, marks, progreso, error, disabled, active, onPick, onRemove, onRetry, listoHint, children }: {
   photos: RevisionPhoto[];
   previas: FotoPrevia[];
   limit: number;
@@ -43,6 +43,7 @@ export function RecognitionScanCard({ photos, previas, limit, scan, status, mark
   onPick: (files: FileList | null) => void;
   onRemove: (photoId: string) => void;
   onRetry?: () => void;
+  listoHint?: string;
   children?: ReactNode;
 }) {
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -65,7 +66,7 @@ export function RecognitionScanCard({ photos, previas, limit, scan, status, mark
         <div className={styles.empty}>
           <ScanSearch size={26} strokeWidth={1.5} aria-hidden="true" />
           <strong>Fotografía los artículos</strong>
-          <p>Hasta {cantidadFotos(limit)}. Se cuentan solos.</p>
+          <p>Hasta {cantidadFotos(limit)}. Se cuentan solos; después eliges la caja fuerte y la casita.</p>
         </div>
       ) : (
         <div className="revision-photo-grid">
@@ -83,7 +84,7 @@ export function RecognitionScanCard({ photos, previas, limit, scan, status, mark
         {trabajando
           ? <><LoaderCircle size={14} className="revision-spinner" aria-hidden="true" />{progreso && progreso.total > 1 ? `Escaneando foto ${progreso.actual} de ${progreso.total}…` : "Contando artículos…"}</>
           : listo
-            ? <><CircleCheck size={14} aria-hidden="true" />{marks?.size ? "En rojo los artículos por revisar." : "Revisa y corrige los conteos abajo."}</>
+            ? <><CircleCheck size={14} aria-hidden="true" />{listoHint ? `Escaneo listo. ${listoHint}` : marks?.size ? "En rojo los artículos por revisar." : "Revisa y corrige los conteos abajo."}</>
             : null}
       </p>
       {error && (

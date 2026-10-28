@@ -3083,6 +3083,7 @@ button.detail-tile:active {
 .revision-form-screen .revision-choices label { min-height: 48px; border-radius: 13px; }
 .revision-form-screen .revision-choices:not(.revision-number-choices) label { flex: 1 0 auto; }
 .revision-form-screen .revision-choices.revision-caja-fuerte-choices label { flex: 0 1 auto; }
+.revision-form-screen .revision-field-notice { margin-top: 10px; }
 .revision-form-screen .revision-text-field :is(input, textarea, select) { border-radius: 14px; padding: 13px 14px; }
 .revision-form-screen .revision-text-field :is(input, textarea, select):focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .revision-form-screen .revision-text-field input:read-only { border-style: dashed; font-size: .875rem; }
@@ -3105,6 +3106,9 @@ button.detail-tile:active {
 .revision-draft-status { display: flex; align-items: center; gap: 6px; min-height: 20px; margin-bottom: 14px; color: var(--muted-foreground); font-size: .625rem; line-height: 1.6; }
 .revision-draft-status.is-warning { color: var(--amber-text); }
 .revision-form-fields { border: 0; padding: 0; min-width: 0; counter-reset: form-section; }
+.revision-step-fields { border: 0; margin: 0; padding: 0; min-width: 0; min-inline-size: 0; }
+.revision-step-fields:disabled { opacity: 1; }
+.revision-form-card[data-locked="true"] .revision-step-fields { pointer-events: none; }
 .revision-form-intro { color: var(--muted-foreground); font-size: .8125rem; line-height: 1.65; margin-bottom: 20px; text-wrap: pretty; }
 .revision-form-intro strong { font-weight: 600; color: var(--foreground); }
 .revision-form-card { counter-increment: form-section; margin-bottom: 18px; padding: 20px; border: 1px solid var(--border); border-radius: 24px; background: var(--card); box-shadow: 0 5px 20px #14362405; }

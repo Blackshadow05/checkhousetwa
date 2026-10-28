@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { BedDouble, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
+import { BedDouble, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, Lock, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
 import { revisionDraftHasProgress, useRevisionDraft } from "@/hooks/use-revision-draft";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
 import { statusAppearance } from "@/lib/revisiones-display";
-import { BOOLEAN_FIELDS, CAJA_FUERTE_NO_EVIDENCE, QUANTITY_LIMITS, evidencePhotoLimit, validatePendienteForm, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionDraft, type RevisionFormErrors, type RevisionFormValues, type RevisionMode, type RevisionPhoto } from "@/lib/revision-form";
+import { BOOLEAN_FIELDS, CAJA_FUERTE_NO_EVIDENCE, QUANTITY_LIMITS, revisionPhotoLimit, validatePendienteForm, validateRevisionForm, withCurrentRevisionTime, type InventoryKey, type RevisionDraft, type RevisionFormErrors, type RevisionFormValues, type RevisionMode, type RevisionPhoto } from "@/lib/revision-form";
 import { prepareRevisionPhoto, prepareRevisionPhotoWith, revisionShareFiles } from "@/lib/revision-photos";
 import { discardUpload, ensureBackgroundUploads } from "@/lib/revision-evidence-upload";
 import type { RevisionRecognitionInput } from "@/lib/revision-recognition-log";
@@ -59,8 +59,17 @@ function ChoiceField({ name, label, options, value, onChange, errors, numeric = 
 
 const SIN_FOTOS: RevisionPhoto[] = [];
 
-function FormCard({ icon, title, children }: { icon?: ReactNode; title?: string; children: ReactNode }) {
-  return <section className="revision-form-card">{title ? <h2><span>{icon}</span>{title}</h2> : null}{children}</section>;
+function FormCard({ icon, title, children, locked = false, lockHint }: {
+  icon?: ReactNode; title?: string; children: ReactNode; locked?: boolean; lockHint?: string;
+}) {
+  const hintId = useId();
+  return (
+    <section className="revision-form-card" data-locked={locked || undefined}>
+      {title ? <h2><span>{icon}</span>{title}</h2> : null}
+      {locked && lockHint ? <p className="revision-card-hint" id={hintId}>{lockHint}</p> : null}
+      <fieldset className="revision-step-fields" disabled={locked} aria-describedby={locked && lockHint ? hintId : undefined}>{children}</fieldset>
+    </section>
+  );
 }
 
 const PUERTAS_VENTANAS = ["Todo en orden", "Ventana abierta", "Puerta Terraza abierta", "Puerta abierta"] as const;
@@ -95,6 +104,10 @@ const FORM_FIELD_BY_KEY = new Map<InventoryKey, { key: InventoryKey; label: stri
 );
 const CAMAS_FIELD = { key: "camas_ordenadas", label: "Camas ordenadas" } as const;
 const INVENTARIO_KEY_SET = new Set<string>(INVENTARIO_KEYS);
+const RECOGNITION_ERROR_ORDER: (keyof RevisionFormErrors)[] = [
+  "evidencias", "caja_fuerte", "puertas_ventanas", "room_move", "casita", "quien_revisa", "created_at",
+  ...INVENTARIO_KEYS, "camas_ordenadas", "notas",
+];
 
 function withoutInventoryErrors(errors: RevisionFormErrors): RevisionFormErrors {
   return Object.fromEntries(Object.entries(errors).filter(([key]) => !INVENTARIO_KEY_SET.has(key))) as RevisionFormErrors;
@@ -140,6 +153,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const [resultadosVistos, setResultadosVistos] = useState(false);
   const [previas, setPrevias] = useState<FotoPrevia[]>([]);
   const [scanError, setScanError] = useState("");
+  const [avisoFotos, setAvisoFotos] = useState("");
   const [avisoEspera, setAvisoEspera] = useState(false);
   const [editarRevisor, setEditarRevisor] = useState(false);
   const [sugerida, setSugerida] = useState("");
@@ -149,6 +163,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     setErrors({});
     setMessage("");
     setScanError("");
+    setAvisoFotos("");
     setAvisoEspera(false);
     setEditarRevisor(false);
     setSugerida("");
@@ -187,6 +202,11 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
 
   if (!draft) return open ? <div className="revision-form-screen"><p className="revision-form-loading" role="status">Preparando tu revisión…</p></div> : null;
   const { values, photos } = draft;
+  const hayFotosEvidencia = photos.length > 0;
+  // Reconocimiento: fotos, después caja fuerte, después casita y ahí la comparación.
+  const cajaBloqueada = recognition && !hayFotosEvidencia;
+  const datosBloqueados = recognition && (!hayFotosEvidencia || !values.caja_fuerte);
+  const notasBloqueadas = recognition && !hayFotosEvidencia;
   const conProgreso = revisionDraftHasProgress(draft);
   const completarDespues = draft.completarDespues === true && !draft.completa;
   const completando = draft.completa ?? null;
@@ -225,7 +245,15 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   };
   if (scan && !revelado.activo && !resultadosVistos) setResultadosVistos(true);
   if (!scan && resultadosVistos) setResultadosVistos(false);
-  const mostrarResultados = scan && (resultadosVistos || !revelado.activo) ? scan : null;
+  // Los resultados aparecen al elegir la casita, con fotos y caja fuerte ya definidas.
+  const mostrarResultados = recognition && hayFotosEvidencia && values.caja_fuerte && values.casita && scan && (resultadosVistos || !revelado.activo) ? scan : null;
+  const listoHint = !hayFotosEvidencia || mostrarResultados
+    ? undefined
+    : !values.caja_fuerte
+      ? "Ahora elige el estado de la caja fuerte."
+      : !values.casita
+        ? "Ahora elige el número de casita para comparar."
+        : undefined;
   const cambiarRevisor = () => {
     flushSync(() => setEditarRevisor(true));
     const input = scrollRef.current?.querySelector<HTMLInputElement>("#revision-quien_revisa");
@@ -235,9 +263,11 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   };
 
   const applyChange = (name: keyof RevisionFormValues, value: string) => {
+    const nuevoLimite = revisionPhotoLimit(draft.mode, value);
+    const quitadas = name === "caja_fuerte" && recognition ? Math.max(0, photos.length - nuevoLimite) : 0;
     update((previous) => {
       if (name !== "caja_fuerte") return { ...previous, values: { ...previous.values, [name]: value } };
-      const limit = evidencePhotoLimit(value);
+      const limit = revisionPhotoLimit(previous.mode, value);
       for (const photo of previous.photos.slice(limit)) void discardUpload(photo.id);
       return conEscaneo({
         ...previous,
@@ -247,18 +277,29 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     });
     setErrors((previous) => ({ ...previous, [name]: undefined, evidencias: name === "caja_fuerte" ? undefined : previous.evidencias, room_move: name === "caja_fuerte" ? undefined : previous.room_move }));
     setMessage("");
-    if (name === "caja_fuerte") setScanError("");
+    if (name === "caja_fuerte") {
+      setScanError("");
+      setAvisoFotos(quitadas > 0
+        ? nuevoLimite === 0
+          ? "Esta opción no usa fotos; se quitaron las que habías agregado."
+          : nuevoLimite === 1
+            ? "Esta opción usa solo 1 foto; se quitaron las demás."
+            : `Esta opción usa hasta ${nuevoLimite} fotos; se quitaron ${quitadas}.`
+        : "");
+    }
   };
   const change = (name: keyof RevisionFormValues, value: string) => {
+    if (recognition && !hayFotosEvidencia) return;
+    if (recognition && name === "casita" && !values.caja_fuerte) return;
     applyChange(name, value);
     if (name === "caja_fuerte") setSugerida("");
-    if (name !== "casita" || (values.caja_fuerte && values.caja_fuerte !== sugerida)) return;
+    if (name !== "casita" || recognition || (values.caja_fuerte && values.caja_fuerte !== sugerida)) return;
     const next = cajaFuerteSugerida(revisiones, value);
     if (next !== values.caja_fuerte) applyChange("caja_fuerte", next);
     setSugerida(next);
   };
   const focusError = (nextErrors: RevisionFormErrors) => {
-    const first = Object.keys(nextErrors)[0];
+    const first = (recognition ? RECOGNITION_ERROR_ORDER.find((key) => nextErrors[key]) : undefined) ?? Object.keys(nextErrors)[0];
     requestAnimationFrame(() => {
       const target = first === "evidencias"
         ? scrollRef.current?.querySelector<HTMLElement>("[data-revision-evidencias]")
@@ -267,7 +308,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
       target?.scrollIntoView({ block: "center", behavior: "instant" });
     });
   };
-  const photoLimit = evidencePhotoLimit(values.caja_fuerte);
+  const photoLimit = revisionPhotoLimit(draft.mode, values.caja_fuerte);
   const canAddNextEvidence = photos.length < photoLimit;
   const appendPhotos = async (selected: File[]) => {
     setPreparing(true);
@@ -280,7 +321,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
       }
       if (prepared.length) {
         const next = [...photos, ...prepared].slice(0, photoLimit);
-        update((previous) => ({ ...previous, photos: [...previous.photos, ...prepared].slice(0, evidencePhotoLimit(previous.values.caja_fuerte)) }));
+        update((previous) => ({ ...previous, photos: [...previous.photos, ...prepared].slice(0, revisionPhotoLimit(previous.mode, previous.values.caja_fuerte)) }));
         ensureBackgroundUploads(next);
         setErrors((previous) => ({ ...previous, evidencias: undefined }));
       }
@@ -300,6 +341,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     const room = photoLimit - photos.length - previas.length;
     if (!files?.length || inFlight.current || room <= 0) return;
     setScanError("");
+    setAvisoFotos("");
     setAvisoEspera(false);
     setErrors((previous) => ({ ...withoutInventoryErrors(previous), evidencias: undefined }));
     const draftId = draft.id;
@@ -312,7 +354,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
         escaneo.registrar(photo.id, extra);
         update((previous) => previous.id !== draftId ? previous : conEscaneo({
           ...previous,
-          photos: [...previous.photos, photo].slice(0, evidencePhotoLimit(previous.values.caja_fuerte)),
+          photos: [...previous.photos, photo].slice(0, revisionPhotoLimit(previous.mode, previous.values.caja_fuerte)),
         }));
       } catch (error) {
         failure ||= error instanceof Error ? error.message : "No pudimos preparar la foto.";
@@ -353,6 +395,24 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
       return;
     }
     const nextErrors = validateRevisionForm(stamped, undefined, photos.length);
+    if (recognition && !hayFotosEvidencia) {
+      const soloFotos: RevisionFormErrors = { evidencias: "Añade al menos una foto de evidencia." };
+      setErrors(soloFotos);
+      setAvisoEspera(false);
+      focusError(soloFotos);
+      return;
+    }
+    // Antes de elegir caja fuerte las fotos son válidas: el límite todavía no existe.
+    if (recognition && !stamped.caja_fuerte) {
+      delete nextErrors.evidencias;
+      delete nextErrors.casita;
+      delete nextErrors.quien_revisa;
+      delete nextErrors.created_at;
+    }
+    if (recognition && !stamped.casita) {
+      for (const key of INVENTARIO_KEYS) delete nextErrors[key];
+      delete nextErrors.camas_ordenadas;
+    }
     if (recognition && (!draft.scan || sinEscanear.length)) {
       const visible = Object.fromEntries(Object.entries(withoutInventoryErrors(nextErrors)).filter(([key]) => key !== "camas_ordenadas")) as RevisionFormErrors;
       setErrors(visible);
@@ -379,6 +439,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   };
 
   const removePhoto = (photoId: string) => {
+    setAvisoFotos("");
     void discardUpload(photoId);
     update((previous) => conEscaneo({ ...previous, photos: previous.photos.filter((item) => item.id !== photoId) }));
   };
@@ -400,6 +461,39 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     </div>
   );
 
+  const datosRevisionCard = (
+    <FormCard icon={<House size={18} />} title="Datos de la revisión" locked={datosBloqueados} lockHint={hayFotosEvidencia ? "Elige el estado de la caja fuerte para continuar." : "Primero añade las fotos de evidencia."}>
+      {recognition && !completarDespues && !datosBloqueados && <p className="revision-card-hint">Elige la casita para comparar el escaneo con su inventario.</p>}
+      <div className="revision-text-field"><label htmlFor="revision-casita">Número de casita</label><select id="revision-casita" name="casita" disabled={Boolean(completando) || datosBloqueados} value={values.casita ? String(Number(values.casita)) : ""} onChange={(e) => change("casita", e.target.value)} aria-invalid={Boolean(errors.casita)} aria-describedby={errors.casita ? "error-casita" : undefined}><option value="" disabled>Selecciona una casita</option>{Array.from({ length: 50 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select><FieldError name="casita" errors={errors} /></div>
+      {mostrarRevisor && <div className="revision-text-field"><label htmlFor="revision-quien_revisa">¿Quién revisa?</label><input id="revision-quien_revisa" name="quien_revisa" list="revision-reviewers" autoComplete="name" maxLength={100} value={values.quien_revisa} onChange={(e) => change("quien_revisa", e.target.value)} aria-invalid={Boolean(errors.quien_revisa)} aria-describedby={errors.quien_revisa ? "error-quien_revisa" : undefined} /><datalist id="revision-reviewers">{reviewers.map((name) => <option key={name} value={name} />)}</datalist><FieldError name="quien_revisa" errors={errors} /></div>}
+      {values.casita && !completando && <label className="revision-later-toggle" data-checked={completarDespues || undefined}>
+        <input name="completar-despues" type="checkbox" checked={completarDespues} onChange={(event) => toggleCompletarDespues(event.target.checked)} />
+        <span className="revision-later-copy">
+          <strong>Completar después</strong>
+          <small>Guarda solo la casita y tu nombre. Otra persona completa el formulario.</small>
+        </span>
+        <span className="revision-later-switch" aria-hidden="true" />
+      </label>}
+    </FormCard>
+  );
+
+  const cajaFuerteCard = (conTitulo = false) => (
+    <FormCard icon={conTitulo ? <Lock size={18} /> : undefined} title={conTitulo ? "Caja fuerte" : undefined} locked={conTitulo && cajaBloqueada} lockHint="Primero añade las fotos de evidencia.">
+      <ChoiceField name="caja_fuerte" label="Caja fuerte" options={CAJA_FUERTE_FILTERS} value={values.caja_fuerte} onChange={change} errors={errors}
+        disabledOptions={recognition ? CAJA_FUERTE_NO_EVIDENCE : undefined}
+        hint={cajaBloqueada ? undefined : recognition ? "Si y No no llevan fotos (usa Ingreso manual). Check out y Guardar Upsell usan solo 1." : sugerida && values.caja_fuerte === sugerida ? "Sugerido según el último registro" : undefined} />
+      {recognition && avisoFotos && <p className="inline-notice revision-field-notice" role="status"><span>{avisoFotos}</span></p>}
+      <ChoiceField name="puertas_ventanas" label="Puertas y ventanas" options={PUERTAS_VENTANAS} value={values.puertas_ventanas} onChange={change} errors={errors} plain />
+      {values.caja_fuerte === "Room Move" && <div className="revision-text-field"><label htmlFor="revision-room_move">Movimiento entre casitas<small>Ej. De casita 12 a casita 24</small></label><input id="revision-room_move" name="room_move" placeholder="Ej. De casita 12 a casita 24" maxLength={120} value={values.room_move} onChange={(e) => change("room_move", e.target.value)} aria-invalid={Boolean(errors.room_move)} aria-describedby={errors.room_move ? "error-room_move" : undefined} /><FieldError name="room_move" errors={errors} /></div>}
+    </FormCard>
+  );
+
+  const notasCard = (
+    <FormCard icon={<ClipboardCheck size={18} />} title="Notas de revisión" locked={notasBloqueadas} lockHint="Primero añade las fotos de evidencia.">
+      <div className="revision-text-field"><label htmlFor="revision-notas">Observaciones<small>Opcional. ¿Hay algún daño, faltante o detalle por atender?</small></label><textarea id="revision-notas" name="notas" rows={4} maxLength={2000} placeholder="¿Hay algún daño, faltante o detalle por atender?" value={values.notas} onChange={(e) => change("notas", e.target.value)} aria-invalid={Boolean(errors.notas)} aria-describedby={errors.notas ? "error-notas" : undefined} /><FieldError name="notas" errors={errors} /></div>
+    </FormCard>
+  );
+
   return (
     <section className="revision-form-screen" hidden={!open} aria-label={recognition ? "Nueva revisión por reconocimiento" : "Nueva revisión"} inert={!open ? true : undefined}>
       <form className="revision-form" noValidate onSubmit={(event) => { event.preventDefault(); submit(); }}>
@@ -408,10 +502,10 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
             <div className="revision-form-welcome-copy">
               {recognition && <p className="revision-form-kicker">POR RECONOCIMIENTO</p>}
               {completando && <p className="revision-form-completing">Completando la revisión que marcó {completando.marcadaPor}</p>}
-              <p className="revision-form-welcome-title">{values.casita ? `Casita ${Number(values.casita)}` : "Selecciona una casita"}</p>
+              <p className="revision-form-welcome-title">{values.casita ? `Casita ${Number(values.casita)}` : recognition ? "Nueva revisión" : "Selecciona una casita"}</p>
               {revisor && <p className="revision-form-reviewer">
                 <span>Revisa: {revisor}</span>
-                {!mostrarRevisor && <><span aria-hidden="true">·</span><button type="button" disabled={busy} onClick={cambiarRevisor} aria-label={`Cambiar quién revisa, ahora ${revisor}`}>Cambiar</button></>}
+                {!mostrarRevisor && !datosBloqueados && <><span aria-hidden="true">·</span><button type="button" disabled={busy} onClick={cambiarRevisor} aria-label={`Cambiar quién revisa, ahora ${revisor}`}>Cambiar</button></>}
               </p>}
             </div>
             <span className="revision-form-welcome-icon" aria-hidden="true"><House size={32} strokeWidth={1.25} /><Check size={14} /></span>
@@ -421,34 +515,20 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
             <span>{storage === "error" ? "No pudimos guardar el progreso en este dispositivo. Mantén la app abierta." : !online ? "Sin conexión. Puedes guardar; la revisión se enviará al volver la conexión." : !conProgreso ? "Tu progreso se guardará mientras completas el formulario." : storage === "saving" ? "Guardando tu progreso…" : storage === "saved" ? "Progreso guardado" : "Tu progreso se guarda mientras estás en el formulario."}</span>
           </div>
           <fieldset className="revision-form-fields" disabled={busy}>
-              <FormCard icon={<House size={18} />} title="Datos de la revisión">
-                <div className="revision-text-field"><label htmlFor="revision-casita">Número de casita</label><select id="revision-casita" name="casita" disabled={Boolean(completando)} value={values.casita ? String(Number(values.casita)) : ""} onChange={(e) => change("casita", e.target.value)} aria-invalid={Boolean(errors.casita)} aria-describedby={errors.casita ? "error-casita" : undefined}><option value="" disabled>Selecciona una casita</option>{Array.from({ length: 50 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select><FieldError name="casita" errors={errors} /></div>
-                {mostrarRevisor && <div className="revision-text-field"><label htmlFor="revision-quien_revisa">¿Quién revisa?</label><input id="revision-quien_revisa" name="quien_revisa" list="revision-reviewers" autoComplete="name" maxLength={100} value={values.quien_revisa} onChange={(e) => change("quien_revisa", e.target.value)} aria-invalid={Boolean(errors.quien_revisa)} aria-describedby={errors.quien_revisa ? "error-quien_revisa" : undefined} /><datalist id="revision-reviewers">{reviewers.map((name) => <option key={name} value={name} />)}</datalist><FieldError name="quien_revisa" errors={errors} /></div>}
-                {values.casita && !completando && <label className="revision-later-toggle" data-checked={completarDespues || undefined}>
-                  <input name="completar-despues" type="checkbox" checked={completarDespues} onChange={(event) => toggleCompletarDespues(event.target.checked)} />
-                  <span className="revision-later-copy">
-                    <strong>Completar después</strong>
-                    <small>Guarda solo la casita y tu nombre. Otra persona completa el formulario.</small>
-                  </span>
-                  <span className="revision-later-switch" aria-hidden="true" />
-                </label>}
+            {!recognition && datosRevisionCard}
+            {!completarDespues && recognition && <>
+              <FormCard icon={<ScanSearch size={18} />} title="Fotos de evidencia">
+                <RecognitionScanCard photos={photos} previas={previas} limit={photoLimit} scan={scan} status={photoStatus} marks={scanMarks} progreso={revelado.progreso}
+                  error={scanNotice} disabled={busy} active={open} onPick={(files) => void addScanPhotos(files)} onRemove={removePhoto}
+                  onRetry={falloEscaneo ? escaneo.reintentar : undefined} listoHint={listoHint}>
+                  <FieldError name="evidencias" errors={errors} />
+                </RecognitionScanCard>
               </FormCard>
-              {!completarDespues && <>
-              <FormCard>
-                <ChoiceField name="caja_fuerte" label="Caja fuerte" options={CAJA_FUERTE_FILTERS} value={values.caja_fuerte} onChange={change} errors={errors}
-                  disabledOptions={recognition ? CAJA_FUERTE_NO_EVIDENCE : undefined}
-                  hint={sugerida && values.caja_fuerte === sugerida ? "Sugerido según el último registro" : recognition ? "Si y No no llevan fotos. Para esas opciones usa Ingreso manual." : undefined} />
-                <ChoiceField name="puertas_ventanas" label="Puertas y ventanas" options={PUERTAS_VENTANAS} value={values.puertas_ventanas} onChange={change} errors={errors} plain />
-                {values.caja_fuerte === "Room Move" && <div className="revision-text-field"><label htmlFor="revision-room_move">Movimiento entre casitas<small>Ej. De casita 12 a casita 24</small></label><input id="revision-room_move" name="room_move" placeholder="Ej. De casita 12 a casita 24" maxLength={120} value={values.room_move} onChange={(e) => change("room_move", e.target.value)} aria-invalid={Boolean(errors.room_move)} aria-describedby={errors.room_move ? "error-room_move" : undefined} /><FieldError name="room_move" errors={errors} /></div>}
-              </FormCard>
+              {cajaFuerteCard(true)}
+            </>}
+            {recognition && datosRevisionCard}
+            {!completarDespues && <>
               {recognition ? <>
-                {values.casita && <FormCard icon={<ScanSearch size={18} />} title="Reconocimiento de artículos">
-                  <RecognitionScanCard photos={photos} previas={previas} limit={photoLimit} scan={scan} status={photoStatus} marks={scanMarks} progreso={revelado.progreso}
-                    error={scanNotice} disabled={busy} active={open} onPick={(files) => void addScanPhotos(files)} onRemove={removePhoto}
-                    onRetry={falloEscaneo ? escaneo.reintentar : undefined}>
-                    <FieldError name="evidencias" errors={errors} />
-                  </RecognitionScanCard>
-                </FormCard>}
                 {mostrarResultados && <div className="revision-recognition-results">
                   <FormCard icon={<ListChecks size={18} />} title="Artículos encontrados">
                     <RecognitionResults values={values} scan={mostrarResultados} inventario={casitaInventario} inventarioStatus={inventario.status}
@@ -458,22 +538,23 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
                   </FormCard>
                 </div>}
                 {mostrarResultados && (values.camas_ordenadas === "Si" || values.camas_ordenadas === "No") && <FormCard icon={<BedDouble size={18} />} title="Habitación">{quantity(CAMAS_FIELD)}</FormCard>}
-              </> : FORM_INVENTORY_GROUPS.map((fields) => <FormCard key={fields[0].key}>{fields.map((field) => quantity(field))}</FormCard>)}
-              {!recognition && photoLimit > 0 && <FormCard icon={<Camera size={18} />} title="Añade imágenes de evidencias">
-                <div data-revision-evidencias="" tabIndex={-1}>
-                  {photos.length === 0 && <div className="revision-evidence-empty"><ImagePlus size={26} strokeWidth={1.5} aria-hidden="true" /></div>}
-                  {photos.length > 0 && <div className="revision-photo-grid">{photos.map((photo, index) => <RevisionPhotoPreview key={photo.id} photo={photo} index={index} disabled={busy} active={open} onRemove={() => removePhoto(photo.id)} />)}</div>}
-                  <input name="evidencias-galeria" ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple={photoLimit - photos.length > 1} hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
-                  <input name="evidencias-camara" ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
-                  {canAddNextEvidence && <div className="revision-photo-actions"><button className="secondary-button" type="button" onClick={() => cameraRef.current?.click()}><Camera size={17} />Tomar foto</button><button className="secondary-button" type="button" onClick={() => libraryRef.current?.click()}><ImagePlus size={17} />Elegir fotos</button></div>}
-                  {preparing && <p role="status">Preparando fotos…</p>}
-                  <FieldError name="evidencias" errors={errors} />
-                </div>
-              </FormCard>}
-              <FormCard icon={<ClipboardCheck size={18} />} title="Notas de revisión">
-                <div className="revision-text-field"><label htmlFor="revision-notas">Observaciones<small>Opcional. ¿Hay algún daño, faltante o detalle por atender?</small></label><textarea id="revision-notas" name="notas" rows={4} maxLength={2000} placeholder="¿Hay algún daño, faltante o detalle por atender?" value={values.notas} onChange={(e) => change("notas", e.target.value)} aria-invalid={Boolean(errors.notas)} aria-describedby={errors.notas ? "error-notas" : undefined} /><FieldError name="notas" errors={errors} /></div>
-              </FormCard>
+              </> : <>
+                {cajaFuerteCard()}
+                {FORM_INVENTORY_GROUPS.map((fields) => <FormCard key={fields[0].key}>{fields.map((field) => quantity(field))}</FormCard>)}
+                {photoLimit > 0 && <FormCard icon={<Camera size={18} />} title="Añade imágenes de evidencias">
+                  <div data-revision-evidencias="" tabIndex={-1}>
+                    {photos.length === 0 && <div className="revision-evidence-empty"><ImagePlus size={26} strokeWidth={1.5} aria-hidden="true" /></div>}
+                    {photos.length > 0 && <div className="revision-photo-grid">{photos.map((photo, index) => <RevisionPhotoPreview key={photo.id} photo={photo} index={index} disabled={busy} active={open} onRemove={() => removePhoto(photo.id)} />)}</div>}
+                    <input name="evidencias-galeria" ref={libraryRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple={photoLimit - photos.length > 1} hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
+                    <input name="evidencias-camara" ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
+                    {canAddNextEvidence && <div className="revision-photo-actions"><button className="secondary-button" type="button" onClick={() => cameraRef.current?.click()}><Camera size={17} />Tomar foto</button><button className="secondary-button" type="button" onClick={() => libraryRef.current?.click()}><ImagePlus size={17} />Elegir fotos</button></div>}
+                    {preparing && <p role="status">Preparando fotos…</p>}
+                    <FieldError name="evidencias" errors={errors} />
+                  </div>
+                </FormCard>}
               </>}
+              {notasCard}
+            </>}
           </fieldset>
           {message && <div className="inline-notice notice-error revision-submit-error" role="alert" tabIndex={-1}>{message}</div>}
           {Object.values(errors).some(Boolean) && <p className="sr-only" role="alert">Revisa los campos marcados antes de continuar.</p>}
