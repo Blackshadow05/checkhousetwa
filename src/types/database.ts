@@ -218,6 +218,11 @@ export type Database = {
         };
         Relationships: [];
       };
+      operaciones_memo: Table<{
+        casita: string | null;
+        llegada_fecha: string | null;
+        salida_fecha: string | null;
+      }>;
       menus: {
         Row: {
           id: string;

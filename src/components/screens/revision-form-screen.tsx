@@ -22,6 +22,8 @@ import { useReveladoEscaneo } from "@/hooks/use-revelado-escaneo";
 import { articulosEnFoto, conEscaneo } from "@/lib/revision-scan";
 import { createUuid } from "@/lib/uuid";
 import { cajaFuerteSugerida } from "@/lib/caja-fuerte-sugerida";
+import { cajaFuertePorMemo } from "@/lib/operaciones-memo";
+import { useOperacionesMemo } from "@/hooks/use-operaciones-memo";
 
 function FieldError({ name, errors }: { name: keyof RevisionFormErrors; errors: RevisionFormErrors }) {
   return errors[name] ? <p className="revision-field-error" id={`error-${name}`}>{errors[name]}</p> : null;
@@ -146,6 +148,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const recognition = draft?.mode === "reconocimiento";
+  const { rows: operacionesMemo } = useOperacionesMemo(open);
   const inventario = useInventarioCasitas(open && recognition);
   const escaneo = useEscaneoArticulos(open && recognition, draft, update);
   const fotosEscaneo = recognition && draft ? draft.photos : SIN_FOTOS;
@@ -157,6 +160,9 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const [avisoEspera, setAvisoEspera] = useState(false);
   const [editarRevisor, setEditarRevisor] = useState(false);
   const [sugerida, setSugerida] = useState("");
+  const sugeridaRef = useRef("");
+  const cajaTocada = useRef(false);
+  const esperandoMemo = useRef(false);
   const [shownDraftId, setShownDraftId] = useState(draft?.id);
   if (shownDraftId !== draft?.id) {
     setShownDraftId(draft?.id);
@@ -167,6 +173,9 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     setAvisoEspera(false);
     setEditarRevisor(false);
     setSugerida("");
+    sugeridaRef.current = "";
+    cajaTocada.current = false;
+    esperandoMemo.current = false;
     setResultadosVistos(false);
   }
 
@@ -199,6 +208,81 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   useEffect(() => {
     if (open) scrollRef.current?.scrollTo(0, 0);
   }, [draft?.id, open]);
+
+  const escribirCaja = (valor: string) => {
+    const current = draftRef.current;
+    if (!current || current.values.caja_fuerte === valor) return;
+    const limite = revisionPhotoLimit(current.mode, valor);
+    const quitadas = current.mode === "reconocimiento" ? Math.max(0, current.photos.length - limite) : 0;
+    update((previous) => {
+      const limit = revisionPhotoLimit(previous.mode, valor);
+      for (const photo of previous.photos.slice(limit)) void discardUpload(photo.id);
+      const next = conEscaneo({
+        ...previous,
+        photos: previous.photos.slice(0, limit),
+        values: { ...previous.values, caja_fuerte: valor, room_move: valor === "Room Move" ? previous.values.room_move : "" },
+      });
+      draftRef.current = next;
+      return next;
+    });
+    setErrors((previous) => ({ ...previous, caja_fuerte: undefined, evidencias: undefined, room_move: undefined }));
+    setMessage("");
+    if (current.mode === "reconocimiento") {
+      setScanError("");
+      setAvisoFotos(quitadas > 0
+        ? limite === 0
+          ? "Esta opción no usa fotos; se quitaron las que habías agregado."
+          : limite === 1
+            ? "Esta opción usa solo 1 foto; se quitaron las demás."
+            : `Esta opción usa hasta ${limite} fotos; se quitaron ${quitadas}.`
+        : "");
+    }
+  };
+
+  const recordarSugerencia = (valor: string, porMemo: boolean) => {
+    sugeridaRef.current = valor;
+    setSugerida(porMemo ? "" : valor);
+  };
+
+  const aplicarCajaDeCasita = (casita: string, cajaActual: string, alElegir: boolean) => {
+    if (!operacionesMemo) {
+      if (alElegir) esperandoMemo.current = true;
+      return;
+    }
+    const porMemo = cajaFuertePorMemo(operacionesMemo, casita);
+    esperandoMemo.current = false;
+    if (porMemo) {
+      if (porMemo !== cajaActual) escribirCaja(porMemo);
+      recordarSugerencia(porMemo, true);
+      return;
+    }
+    if (!alElegir) return;
+    if (recognition || (cajaActual && cajaActual !== sugeridaRef.current)) {
+      recordarSugerencia("", false);
+      return;
+    }
+    const next = cajaFuerteSugerida(revisiones, casita);
+    if (next !== cajaActual) escribirCaja(next);
+    recordarSugerencia(next, false);
+  };
+
+  useEffect(() => {
+    if (!open || operacionesMemo === null || cajaTocada.current) return;
+    const current = draftRef.current;
+    const casita = current?.values.casita ?? "";
+    if (!casita) return;
+    const caja = current?.values.caja_fuerte ?? "";
+    if (!esperandoMemo.current && caja) return;
+    const porMemo = cajaFuertePorMemo(operacionesMemo, casita);
+    if (porMemo) {
+      esperandoMemo.current = false;
+      if (caja !== porMemo) escribirCaja(porMemo);
+      recordarSugerencia(porMemo, true);
+      return;
+    }
+    if (!esperandoMemo.current) return;
+    aplicarCajaDeCasita(casita, caja, true);
+  }, [open, operacionesMemo, draft?.values.casita, draft?.values.caja_fuerte, recognition, revisiones, update]);
 
   if (!draft) return open ? <div className="revision-form-screen"><p className="revision-form-loading" role="status">Preparando tu revisión…</p></div> : null;
   const { values, photos } = draft;
@@ -266,14 +350,19 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     const nuevoLimite = revisionPhotoLimit(draft.mode, value);
     const quitadas = name === "caja_fuerte" && recognition ? Math.max(0, photos.length - nuevoLimite) : 0;
     update((previous) => {
-      if (name !== "caja_fuerte") return { ...previous, values: { ...previous.values, [name]: value } };
-      const limit = revisionPhotoLimit(previous.mode, value);
-      for (const photo of previous.photos.slice(limit)) void discardUpload(photo.id);
-      return conEscaneo({
-        ...previous,
-        photos: previous.photos.slice(0, limit),
-        values: { ...previous.values, caja_fuerte: value, room_move: value === "Room Move" ? previous.values.room_move : "" },
-      });
+      const next = name !== "caja_fuerte"
+        ? { ...previous, values: { ...previous.values, [name]: value } }
+        : (() => {
+          const limit = revisionPhotoLimit(previous.mode, value);
+          for (const photo of previous.photos.slice(limit)) void discardUpload(photo.id);
+          return conEscaneo({
+            ...previous,
+            photos: previous.photos.slice(0, limit),
+            values: { ...previous.values, caja_fuerte: value, room_move: value === "Room Move" ? previous.values.room_move : "" },
+          });
+        })();
+      draftRef.current = next;
+      return next;
     });
     setErrors((previous) => ({ ...previous, [name]: undefined, evidencias: name === "caja_fuerte" ? undefined : previous.evidencias, room_move: name === "caja_fuerte" ? undefined : previous.room_move }));
     setMessage("");
@@ -292,11 +381,15 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     if (recognition && !hayFotosEvidencia) return;
     if (recognition && name === "casita" && !values.caja_fuerte) return;
     applyChange(name, value);
-    if (name === "caja_fuerte") setSugerida("");
-    if (name !== "casita" || recognition || (values.caja_fuerte && values.caja_fuerte !== sugerida)) return;
-    const next = cajaFuerteSugerida(revisiones, value);
-    if (next !== values.caja_fuerte) applyChange("caja_fuerte", next);
-    setSugerida(next);
+    if (name === "caja_fuerte") {
+      cajaTocada.current = true;
+      esperandoMemo.current = false;
+      recordarSugerencia("", false);
+      return;
+    }
+    if (name !== "casita") return;
+    cajaTocada.current = false;
+    aplicarCajaDeCasita(value, values.caja_fuerte, true);
   };
   const focusError = (nextErrors: RevisionFormErrors) => {
     const first = (recognition ? RECOGNITION_ERROR_ORDER.find((key) => nextErrors[key]) : undefined) ?? Object.keys(nextErrors)[0];

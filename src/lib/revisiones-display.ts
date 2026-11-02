@@ -75,6 +75,7 @@ export function statusAppearance(value: string) {
 
 export const HOY_BOARD_GROUPS = [
   { id: "check_in", label: "Check in", tone: "sage" },
+  { id: "pendiente_guardar", label: "Pendiente de Guardar", tone: "amber" },
   { id: "upsell", label: "Upsell", tone: "blue" },
   { id: "back_to_back", label: "Back to back", tone: "amber" },
   { id: "room_move", label: "Room Move", tone: "plum" },
@@ -150,23 +151,107 @@ export function currentUpsellsFromRows(rows: InicioRevisionRow[]) {
   );
 }
 
+export type HoyBoardChip = { row: InicioRevisionRow; tone: string };
+
+function ultimaPorCasita(rows: readonly InicioRevisionRow[], upsells: readonly InicioRevisionRow[]) {
+  const ultima = new Map<string, InicioRevisionRow>();
+  const tomar = (row: InicioRevisionRow) => {
+    if (row.pendiente) return;
+    const number = casitaNumber(row.casita);
+    if (!number) return;
+    const actual = ultima.get(number);
+    if (!actual || row.created_at > actual.created_at) ultima.set(number, row);
+  };
+  for (const row of rows) tomar(row);
+  for (const row of upsells) tomar(row);
+  return ultima;
+}
+
+function chips(rows: InicioRevisionRow[], tone: string): HoyBoardChip[] {
+  return sortByCasita(rows).map((row) => ({ row, tone }));
+}
+
+function ordenarChips(items: HoyBoardChip[]) {
+  return [...items].sort((left, right) => {
+    const a = Number.parseInt(casitaNumber(left.row.casita), 10);
+    const b = Number.parseInt(casitaNumber(right.row.casita), 10);
+    if (Number.isNaN(a) || Number.isNaN(b)) return casitaNumber(left.row.casita).localeCompare(casitaNumber(right.row.casita), "es", { numeric: true });
+    return a - b;
+  });
+}
+
 export function groupHoyCasitas(
   rows: InicioRevisionRow[],
   today: string,
   upsells: InicioRevisionRow[] = [],
+  llegadas: ReadonlySet<string> | null = null,
 ) {
   const latestToday = latestTodayByCasita(rows, today);
   const latestUpsells = latestUpsellsByCasita(upsells);
+  const checkInHoy = new Set(
+    [...latestToday.values()]
+      .filter((row) => hoyBoardGroup(row.caja_fuerte) === "check_in")
+      .map((row) => casitaNumber(row.casita)),
+  );
 
+  let checkIn: HoyBoardChip[];
+  let pendiente: HoyBoardChip[];
+  let upsellRows: InicioRevisionRow[];
+
+  if (llegadas) {
+    const colocadas = new Set<string>();
+    const checkInChips: HoyBoardChip[] = [];
+    const pendienteRows: InicioRevisionRow[] = [];
+    const vigentes: InicioRevisionRow[] = [];
+    for (const [number, row] of ultimaPorCasita(rows, upsells)) {
+      const estado = hoyBoardGroup(row.caja_fuerte);
+      if (estado === "upsell" && checkInHoy.has(number)) {
+        checkInChips.push({ row, tone: "blue" });
+        colocadas.add(number);
+      } else if (estado === "upsell") {
+        vigentes.push(row);
+      } else if (estado === "check_in" && llegadas.has(number)) {
+        checkInChips.push({ row, tone: "sage" });
+        colocadas.add(number);
+      } else if (estado === "check_in") {
+        pendienteRows.push(row);
+        colocadas.add(number);
+      }
+    }
+    checkIn = ordenarChips(checkInChips);
+    pendiente = chips(pendienteRows, "amber");
+    upsellRows = vigentes;
+    const otros = (id: HoyBoardGroupId) => sortByCasita(
+      [...latestToday.values()].filter((row) => hoyBoardGroup(row.caja_fuerte) === id && !colocadas.has(casitaNumber(row.casita))),
+    );
+    return [
+      { id: "check_in" as const, label: "Check in", tone: "sage", rows: checkIn },
+      { id: "pendiente_guardar" as const, label: "Pendiente de Guardar", tone: "amber", rows: pendiente },
+      { id: "upsell" as const, label: "Upsell", tone: "blue", rows: chips(upsellRows, "blue") },
+      { id: "back_to_back" as const, label: "Back to back", tone: "amber", rows: chips(otros("back_to_back"), "amber") },
+      { id: "room_move" as const, label: "Room Move", tone: "plum", rows: chips(otros("room_move"), "plum") },
+      { id: "check_out" as const, label: "Check out", tone: "rose", rows: chips(otros("check_out"), "rose") },
+    ].filter((group) => group.rows.length > 0);
+  }
+
+  checkIn = chips(
+    [...latestToday.values()].filter((row) => hoyBoardGroup(row.caja_fuerte) === "check_in"),
+    "sage",
+  );
+  pendiente = [];
+  upsellRows = [...latestUpsells.values()];
   return HOY_BOARD_GROUPS.map((group) => ({
     ...group,
-    rows: sortByCasita(
-      group.id === "upsell"
-        ? [...latestUpsells.values()]
-        : [...latestToday.values()].filter(
-            (row) => hoyBoardGroup(row.caja_fuerte) === group.id,
+    rows: group.id === "check_in"
+      ? checkIn
+      : group.id === "pendiente_guardar"
+        ? pendiente
+        : group.id === "upsell"
+          ? chips(upsellRows, "blue")
+          : chips(
+            [...latestToday.values()].filter((row) => hoyBoardGroup(row.caja_fuerte) === group.id),
+            group.tone,
           ),
-    ),
   })).filter((group) => group.rows.length > 0);
 }
 

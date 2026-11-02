@@ -21,6 +21,8 @@ import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { casitasSinRevision } from "@/lib/casitas-sin-revision";
 import { menuDateHeading } from "@/lib/menus";
+import { useOperacionesMemo } from "@/hooks/use-operaciones-memo";
+import { casitasConLlegada } from "@/lib/operaciones-memo";
 import { casitaNumber, groupHoyCasitas, initials } from "@/lib/revisiones-display";
 import { useOnline } from "@/lib/use-online";
 import { usePullToRefresh } from "@/lib/use-pull-to-refresh";
@@ -158,9 +160,10 @@ export function InicioScreen({
   const screenRef = useRef<HTMLElement>(null);
   const pullRef = useRef<HTMLDivElement>(null);
   const greeting = useSyncExternalStore(subscribeClock, greetingNow, greetingNow);
+  const memo = useOperacionesMemo(true);
   const groups = useMemo(
-    () => groupHoyCasitas(revisiones, today, upsells),
-    [revisiones, today, upsells],
+    () => groupHoyCasitas(revisiones, today, upsells, memo.confirmado && memo.rows ? casitasConLlegada(memo.rows, today) : null),
+    [revisiones, today, upsells, memo.confirmado, memo.rows],
   );
   const totalHoy = groups.reduce((sum, group) => sum + group.rows.length, 0);
   const pendientes = casitasSinRevision(revisionActivity, today, days);

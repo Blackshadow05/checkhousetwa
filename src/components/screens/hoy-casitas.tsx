@@ -37,16 +37,17 @@ export function HoyCasitas({
               <span>{group.rows.length}</span>
             </div>
             <div className={styles.chips}>
-              {group.rows.map((row) => {
-                const number = casitaNumber(row.casita);
+              {group.rows.map((chip) => {
+                const number = casitaNumber(chip.row.casita);
+                const estado = group.id === "check_in" && chip.tone === "blue" ? "Upsell" : group.label;
                 return (
                   <button
-                    key={row.id || number}
+                    key={chip.row.id || number}
                     type="button"
-                    className={`hoy-chip tone-${group.tone}`}
-                    data-revision-card={row.id || undefined}
-                    onClick={() => openRevision(row)}
-                    aria-label={`Casita ${number}, ${group.label}. Ver detalle`}
+                    className={`hoy-chip tone-${chip.tone}`}
+                    data-revision-card={chip.row.id || undefined}
+                    onClick={() => openRevision(chip.row)}
+                    aria-label={`Casita ${number}, ${estado}. Ver detalle`}
                   >
                     {number}
                   </button>
