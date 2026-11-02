@@ -205,7 +205,7 @@ export function groupHoyCasitas(
     const vigentes: InicioRevisionRow[] = [];
     for (const [number, row] of ultimaPorCasita(rows, upsells)) {
       const estado = hoyBoardGroup(row.caja_fuerte);
-      if (estado === "upsell" && checkInHoy.has(number)) {
+      if (estado === "upsell" && (checkInHoy.has(number) || llegadas.has(number))) {
         checkInChips.push({ row, tone: "blue" });
         colocadas.add(number);
       } else if (estado === "upsell") {
