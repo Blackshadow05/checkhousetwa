@@ -317,11 +317,28 @@
   background: var(--rose-text);
 }
 
-.groupHeading h3 {
+.groupDot[data-tone="teal"] {
+  background: var(--teal-text);
+}
+
+.groupHeading h3,
+.groupHeading h4 {
   flex: 1;
   min-width: 0;
   font-size: 0.875rem;
   font-weight: 650;
+}
+
+.subGroup {
+  margin-top: 14px;
+}
+
+.groupHeading + .subGroup {
+  margin-top: 0;
+}
+
+.subGroup .groupHeading h4 {
+  font-size: 0.8125rem;
 }
 
 .groupHeading > span:last-child {

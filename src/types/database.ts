@@ -222,6 +222,8 @@ export type Database = {
         casita: string | null;
         llegada_fecha: string | null;
         salida_fecha: string | null;
+        tipo: string | null;
+        fecha_memo: string | null;
       }>;
       menus: {
         Row: {

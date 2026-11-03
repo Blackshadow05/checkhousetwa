@@ -296,6 +296,8 @@
   --rose-text: #9a5145;
   --plum-bg: #eee8f4;
   --plum-text: #5b4878;
+  --teal-bg: #e5f5f2;
+  --teal-text: #0f6e66;
 }
 
 html,
@@ -652,6 +654,10 @@ svg {
 .hoy-chip.tone-blue {
   background: #e7f1fb;
   color: #1565c0;
+}
+.hoy-chip.tone-teal {
+  background: var(--teal-bg);
+  color: var(--teal-text);
 }
 .menu-day-card {
   display: block;
@@ -2908,6 +2914,8 @@ button.detail-tile:active {
   --rose-text: #e9b7ac;
   --plum-bg: #3a3148;
   --plum-text: #d2c4e8;
+  --teal-bg: #1a3c38;
+  --teal-text: #9ad7ce;
 }
 :root[data-theme="dark"] .hoy-chip.tone-sage {
   background: #2a4630;

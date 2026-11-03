@@ -94,6 +94,24 @@ export function hoyBoardGroup(value: string): HoyBoardGroupId | null {
   return null;
 }
 
+const PENDIENTE_CAJA_EXCLUIDA = new Set([
+  "check out",
+  "guardar upsell",
+  "si",
+  "no",
+]);
+
+export function esEstadoPendienteDeGuardar(value: string) {
+  const normalized = normalizeText(value);
+  if (PENDIENTE_CAJA_EXCLUIDA.has(normalized)) return false;
+  if (normalized === "check in" || normalized === "check inn") return true;
+  if (normalized === "check out") return true;
+  if (isUpsellStatus(value)) return true;
+  if (normalized === "back to back") return true;
+  if (normalized === "show room") return true;
+  return false;
+}
+
 export function casitaNumber(value: string) {
   const match = value.match(/\d+/);
   return match?.[0] ?? value.trim();
@@ -151,7 +169,19 @@ export function currentUpsellsFromRows(rows: InicioRevisionRow[]) {
   );
 }
 
-export type HoyBoardChip = { row: InicioRevisionRow; tone: string };
+export type HoyBoardChip = {
+  row: InicioRevisionRow | null;
+  casita: string;
+  tone: string;
+};
+
+export type HoyBoardGroup = {
+  id: string;
+  label: string;
+  tone: string;
+  rows: HoyBoardChip[];
+  sections?: HoyBoardGroup[];
+};
 
 function ultimaPorCasita(rows: readonly InicioRevisionRow[], upsells: readonly InicioRevisionRow[]) {
   const ultima = new Map<string, InicioRevisionRow>();
@@ -168,16 +198,25 @@ function ultimaPorCasita(rows: readonly InicioRevisionRow[], upsells: readonly I
 }
 
 function chips(rows: InicioRevisionRow[], tone: string): HoyBoardChip[] {
-  return sortByCasita(rows).map((row) => ({ row, tone }));
+  return sortByCasita(rows).map((row) => ({ row, casita: casitaNumber(row.casita), tone }));
+}
+
+function compararCasita(left: string, right: string) {
+  const a = Number.parseInt(left, 10);
+  const b = Number.parseInt(right, 10);
+  if (Number.isNaN(a) || Number.isNaN(b)) return left.localeCompare(right, "es", { numeric: true });
+  return a - b;
 }
 
 function ordenarChips(items: HoyBoardChip[]) {
-  return [...items].sort((left, right) => {
-    const a = Number.parseInt(casitaNumber(left.row.casita), 10);
-    const b = Number.parseInt(casitaNumber(right.row.casita), 10);
-    if (Number.isNaN(a) || Number.isNaN(b)) return casitaNumber(left.row.casita).localeCompare(casitaNumber(right.row.casita), "es", { numeric: true });
-    return a - b;
-  });
+  return [...items].sort((left, right) => compararCasita(left.casita, right.casita));
+}
+
+export function contarCasitasHoy(groups: readonly HoyBoardGroup[]) {
+  return groups.reduce(
+    (sum, group) => sum + group.rows.length + (group.sections?.reduce((inner, section) => inner + section.rows.length, 0) ?? 0),
+    0,
+  );
 }
 
 export function groupHoyCasitas(
@@ -185,74 +224,141 @@ export function groupHoyCasitas(
   today: string,
   upsells: InicioRevisionRow[] = [],
   llegadas: ReadonlySet<string> | null = null,
-) {
+  enCasa: ReadonlySet<string> | null = null,
+  inHouseDelDia: ReadonlySet<string> | null = null,
+): HoyBoardGroup[] {
   const latestToday = latestTodayByCasita(rows, today);
-  const latestUpsells = latestUpsellsByCasita(upsells);
+  const ultimas = ultimaPorCasita(rows, upsells);
+  const conoceCasa = enCasa !== null;
   const checkInHoy = new Set(
     [...latestToday.values()]
       .filter((row) => hoyBoardGroup(row.caja_fuerte) === "check_in")
       .map((row) => casitaNumber(row.casita)),
   );
+  const checkOutHoy = new Set(
+    [...latestToday.values()]
+      .filter((row) => hoyBoardGroup(row.caja_fuerte) === "check_out")
+      .map((row) => casitaNumber(row.casita)),
+  );
 
-  let checkIn: HoyBoardChip[];
-  let pendiente: HoyBoardChip[];
-  let upsellRows: InicioRevisionRow[];
+  const checkInChips: HoyBoardChip[] = [];
+  const pendienteRows: InicioRevisionRow[] = [];
+  const upsellVigentes: InicioRevisionRow[] = [];
+  const ocupadas = new Set<string>();
+
+  const marcarCheckIn = (row: InicioRevisionRow, tone: "sage" | "blue") => {
+    const number = casitaNumber(row.casita);
+    checkInChips.push({ row, casita: number, tone });
+    ocupadas.add(number);
+  };
 
   if (llegadas) {
-    const colocadas = new Set<string>();
-    const checkInChips: HoyBoardChip[] = [];
-    const pendienteRows: InicioRevisionRow[] = [];
-    const vigentes: InicioRevisionRow[] = [];
-    for (const [number, row] of ultimaPorCasita(rows, upsells)) {
-      const estado = hoyBoardGroup(row.caja_fuerte);
-      if (estado === "upsell" && (checkInHoy.has(number) || llegadas.has(number))) {
-        checkInChips.push({ row, tone: "blue" });
-        colocadas.add(number);
-      } else if (estado === "upsell") {
-        vigentes.push(row);
-      } else if (estado === "check_in" && llegadas.has(number)) {
-        checkInChips.push({ row, tone: "sage" });
-        colocadas.add(number);
-      } else if (estado === "check_in") {
-        pendienteRows.push(row);
-        colocadas.add(number);
+    for (const row of latestToday.values()) {
+      if (hoyBoardGroup(row.caja_fuerte) !== "check_in") continue;
+      const number = casitaNumber(row.casita);
+      if (llegadas.has(number)) marcarCheckIn(row, "sage");
+    }
+    for (const [number, row] of ultimas) {
+      if (ocupadas.has(number)) continue;
+      if (hoyBoardGroup(row.caja_fuerte) === "upsell" && (checkInHoy.has(number) || llegadas.has(number))) {
+        marcarCheckIn(row, "blue");
       }
     }
-    checkIn = ordenarChips(checkInChips);
-    pendiente = chips(pendienteRows, "amber");
-    upsellRows = vigentes;
-    const otros = (id: HoyBoardGroupId) => sortByCasita(
-      [...latestToday.values()].filter((row) => hoyBoardGroup(row.caja_fuerte) === id && !colocadas.has(casitaNumber(row.casita))),
-    );
-    return [
-      { id: "check_in" as const, label: "Check in", tone: "sage", rows: checkIn },
-      { id: "pendiente_guardar" as const, label: "Pendiente de Guardar", tone: "amber", rows: pendiente },
-      { id: "upsell" as const, label: "Upsell", tone: "blue", rows: chips(upsellRows, "blue") },
-      { id: "back_to_back" as const, label: "Back to back", tone: "amber", rows: chips(otros("back_to_back"), "amber") },
-      { id: "room_move" as const, label: "Room Move", tone: "plum", rows: chips(otros("room_move"), "plum") },
-      { id: "check_out" as const, label: "Check out", tone: "rose", rows: chips(otros("check_out"), "rose") },
-    ].filter((group) => group.rows.length > 0);
+    for (const [number, row] of ultimas) {
+      if (ocupadas.has(number)) continue;
+      if (hoyBoardGroup(row.caja_fuerte) !== "upsell" || checkInHoy.has(number)) continue;
+      if (conoceCasa && enCasa.has(number)) continue;
+      upsellVigentes.push(row);
+      ocupadas.add(number);
+    }
+    if (inHouseDelDia) {
+      for (const [number, row] of ultimas) {
+        if (ocupadas.has(number)) continue;
+        if (inHouseDelDia.has(number)) continue;
+        if (!esEstadoPendienteDeGuardar(row.caja_fuerte)) continue;
+        pendienteRows.push(row);
+        ocupadas.add(number);
+      }
+    } else {
+      for (const [number, row] of ultimas) {
+        if (ocupadas.has(number)) continue;
+        if (hoyBoardGroup(row.caja_fuerte) !== "check_in" || llegadas.has(number)) continue;
+        pendienteRows.push(row);
+        ocupadas.add(number);
+      }
+    }
+  } else {
+    for (const row of latestToday.values()) {
+      if (hoyBoardGroup(row.caja_fuerte) !== "check_in") continue;
+      marcarCheckIn(row, "sage");
+    }
+    for (const row of latestUpsellsByCasita(upsells).values()) {
+      const number = casitaNumber(row.casita);
+      if (ocupadas.has(number) || checkOutHoy.has(number)) continue;
+      if (conoceCasa && enCasa.has(number)) continue;
+      upsellVigentes.push(row);
+      ocupadas.add(number);
+    }
   }
 
-  checkIn = chips(
-    [...latestToday.values()].filter((row) => hoyBoardGroup(row.caja_fuerte) === "check_in"),
-    "sage",
-  );
-  pendiente = [];
-  upsellRows = [...latestUpsells.values()];
-  return HOY_BOARD_GROUPS.map((group) => ({
-    ...group,
-    rows: group.id === "check_in"
-      ? checkIn
-      : group.id === "pendiente_guardar"
-        ? pendiente
-        : group.id === "upsell"
-          ? chips(upsellRows, "blue")
-          : chips(
-            [...latestToday.values()].filter((row) => hoyBoardGroup(row.caja_fuerte) === group.id),
-            group.tone,
-          ),
-  })).filter((group) => group.rows.length > 0);
+  const porHoy = (id: HoyBoardGroupId, tone: string) =>
+    chips(
+      [...latestToday.values()].filter((row) => {
+        const number = casitaNumber(row.casita);
+        return hoyBoardGroup(row.caja_fuerte) === id && !ocupadas.has(number);
+      }),
+      tone,
+    );
+  const back = porHoy("back_to_back", "amber");
+  const room = porHoy("room_move", "plum");
+  const checkout = porHoy("check_out", "rose");
+  for (const chip of [...back, ...room, ...checkout]) ocupadas.add(chip.casita);
+
+  const sueltas: HoyBoardChip[] = [];
+  if (enCasa) {
+    for (const number of [...enCasa].sort(compararCasita)) {
+      if (ocupadas.has(number) || checkOutHoy.has(number)) continue;
+      const row = ultimas.get(number) ?? null;
+      const tone = row && hoyBoardGroup(row.caja_fuerte) === "upsell" ? "blue" : "teal";
+      sueltas.push({ row, casita: number, tone });
+      ocupadas.add(number);
+    }
+  }
+
+  const sections: HoyBoardGroup[] = [];
+  if (pendienteRows.length) {
+    sections.push({
+      id: "pendiente_guardar",
+      label: "Pendiente de Guardar",
+      tone: "amber",
+      rows: chips(pendienteRows, "amber"),
+    });
+  }
+
+  const groups: HoyBoardGroup[] = [];
+  const checkIn = ordenarChips(checkInChips);
+  if (checkIn.length) groups.push({ id: "check_in", label: "Check in", tone: "sage", rows: checkIn });
+  if (sueltas.length || sections.length) {
+    groups.push({
+      id: "ocupacion",
+      label: "En ocupación",
+      tone: "teal",
+      rows: sueltas,
+      ...(sections.length ? { sections } : {}),
+    });
+  }
+  if (upsellVigentes.length) {
+    groups.push({
+      id: "upsell",
+      label: "Upsell",
+      tone: "blue",
+      rows: chips(upsellVigentes, "blue"),
+    });
+  }
+  if (back.length) groups.push({ id: "back_to_back", label: "Back to back", tone: "amber", rows: back });
+  if (room.length) groups.push({ id: "room_move", label: "Room Move", tone: "plum", rows: room });
+  if (checkout.length) groups.push({ id: "check_out", label: "Check out", tone: "rose", rows: checkout });
+  return groups;
 }
 
 // The home query supplies the recorded wall-clock date as YYYY-MM-DD HH:mm.
