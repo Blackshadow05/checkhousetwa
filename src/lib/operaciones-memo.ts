@@ -66,6 +66,17 @@ export function casitasConLlegada(filas: readonly OperacionMemo[], hoy: string):
   return casitas;
 }
 
+// Solo llegadas con fecha de hoy (Today's Arrivals / ingresos del día).
+export function casitasConLlegadaHoy(filas: readonly OperacionMemo[], hoy: string): Set<string> {
+  const casitas = new Set<string>();
+  for (const fila of filasMemoDelDia(filas, hoy)) {
+    if (fila.llegada_fecha !== hoy) continue;
+    const numero = numeroCasita(fila.casita);
+    if (numero) casitas.add(numero);
+  }
+  return casitas;
+}
+
 function numeroCasita(casita: string) {
   const numero = Number(casita.trim());
   if (!Number.isInteger(numero) || numero < 1) return null;
@@ -93,19 +104,33 @@ export function casitasInHouseGuestsDelDia(filas: readonly OperacionMemo[], hoy:
   return casitas;
 }
 
+export type EstadiaEnCasa = { llegada: string; salida: string };
+
 // Huésped en casa hoy: In house Guests del memo del día, ya llegó y sale después de hoy.
 // null cuando el memo guardado no trae tipo: no alcanza para decidir ocupación.
-export function casitasEnCasa(filas: readonly OperacionMemo[], hoy: string): Set<string> | null {
+export function estadiasEnCasa(
+  filas: readonly OperacionMemo[],
+  hoy: string,
+): Map<string, EstadiaEnCasa> | null {
   if (!filas.some((fila) => fila.tipo?.trim())) return null;
-  const casitas = new Set<string>();
+  const estadias = new Map<string, EstadiaEnCasa>();
   for (const fila of filasMemoDelDia(filas, hoy)) {
     if (tipoMemo(fila.tipo) !== "in house guests") continue;
     if (!fila.llegada_fecha || fila.llegada_fecha > hoy) continue;
     if (!fila.salida_fecha || fila.salida_fecha <= hoy) continue;
     const numero = numeroCasita(fila.casita);
-    if (numero) casitas.add(numero);
+    if (!numero) continue;
+    const actual = estadias.get(numero);
+    if (!actual || fila.llegada_fecha > actual.llegada) {
+      estadias.set(numero, { llegada: fila.llegada_fecha, salida: fila.salida_fecha });
+    }
   }
-  return casitas;
+  return estadias;
+}
+
+export function casitasEnCasa(filas: readonly OperacionMemo[], hoy: string): Set<string> | null {
+  const estadias = estadiasEnCasa(filas, hoy);
+  return estadias ? new Set(estadias.keys()) : null;
 }
 
 // La salida de hoy tiene prioridad: una casita no puede quedar en Check in y Check out a la vez.
