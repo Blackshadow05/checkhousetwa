@@ -219,18 +219,43 @@ export function contarCasitasHoy(groups: readonly HoyBoardGroup[]) {
   );
 }
 
+
+function revisionCheckInOUpsellEnEstadia(
+  rows: readonly InicioRevisionRow[],
+  upsells: readonly InicioRevisionRow[],
+  casita: string,
+  llegada: string,
+  salida: string,
+): InicioRevisionRow | null {
+  const candidatas: InicioRevisionRow[] = [];
+  const tomar = (row: InicioRevisionRow) => {
+    if (row.pendiente) return;
+    if (casitaNumber(row.casita) !== casita) return;
+    const dia = revisionDay(row.created_at);
+    if (dia === "sin-fecha" || dia < llegada || dia >= salida) return;
+    const estado = hoyBoardGroup(row.caja_fuerte);
+    if (estado !== "check_in" && estado !== "upsell") return;
+    candidatas.push(row);
+  };
+  for (const row of rows) tomar(row);
+  for (const row of upsells) tomar(row);
+  if (!candidatas.length) return null;
+  return candidatas.reduce((best, row) => (row.created_at > best.created_at ? row : best));
+}
+
 export function groupHoyCasitas(
   rows: InicioRevisionRow[],
   today: string,
   upsells: InicioRevisionRow[] = [],
   llegadas: ReadonlySet<string> | null = null,
-  enCasa: ReadonlySet<string> | null = null,
+  estadias: ReadonlyMap<string, { llegada: string; salida: string }> | null = null,
   inHouseDelDia: ReadonlySet<string> | null = null,
   llegadasHoy: ReadonlySet<string> | null = null,
 ): HoyBoardGroup[] {
   const latestToday = latestTodayByCasita(rows, today);
   const ultimas = ultimaPorCasita(rows, upsells);
-  const conoceCasa = enCasa !== null;
+  const enCasa = estadias ? new Set(estadias.keys()) : null;
+  const conoceCasa = estadias !== null;
   const checkInHoy = new Set(
     [...latestToday.values()]
       .filter((row) => hoyBoardGroup(row.caja_fuerte) === "check_in")
@@ -277,7 +302,7 @@ export function groupHoyCasitas(
     for (const [number, row] of ultimas) {
       if (ocupadas.has(number)) continue;
       if (hoyBoardGroup(row.caja_fuerte) !== "upsell" || checkInHoy.has(number)) continue;
-      if (conoceCasa && enCasa.has(number)) continue;
+      if (conoceCasa && enCasa?.has(number)) continue;
       upsellVigentes.push(row);
       ocupadas.add(number);
     }
@@ -305,7 +330,7 @@ export function groupHoyCasitas(
     for (const row of latestUpsellsByCasita(upsells).values()) {
       const number = casitaNumber(row.casita);
       if (ocupadas.has(number) || checkOutHoy.has(number)) continue;
-      if (conoceCasa && enCasa.has(number)) continue;
+      if (conoceCasa && enCasa?.has(number)) continue;
       upsellVigentes.push(row);
       ocupadas.add(number);
     }
@@ -324,15 +349,23 @@ export function groupHoyCasitas(
   const checkout = porHoy("check_out", "rose");
   for (const chip of [...back, ...room, ...checkout]) ocupadas.add(chip.casita);
 
-  // En ocupación: In house Guests con revisión Check in o Upsell (sin duplicar montajes de hoy).
+  // En ocupación: In house Guests con Check in/Upsell en la estadía actual (desde llegada).
+  // No basta la última revisión si después hubo un Si u otro estado.
   const sueltas: HoyBoardChip[] = [];
-  if (enCasa) {
-    for (const number of [...enCasa].sort(compararCasita)) {
+  if (estadias) {
+    for (const number of [...estadias.keys()].sort(compararCasita)) {
       if (ocupadas.has(number) || checkOutHoy.has(number)) continue;
-      const row = ultimas.get(number);
+      const estadia = estadias.get(number);
+      if (!estadia) continue;
+      const row = revisionCheckInOUpsellEnEstadia(
+        rows,
+        upsells,
+        number,
+        estadia.llegada,
+        estadia.salida,
+      );
       if (!row) continue;
       const estado = hoyBoardGroup(row.caja_fuerte);
-      if (estado !== "check_in" && estado !== "upsell") continue;
       const tone = estado === "upsell" ? "blue" : "sage";
       sueltas.push({ row, casita: number, tone });
       ocupadas.add(number);
