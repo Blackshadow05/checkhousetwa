@@ -226,6 +226,7 @@ export function groupHoyCasitas(
   llegadas: ReadonlySet<string> | null = null,
   enCasa: ReadonlySet<string> | null = null,
   inHouseDelDia: ReadonlySet<string> | null = null,
+  llegadasHoy: ReadonlySet<string> | null = null,
 ): HoyBoardGroup[] {
   const latestToday = latestTodayByCasita(rows, today);
   const ultimas = ultimaPorCasita(rows, upsells);
@@ -242,7 +243,7 @@ export function groupHoyCasitas(
   );
 
   const checkInChips: HoyBoardChip[] = [];
-  const checkInDelDia: HoyBoardChip[] = [];
+  const montajesHoy: HoyBoardChip[] = [];
   const pendienteRows: InicioRevisionRow[] = [];
   const upsellVigentes: InicioRevisionRow[] = [];
   const ocupadas = new Set<string>();
@@ -253,18 +254,19 @@ export function groupHoyCasitas(
     ocupadas.add(number);
   };
 
-  // Check in del día va a En ocupación (no al grupo Check in).
-  const marcarCheckInDelDia = (row: InicioRevisionRow) => {
+  // Montaje Check in de Today's Arrivals → sección propia "Check in de hoy".
+  const marcarMontajeHoy = (row: InicioRevisionRow) => {
     const number = casitaNumber(row.casita);
-    checkInDelDia.push({ row, casita: number, tone: "sage" });
+    montajesHoy.push({ row, casita: number, tone: "sage" });
     ocupadas.add(number);
   };
 
   if (llegadas) {
+    const setIngresos = llegadasHoy ?? llegadas;
     for (const row of latestToday.values()) {
       if (hoyBoardGroup(row.caja_fuerte) !== "check_in") continue;
       const number = casitaNumber(row.casita);
-      if (llegadas.has(number)) marcarCheckInDelDia(row);
+      if (setIngresos.has(number)) marcarMontajeHoy(row);
     }
     for (const [number, row] of ultimas) {
       if (ocupadas.has(number)) continue;
@@ -298,7 +300,7 @@ export function groupHoyCasitas(
   } else {
     for (const row of latestToday.values()) {
       if (hoyBoardGroup(row.caja_fuerte) !== "check_in") continue;
-      marcarCheckInDelDia(row);
+      marcarMontajeHoy(row);
     }
     for (const row of latestUpsellsByCasita(upsells).values()) {
       const number = casitaNumber(row.casita);
@@ -322,9 +324,8 @@ export function groupHoyCasitas(
   const checkout = porHoy("check_out", "rose");
   for (const chip of [...back, ...room, ...checkout]) ocupadas.add(chip.casita);
 
-  // En ocupación: solo con revisión cuya caja fuerte es Check in o Upsell.
-  // Check-ins del día ya vienen filtrados; In house Guests con Si/otro se ocultan.
-  const sueltas: HoyBoardChip[] = [...checkInDelDia];
+  // En ocupación: In house Guests con revisión Check in o Upsell (sin duplicar montajes de hoy).
+  const sueltas: HoyBoardChip[] = [];
   if (enCasa) {
     for (const number of [...enCasa].sort(compararCasita)) {
       if (ocupadas.has(number) || checkOutHoy.has(number)) continue;
@@ -351,6 +352,10 @@ export function groupHoyCasitas(
   const groups: HoyBoardGroup[] = [];
   const checkIn = ordenarChips(checkInChips);
   if (checkIn.length) groups.push({ id: "check_in", label: "Check in", tone: "sage", rows: checkIn });
+  const montajes = ordenarChips(montajesHoy);
+  if (montajes.length) {
+    groups.push({ id: "check_in_hoy", label: "Check in de hoy", tone: "sage", rows: montajes });
+  }
   if (sueltas.length || sections.length) {
     groups.push({
       id: "ocupacion",
