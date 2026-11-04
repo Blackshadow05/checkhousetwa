@@ -77,6 +77,17 @@ export function casitasConLlegadaHoy(filas: readonly OperacionMemo[], hoy: strin
   return casitas;
 }
 
+// Salidas del día (Today's Departure / salida_fecha = hoy).
+export function casitasConSalidaHoy(filas: readonly OperacionMemo[], hoy: string): Set<string> {
+  const casitas = new Set<string>();
+  for (const fila of filasMemoDelDia(filas, hoy)) {
+    if (fila.salida_fecha !== hoy) continue;
+    const numero = numeroCasita(fila.casita);
+    if (numero) casitas.add(numero);
+  }
+  return casitas;
+}
+
 function numeroCasita(casita: string) {
   const numero = Number(casita.trim());
   if (!Number.isInteger(numero) || numero < 1) return null;
