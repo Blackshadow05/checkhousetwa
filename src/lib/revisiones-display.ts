@@ -242,6 +242,7 @@ export function groupHoyCasitas(
   );
 
   const checkInChips: HoyBoardChip[] = [];
+  const checkInDelDia: HoyBoardChip[] = [];
   const pendienteRows: InicioRevisionRow[] = [];
   const upsellVigentes: InicioRevisionRow[] = [];
   const ocupadas = new Set<string>();
@@ -252,11 +253,18 @@ export function groupHoyCasitas(
     ocupadas.add(number);
   };
 
+  // Check in del día va a En ocupación (no al grupo Check in).
+  const marcarCheckInDelDia = (row: InicioRevisionRow) => {
+    const number = casitaNumber(row.casita);
+    checkInDelDia.push({ row, casita: number, tone: "sage" });
+    ocupadas.add(number);
+  };
+
   if (llegadas) {
     for (const row of latestToday.values()) {
       if (hoyBoardGroup(row.caja_fuerte) !== "check_in") continue;
       const number = casitaNumber(row.casita);
-      if (llegadas.has(number)) marcarCheckIn(row, "sage");
+      if (llegadas.has(number)) marcarCheckInDelDia(row);
     }
     for (const [number, row] of ultimas) {
       if (ocupadas.has(number)) continue;
@@ -290,7 +298,7 @@ export function groupHoyCasitas(
   } else {
     for (const row of latestToday.values()) {
       if (hoyBoardGroup(row.caja_fuerte) !== "check_in") continue;
-      marcarCheckIn(row, "sage");
+      marcarCheckInDelDia(row);
     }
     for (const row of latestUpsellsByCasita(upsells).values()) {
       const number = casitaNumber(row.casita);
@@ -314,12 +322,16 @@ export function groupHoyCasitas(
   const checkout = porHoy("check_out", "rose");
   for (const chip of [...back, ...room, ...checkout]) ocupadas.add(chip.casita);
 
-  const sueltas: HoyBoardChip[] = [];
+  // En ocupación: check-ins del día + In house Guests con revisión real.
+  // No se muestra si solo viene del memo sin revisión.
+  const sueltas: HoyBoardChip[] = [...checkInDelDia];
   if (enCasa) {
     for (const number of [...enCasa].sort(compararCasita)) {
       if (ocupadas.has(number) || checkOutHoy.has(number)) continue;
-      const row = ultimas.get(number) ?? null;
-      const tone = row && hoyBoardGroup(row.caja_fuerte) === "upsell" ? "blue" : "teal";
+      const row = ultimas.get(number);
+      if (!row) continue;
+      const estado = hoyBoardGroup(row.caja_fuerte);
+      const tone = estado === "upsell" ? "blue" : estado === "check_in" ? "sage" : "teal";
       sueltas.push({ row, casita: number, tone });
       ocupadas.add(number);
     }
@@ -343,7 +355,7 @@ export function groupHoyCasitas(
       id: "ocupacion",
       label: "En ocupación",
       tone: "teal",
-      rows: sueltas,
+      rows: ordenarChips(sueltas),
       ...(sections.length ? { sections } : {}),
     });
   }
