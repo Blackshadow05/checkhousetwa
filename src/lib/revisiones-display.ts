@@ -251,6 +251,7 @@ export function groupHoyCasitas(
   estadias: ReadonlyMap<string, { llegada: string; salida: string }> | null = null,
   inHouseDelDia: ReadonlySet<string> | null = null,
   llegadasHoy: ReadonlySet<string> | null = null,
+  salidasHoy: ReadonlySet<string> | null = null,
 ): HoyBoardGroup[] {
   const latestToday = latestTodayByCasita(rows, today);
   const ultimas = ultimaPorCasita(rows, upsells);
@@ -374,11 +375,22 @@ export function groupHoyCasitas(
 
   const sections: HoyBoardGroup[] = [];
   if (pendienteRows.length) {
+    // Check out del día (salida en memo = hoy, o revisión Check out hoy) → rose; resto amber.
+    const pendienteChips: HoyBoardChip[] = sortByCasita(pendienteRows).map((row) => {
+      const number = casitaNumber(row.casita);
+      const esSalidaHoy =
+        Boolean(salidasHoy?.has(number)) || checkOutHoy.has(number);
+      return {
+        row,
+        casita: number,
+        tone: esSalidaHoy ? "rose" : "amber",
+      };
+    });
     sections.push({
       id: "pendiente_guardar",
       label: "Pendiente de Guardar",
       tone: "amber",
-      rows: chips(pendienteRows, "amber"),
+      rows: pendienteChips,
     });
   }
 

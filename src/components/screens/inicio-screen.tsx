@@ -22,7 +22,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { casitasSinRevision } from "@/lib/casitas-sin-revision";
 import { menuDateHeading } from "@/lib/menus";
 import { useOperacionesMemo } from "@/hooks/use-operaciones-memo";
-import { casitasConLlegada, casitasConLlegadaHoy, casitasInHouseGuestsDelDia, estadiasEnCasa } from "@/lib/operaciones-memo";
+import { casitasConLlegada, casitasConLlegadaHoy, casitasConSalidaHoy, casitasInHouseGuestsDelDia, estadiasEnCasa } from "@/lib/operaciones-memo";
 import { casitaNumber, contarCasitasHoy, groupHoyCasitas, initials } from "@/lib/revisiones-display";
 import { useOnline } from "@/lib/use-online";
 import { usePullToRefresh } from "@/lib/use-pull-to-refresh";
@@ -172,6 +172,7 @@ export function InicioScreen({
       memoRows ? estadiasEnCasa(memoRows, today) : null,
       inHouseDelDia,
       memoRows ? casitasConLlegadaHoy(memoRows, today) : null,
+      memoRows ? casitasConSalidaHoy(memoRows, today) : null,
     ),
     [revisiones, today, upsells, memoRows, inHouseDelDia],
   );
