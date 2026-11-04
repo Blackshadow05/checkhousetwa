@@ -322,8 +322,8 @@ export function groupHoyCasitas(
   const checkout = porHoy("check_out", "rose");
   for (const chip of [...back, ...room, ...checkout]) ocupadas.add(chip.casita);
 
-  // En ocupación: check-ins del día + In house Guests con revisión real.
-  // No se muestra si solo viene del memo sin revisión.
+  // En ocupación: solo con revisión cuya caja fuerte es Check in o Upsell.
+  // Check-ins del día ya vienen filtrados; In house Guests con Si/otro se ocultan.
   const sueltas: HoyBoardChip[] = [...checkInDelDia];
   if (enCasa) {
     for (const number of [...enCasa].sort(compararCasita)) {
@@ -331,7 +331,8 @@ export function groupHoyCasitas(
       const row = ultimas.get(number);
       if (!row) continue;
       const estado = hoyBoardGroup(row.caja_fuerte);
-      const tone = estado === "upsell" ? "blue" : estado === "check_in" ? "sage" : "teal";
+      if (estado !== "check_in" && estado !== "upsell") continue;
+      const tone = estado === "upsell" ? "blue" : "sage";
       sueltas.push({ row, casita: number, tone });
       ocupadas.add(number);
     }
