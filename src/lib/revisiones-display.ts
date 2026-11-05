@@ -280,10 +280,11 @@ export function groupHoyCasitas(
     ocupadas.add(number);
   };
 
-  // Montaje Check in de Today's Arrivals → sección propia "Check in de hoy".
-  const marcarMontajeHoy = (row: InicioRevisionRow) => {
+  // Llegadas del día (Today's Arrivals) → "Check in de hoy".
+  // Check in: sage. Upsell con llegada hoy: blue (conserva el color de estado).
+  const marcarMontajeHoy = (row: InicioRevisionRow, tone: "sage" | "blue" = "sage") => {
     const number = casitaNumber(row.casita);
-    montajesHoy.push({ row, casita: number, tone: "sage" });
+    montajesHoy.push({ row, casita: number, tone });
     ocupadas.add(number);
   };
 
@@ -296,7 +297,10 @@ export function groupHoyCasitas(
     }
     for (const [number, row] of ultimas) {
       if (ocupadas.has(number)) continue;
-      if (hoyBoardGroup(row.caja_fuerte) === "upsell" && (checkInHoy.has(number) || llegadas.has(number))) {
+      if (hoyBoardGroup(row.caja_fuerte) !== "upsell") continue;
+      if (setIngresos.has(number)) {
+        marcarMontajeHoy(row, "blue");
+      } else if (checkInHoy.has(number) || llegadas.has(number)) {
         marcarCheckIn(row, "blue");
       }
     }

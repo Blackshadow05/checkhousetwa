@@ -14,7 +14,8 @@
     "type-check": "tsc --noEmit",
     "test:pantallas": "node scripts/test-pantalla-analyzer.mjs",
     "test:reportes": "node scripts/test-reportes-revision.mjs",
-    "test:consejos": "node scripts/test-consejos-diarios.mjs"
+    "test:consejos": "node scripts/test-consejos-diarios.mjs",
+    "test:hoy-casitas": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-group-hoy-casitas.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
