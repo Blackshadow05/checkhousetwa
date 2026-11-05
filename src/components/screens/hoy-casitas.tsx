@@ -39,7 +39,10 @@ function Grupo({
       {group.rows.length > 0 && (
         <div className={styles.chips}>
           {group.rows.map((chip) => {
-            const estado = group.id === "check_in" && chip.tone === "blue" ? "Upsell" : titulo;
+            const estado =
+              (group.id === "check_in" || group.id === "check_in_hoy") && chip.tone === "blue"
+                ? "Upsell"
+                : titulo;
             return (
               <button
                 key={chip.row?.id || chip.casita}

@@ -71,6 +71,8 @@ next-env.d.ts
 /scripts/*
 !/scripts/build-pantalla-analyzer.mjs
 !/scripts/build-articulos-detector.mjs
+!/scripts/test-group-hoy-casitas.mjs
+!/scripts/ts-alias-loader.mjs
 /CLAUDE.md
 /README.md
 /components.json
