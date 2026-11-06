@@ -40,7 +40,8 @@ function Grupo({
         <div className={styles.chips}>
           {group.rows.map((chip) => {
             const estado =
-              (group.id === "check_in" || group.id === "check_in_hoy") && chip.tone === "blue"
+              (group.id === "check_in" || group.id === "check_in_hoy" || group.id === "check_in_manana") &&
+              chip.tone === "blue"
                 ? "Upsell"
                 : titulo;
             return (

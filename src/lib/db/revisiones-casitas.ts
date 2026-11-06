@@ -6,10 +6,13 @@ import type { RevisionActivity } from "@/lib/casitas-sin-revision";
 import { createPrivateClient } from "@/lib/auth/session";
 import {
   INICIO_LIST_LIMIT,
+  INICIO_RECENT_DAYS,
   INICIO_REVISION_COLUMNS,
   casitaNumber,
   currentUpsellsFromRows,
   isUpsellStatus,
+  keepInicioRevisiones,
+  mergeInicioRevisiones,
 } from "@/lib/revisiones-display";
 import { todayKey } from "@/lib/revisiones-display";
 import { NOTAS_REVISION_PAGE_SIZE } from "@/lib/revision-notes";
@@ -58,6 +61,18 @@ export async function listLatestRevisionesCasitas(
 ) {
   return revisionesCasitas(client)
     .select(INICIO_REVISION_COLUMNS)
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+}
+
+export async function listRevisionesDesde(
+  client: Client,
+  fromDay: string,
+  limit = 500,
+) {
+  return revisionesCasitas(client)
+    .select(INICIO_REVISION_COLUMNS)
+    .gte("created_at", `${fromDay} 00:00:00`)
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(limit);
 }
@@ -148,17 +163,27 @@ export async function getInicioRevisiones(today = todayKey()): Promise<{
 }> {
   try {
     const supabase = await createPrivateClient();
-    const [latestResult, upsellsResult, activityResult] = await Promise.allSettled([
+    const [latestResult, recentResult, upsellsResult, activityResult] = await Promise.allSettled([
       listLatestRevisionesCasitas(supabase),
+      listRevisionesDesde(supabase, shiftDay(today, -INICIO_RECENT_DAYS)),
       listCurrentUpsells(supabase),
       listRevisionActivity(supabase, today),
     ]);
     const latest = latestResult.status === "fulfilled" ? latestResult.value : null;
+    const recent = recentResult.status === "fulfilled" ? recentResult.value : null;
     const currentUpsells = upsellsResult.status === "fulfilled" ? upsellsResult.value : null;
     const activity = activityResult.status === "fulfilled" ? activityResult.value : null;
 
-    const revisiones = (latest?.data ?? []).map((row: RevisionCasitaInicio) =>
+    const latestRows = (latest?.data ?? []).map((row: RevisionCasitaInicio) =>
       mapInicioRevision(row),
+    );
+    const recentRows =
+      recent?.error || !recent?.data
+        ? []
+        : recent.data.map((row: RevisionCasitaInicio) => mapInicioRevision(row));
+    const revisiones = keepInicioRevisiones(
+      mergeInicioRevisiones(latestRows, recentRows),
+      today,
     );
     const upsells =
       currentUpsells?.error || !currentUpsells?.data

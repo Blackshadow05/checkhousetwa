@@ -1,4 +1,4 @@
-import { INICIO_LIST_LIMIT, casitaNumber, hoyBoardGroup } from "@/lib/revisiones-display";
+import { casitaNumber, hoyBoardGroup, keepInicioRevisiones, todayKey } from "@/lib/revisiones-display";
 import { recognitionDetailItems } from "@/lib/revision-recognition-detail";
 import type {
   InicioRevisionRow,
@@ -81,7 +81,7 @@ export function applyRealtimeChange(
   const merged = [mapped, ...rows.filter((row) => row.id !== mapped.id)].sort(
     (left, right) => right.created_at.localeCompare(left.created_at),
   );
-  return merged.slice(0, INICIO_LIST_LIMIT);
+  return keepInicioRevisiones(merged, todayKey());
 }
 
 export function applyUpsellChange(

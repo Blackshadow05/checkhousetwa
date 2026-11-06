@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
-import { contarCasitasHoy, groupHoyCasitas } from "../src/lib/revisiones-display.ts";
+import {
+  casitasConLlegada,
+  casitasConLlegadaHoy,
+  casitasConLlegadaManana,
+} from "../src/lib/operaciones-memo.ts";
+import {
+  INICIO_LIST_LIMIT,
+  contarCasitasHoy,
+  groupHoyCasitas,
+  keepInicioRevisiones,
+} from "../src/lib/revisiones-display.ts";
 
 const HOY = "2026-11-05";
 const AYER = "2026-11-04";
@@ -47,22 +57,25 @@ function revision({
 
 function agrupar({
   rows,
+  today = HOY,
   upsells = [],
   llegadas = null,
   estadias = null,
   inHouseDelDia = null,
   llegadasHoy = null,
   salidasHoy = null,
+  llegadasManana = null,
 } = {}) {
   return groupHoyCasitas(
     rows,
-    HOY,
+    today,
     upsells,
     llegadas,
     estadias,
     inHouseDelDia,
     llegadasHoy,
     salidasHoy,
+    llegadasManana,
   );
 }
 
@@ -188,7 +201,7 @@ const tests = [
     },
   },
   {
-    name: "Upsell con llegada en otra fecha (mañana) sigue en Check in azul, no en Check in de hoy",
+    name: "Upsell con llegada mañana va a Check in de mañana en azul, no a Check in de hoy",
     run() {
       const checkInHoy = revision({
         id: "ci-hoy",
@@ -207,12 +220,14 @@ const tests = [
         upsells: [upsellManana],
         llegadas: new Set(["12", "21"]),
         llegadasHoy: new Set(["12"]),
+        llegadasManana: new Set(["21"]),
         estadias: new Map(),
         inHouseDelDia: new Set(),
       });
 
       assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "12", tone: "sage" }]);
-      assert.deepEqual(chips(groups, "check_in"), [{ casita: "21", tone: "blue" }]);
+      assert.deepEqual(chips(groups, "check_in_manana"), [{ casita: "21", tone: "blue" }]);
+      assert.equal(grupo(groups, "check_in"), null);
       assert.equal(grupo(groups, "upsell"), null);
       assertSinDuplicados(groups);
     },
@@ -241,7 +256,7 @@ const tests = [
         inHouseDelDia: new Set(),
       });
 
-      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "9", tone: "sage" }]);
+      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "9", tone: "blue" }]);
       assert.equal(grupo(groups, "check_in"), null);
       assert.equal(grupo(groups, "upsell"), null);
       assert.equal(todasLasCasitas(groups).filter((n) => n === "9").length, 1);
@@ -295,10 +310,10 @@ const tests = [
     },
   },
   {
-    name: "Upsell vigente sin llegada no entra a Check in de hoy",
+    name: "Upsell viejo sin huésped ni llegada va a Pendiente de Guardar, no a vigentes",
     run() {
       const upsell = revision({
-        id: "up-vigente",
+        id: "up-stale",
         casita: "28",
         caja_fuerte: "Upsell",
         created_at: `${AYER} 18:00`,
@@ -314,7 +329,30 @@ const tests = [
 
       assert.equal(grupo(groups, "check_in"), null);
       assert.equal(grupo(groups, "check_in_hoy"), null);
+      assert.equal(grupo(groups, "upsell"), null);
+      assert.deepEqual(chipsSeccion(groups, "ocupacion", "pendiente_guardar"), [
+        { casita: "28", tone: "amber" },
+      ]);
+    },
+  },
+  {
+    name: "Sin tipo de ocupación en el memo, el Upsell sin llegada sigue en vigentes",
+    run() {
+      const upsell = revision({
+        id: "up-vigente-sin-tipo",
+        casita: "28",
+        caja_fuerte: "Upsell",
+        created_at: `${AYER} 18:00`,
+      });
+      const groups = agrupar({
+        rows: [],
+        upsells: [upsell],
+        llegadas: new Set(["12"]),
+        llegadasHoy: new Set(["12"]),
+      });
+
       assert.deepEqual(chips(groups, "upsell"), [{ casita: "28", tone: "blue" }]);
+      assert.equal(seccion(groups, "ocupacion", "pendiente_guardar"), null);
     },
   },
   {
@@ -420,6 +458,200 @@ const tests = [
       assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "4", tone: "sage" }]);
       assert.equal(grupo(groups, "check_in"), null);
       assert.deepEqual(chips(groups, "upsell"), [{ casita: "11", tone: "blue" }]);
+    },
+  },
+  {
+    name: "Montaje de ayer con llegada hoy aparece en Check in de hoy",
+    run() {
+      const montajeAyer = revision({
+        id: "ci-ayer-llegada-hoy",
+        casita: "8",
+        caja_fuerte: "Check in",
+        created_at: `${AYER} 16:40`,
+      });
+      const groups = agrupar({
+        rows: [montajeAyer],
+        llegadas: new Set(["8"]),
+        llegadasHoy: new Set(["8"]),
+        llegadasManana: new Set(),
+        estadias: new Map(),
+        inHouseDelDia: new Set(),
+      });
+
+      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "8", tone: "sage" }]);
+      assert.equal(grupo(groups, "check_in_manana"), null);
+      assert.equal(grupo(groups, "check_in"), null);
+      assert.equal(seccion(groups, "ocupacion", "pendiente_guardar"), null);
+    },
+  },
+  {
+    name: "Check in revisado hoy con llegada mañana aparece en Check in de mañana",
+    run() {
+      const montaje = revision({
+        id: "ci-hoy-llegada-manana",
+        casita: "15",
+        caja_fuerte: "Check in",
+        created_at: `${HOY} 17:10`,
+      });
+      const groups = agrupar({
+        rows: [montaje],
+        llegadas: new Set(["15"]),
+        llegadasHoy: new Set(),
+        llegadasManana: new Set(["15"]),
+        estadias: new Map(),
+        inHouseDelDia: new Set(),
+      });
+
+      assert.deepEqual(chips(groups, "check_in_manana"), [{ casita: "15", tone: "sage" }]);
+      assert.equal(grupo(groups, "check_in_hoy"), null);
+      assert.equal(grupo(groups, "check_in"), null);
+    },
+  },
+  {
+    name: "Al cambiar el día, el mismo montaje pasa de Check in de mañana a Check in de hoy",
+    run() {
+      const montaje = revision({
+        id: "ci-rollover",
+        casita: "6",
+        caja_fuerte: "Check in",
+        created_at: `${HOY} 18:00`,
+      });
+      const manana = agrupar({
+        rows: [montaje],
+        today: HOY,
+        llegadas: new Set(["6"]),
+        llegadasHoy: new Set(),
+        llegadasManana: new Set(["6"]),
+        estadias: new Map(),
+        inHouseDelDia: new Set(),
+      });
+      const diaLlegada = agrupar({
+        rows: [montaje],
+        today: MANANA,
+        llegadas: new Set(["6"]),
+        llegadasHoy: new Set(["6"]),
+        llegadasManana: new Set(),
+        estadias: new Map(),
+        inHouseDelDia: new Set(),
+      });
+
+      assert.deepEqual(chips(manana, "check_in_manana"), [{ casita: "6", tone: "sage" }]);
+      assert.equal(grupo(manana, "check_in_hoy"), null);
+      assert.deepEqual(chips(diaLlegada, "check_in_hoy"), [{ casita: "6", tone: "sage" }]);
+      assert.equal(grupo(diaLlegada, "check_in_manana"), null);
+    },
+  },
+  {
+    name: "Upsell de estadía activa sigue en En ocupación azul y no pasa a pendiente",
+    run() {
+      const upsell = revision({
+        id: "up-ocupacion",
+        casita: "19",
+        caja_fuerte: "Upsell",
+        created_at: `${AYER} 09:00`,
+      });
+      const groups = agrupar({
+        rows: [],
+        upsells: [upsell],
+        llegadas: new Set(),
+        llegadasHoy: new Set(),
+        llegadasManana: new Set(),
+        estadias: new Map([["19", { llegada: AYER, salida: MANANA }]]),
+        inHouseDelDia: new Set(["19"]),
+      });
+
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "19", tone: "blue" }]);
+      assert.equal(seccion(groups, "ocupacion", "pendiente_guardar"), null);
+      assert.equal(grupo(groups, "upsell"), null);
+    },
+  },
+  {
+    name: "Upsell con llegada futura no se marca pendiente ni vigente",
+    run() {
+      const upsell = revision({
+        id: "up-futuro",
+        casita: "24",
+        caja_fuerte: "Upsell",
+        created_at: `${AYER} 11:00`,
+      });
+      const groups = agrupar({
+        rows: [],
+        upsells: [upsell],
+        llegadas: new Set(["24"]),
+        llegadasHoy: new Set(),
+        llegadasManana: new Set(["24"]),
+        estadias: new Map(),
+        inHouseDelDia: new Set(),
+      });
+
+      assert.deepEqual(chips(groups, "check_in_manana"), [{ casita: "24", tone: "blue" }]);
+      assert.equal(grupo(groups, "upsell"), null);
+      assert.equal(seccion(groups, "ocupacion", "pendiente_guardar"), null);
+    },
+  },
+  {
+    name: "Conteo y deduplicación no se inflan al mezclar hoy, mañana, ocupación y pendiente",
+    run() {
+      const groups = agrupar({
+        rows: [
+          revision({ id: "ci-hoy-mix", casita: "3", caja_fuerte: "Check in", created_at: `${AYER} 15:00` }),
+          revision({ id: "ci-manana-mix", casita: "5", caja_fuerte: "Check in", created_at: `${HOY} 16:00` }),
+          revision({ id: "ci-ocu-mix", casita: "7", caja_fuerte: "Check in", created_at: `${AYER} 10:00` }),
+          revision({ id: "pg-mix", casita: "9", caja_fuerte: "Check in", created_at: `${AYER} 08:00` }),
+        ],
+        upsells: [
+          revision({ id: "up-stale-mix", casita: "11", caja_fuerte: "Upsell", created_at: `${AYER} 12:00` }),
+        ],
+        llegadas: new Set(["3", "5"]),
+        llegadasHoy: new Set(["3"]),
+        llegadasManana: new Set(["5"]),
+        estadias: new Map([["7", { llegada: AYER, salida: MANANA }]]),
+        inHouseDelDia: new Set(["7"]),
+      });
+
+      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "3", tone: "sage" }]);
+      assert.deepEqual(chips(groups, "check_in_manana"), [{ casita: "5", tone: "sage" }]);
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "7", tone: "sage" }]);
+      assert.deepEqual(chipsSeccion(groups, "ocupacion", "pendiente_guardar"), [
+        { casita: "9", tone: "amber" },
+        { casita: "11", tone: "amber" },
+      ]);
+      assert.equal(contarCasitasHoy(groups), 5);
+      assertSinDuplicados(groups);
+    },
+  },
+  {
+    name: "llegada_fecha del memo separa hoy y mañana sin números fijos",
+    run() {
+      const filas = [
+        { casita: "2", llegada_fecha: HOY, salida_fecha: MANANA, tipo: "Today's Arrivals", fecha_memo: HOY },
+        { casita: "10", llegada_fecha: MANANA, salida_fecha: "2026-11-08", tipo: "Tomorrow's Arrivals", fecha_memo: HOY },
+      ];
+      assert.deepEqual([...casitasConLlegadaHoy(filas, HOY)], ["2"]);
+      assert.deepEqual([...casitasConLlegadaManana(filas, HOY)], ["10"]);
+      assert.deepEqual([...casitasConLlegada(filas, HOY)].sort(), ["10", "2"]);
+    },
+  },
+  {
+    name: "keepInicioRevisiones conserva el montaje de ayer aunque haya más de 100 filas nuevas",
+    run() {
+      const montajeAyer = revision({
+        id: "keep-ayer",
+        casita: "4",
+        caja_fuerte: "Check in",
+        created_at: `${AYER} 14:00`,
+      });
+      const recientes = Array.from({ length: INICIO_LIST_LIMIT }, (_, index) =>
+        revision({
+          id: `keep-nueva-${index}`,
+          casita: String(50 + (index % 40)),
+          caja_fuerte: "Si",
+          created_at: `${HOY} ${String(10 + Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`,
+        }),
+      );
+      const kept = keepInicioRevisiones([montajeAyer, ...recientes], HOY);
+      assert.equal(kept.some((row) => row.id === "keep-ayer"), true);
+      assert.equal(kept.length > INICIO_LIST_LIMIT, true);
     },
   },
 ];

@@ -5,6 +5,7 @@ export const INICIO_REVISION_COLUMNS =
   "id, casita, quien_revisa, caja_fuerte, created_at, puertas_ventanas, chromecast, binoculares, trapo_binoculares, speaker, usb_speaker, controles_tv, secadora, accesorios_secadora, steamer, bolsa_vapor, plancha_cabello, bulto, sombrero, bolso_yute, evidencia_01, evidencia_02, evidencia_03, camas_ordenadas, cola_caballo, notas, nota_extra, room_move, registro_reconocimiento, pendiente, marcada_por, marcada_at" as const;
 
 export const INICIO_LIST_LIMIT = 100;
+export const INICIO_RECENT_DAYS = 2;
 
 export const ELECTRONIC_FIELDS = [
   { key: "chromecast", label: "Chromecast" },
@@ -243,6 +244,53 @@ function revisionCheckInOUpsellEnEstadia(
   return candidatas.reduce((best, row) => (row.created_at > best.created_at ? row : best));
 }
 
+function shiftIsoDay(day: string, days: number) {
+  const date = new Date(`${day}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const dayNum = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${dayNum}`;
+}
+
+export function mergeInicioRevisiones(
+  ...lists: readonly (readonly InicioRevisionRow[])[]
+): InicioRevisionRow[] {
+  const byId = new Map<string, InicioRevisionRow>();
+  for (const list of lists) {
+    for (const row of list) {
+      if (!row.id || byId.has(row.id)) continue;
+      byId.set(row.id, row);
+    }
+  }
+  return [...byId.values()].sort((left, right) =>
+    right.created_at.localeCompare(left.created_at),
+  );
+}
+
+export function keepInicioRevisiones(
+  rows: readonly InicioRevisionRow[],
+  today: string,
+  limit = INICIO_LIST_LIMIT,
+  recentDays = INICIO_RECENT_DAYS,
+): InicioRevisionRow[] {
+  const fromDay = shiftIsoDay(today, -recentDays);
+  const sorted = [...rows].sort((left, right) =>
+    right.created_at.localeCompare(left.created_at),
+  );
+  const kept: InicioRevisionRow[] = [];
+  const seen = new Set<string>();
+  for (const [index, row] of sorted.entries()) {
+    if (row.id && seen.has(row.id)) continue;
+    const day = revisionDay(row.created_at);
+    const recent = day !== "sin-fecha" && day >= fromDay;
+    if (index >= limit && !recent) continue;
+    if (row.id) seen.add(row.id);
+    kept.push(row);
+  }
+  return kept;
+}
+
 export function groupHoyCasitas(
   rows: InicioRevisionRow[],
   today: string,
@@ -252,6 +300,7 @@ export function groupHoyCasitas(
   inHouseDelDia: ReadonlySet<string> | null = null,
   llegadasHoy: ReadonlySet<string> | null = null,
   salidasHoy: ReadonlySet<string> | null = null,
+  llegadasManana: ReadonlySet<string> | null = null,
 ): HoyBoardGroup[] {
   const latestToday = latestTodayByCasita(rows, today);
   const ultimas = ultimaPorCasita(rows, upsells);
@@ -270,6 +319,7 @@ export function groupHoyCasitas(
 
   const checkInChips: HoyBoardChip[] = [];
   const montajesHoy: HoyBoardChip[] = [];
+  const montajesManana: HoyBoardChip[] = [];
   const pendienteRows: InicioRevisionRow[] = [];
   const upsellVigentes: InicioRevisionRow[] = [];
   const ocupadas = new Set<string>();
@@ -280,27 +330,46 @@ export function groupHoyCasitas(
     ocupadas.add(number);
   };
 
-  // Llegadas del día (Today's Arrivals) → "Check in de hoy".
-  // Check in: sage. Upsell con llegada hoy: blue (conserva el color de estado).
-  const marcarMontajeHoy = (row: InicioRevisionRow, tone: "sage" | "blue" = "sage") => {
+  const marcarMontaje = (
+    dest: HoyBoardChip[],
+    row: InicioRevisionRow,
+    tone: "sage" | "blue",
+  ) => {
     const number = casitaNumber(row.casita);
-    montajesHoy.push({ row, casita: number, tone });
+    dest.push({ row, casita: number, tone });
     ocupadas.add(number);
   };
 
-  if (llegadas) {
-    const setIngresos = llegadasHoy ?? llegadas;
-    for (const row of latestToday.values()) {
-      if (hoyBoardGroup(row.caja_fuerte) !== "check_in") continue;
-      const number = casitaNumber(row.casita);
-      if (setIngresos.has(number)) marcarMontajeHoy(row);
+  // Montaje por llegada_fecha del memo, no por el día de la revisión.
+  // Check in: sage. Upsell: blue. Revisión de ayer con llegada hoy → Check in de hoy.
+  const montarPorLlegada = (
+    dest: HoyBoardChip[],
+    setIngresos: ReadonlySet<string> | null,
+  ) => {
+    if (!setIngresos) return;
+    for (const number of setIngresos) {
+      if (ocupadas.has(number)) continue;
+      const row = ultimas.get(number);
+      if (!row) continue;
+      const estado = hoyBoardGroup(row.caja_fuerte);
+      if (estado === "check_in") marcarMontaje(dest, row, "sage");
+      else if (estado === "upsell") marcarMontaje(dest, row, "blue");
     }
+  };
+
+  if (llegadas) {
+    const setManana = llegadasManana;
+    const setHoy =
+      llegadasHoy ??
+      (setManana
+        ? new Set([...llegadas].filter((number) => !setManana.has(number)))
+        : llegadas);
+    montarPorLlegada(montajesHoy, setHoy);
+    montarPorLlegada(montajesManana, setManana);
     for (const [number, row] of ultimas) {
       if (ocupadas.has(number)) continue;
       if (hoyBoardGroup(row.caja_fuerte) !== "upsell") continue;
-      if (setIngresos.has(number)) {
-        marcarMontajeHoy(row, "blue");
-      } else if (checkInHoy.has(number) || llegadas.has(number)) {
+      if (checkInHoy.has(number) || llegadas.has(number)) {
         marcarCheckIn(row, "blue");
       }
     }
@@ -308,6 +377,9 @@ export function groupHoyCasitas(
       if (ocupadas.has(number)) continue;
       if (hoyBoardGroup(row.caja_fuerte) !== "upsell" || checkInHoy.has(number)) continue;
       if (conoceCasa && enCasa?.has(number)) continue;
+      // Con In house Guests en el memo: Upsell sin huésped ni llegada hoy/mañana
+      // no se queda en vigentes; pasa a Pendiente de Guardar.
+      if (conoceCasa || inHouseDelDia !== null) continue;
       upsellVigentes.push(row);
       ocupadas.add(number);
     }
@@ -322,7 +394,13 @@ export function groupHoyCasitas(
     } else {
       for (const [number, row] of ultimas) {
         if (ocupadas.has(number)) continue;
-        if (hoyBoardGroup(row.caja_fuerte) !== "check_in" || llegadas.has(number)) continue;
+        const estado = hoyBoardGroup(row.caja_fuerte);
+        if (estado === "upsell" && (conoceCasa || inHouseDelDia !== null)) {
+          pendienteRows.push(row);
+          ocupadas.add(number);
+          continue;
+        }
+        if (estado !== "check_in" || llegadas.has(number)) continue;
         pendienteRows.push(row);
         ocupadas.add(number);
       }
@@ -330,7 +408,7 @@ export function groupHoyCasitas(
   } else {
     for (const row of latestToday.values()) {
       if (hoyBoardGroup(row.caja_fuerte) !== "check_in") continue;
-      marcarMontajeHoy(row);
+      marcarMontaje(montajesHoy, row, "sage");
     }
     for (const row of latestUpsellsByCasita(upsells).values()) {
       const number = casitaNumber(row.casita);
@@ -404,6 +482,10 @@ export function groupHoyCasitas(
   const montajes = ordenarChips(montajesHoy);
   if (montajes.length) {
     groups.push({ id: "check_in_hoy", label: "Check in de hoy", tone: "sage", rows: montajes });
+  }
+  const manana = ordenarChips(montajesManana);
+  if (manana.length) {
+    groups.push({ id: "check_in_manana", label: "Check in de mañana", tone: "sage", rows: manana });
   }
   if (sueltas.length || sections.length) {
     groups.push({
