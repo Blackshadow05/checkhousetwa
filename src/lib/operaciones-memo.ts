@@ -66,15 +66,24 @@ export function casitasConLlegada(filas: readonly OperacionMemo[], hoy: string):
   return casitas;
 }
 
-// Solo llegadas con fecha de hoy (Today's Arrivals / ingresos del día).
-export function casitasConLlegadaHoy(filas: readonly OperacionMemo[], hoy: string): Set<string> {
+function casitasConLlegadaEn(filas: readonly OperacionMemo[], hoy: string, llegada: string): Set<string> {
   const casitas = new Set<string>();
   for (const fila of filasMemoDelDia(filas, hoy)) {
-    if (fila.llegada_fecha !== hoy) continue;
+    if (fila.llegada_fecha !== llegada) continue;
     const numero = numeroCasita(fila.casita);
     if (numero) casitas.add(numero);
   }
   return casitas;
+}
+
+// Solo llegadas con fecha de hoy (Today's Arrivals / ingresos del día).
+export function casitasConLlegadaHoy(filas: readonly OperacionMemo[], hoy: string): Set<string> {
+  return casitasConLlegadaEn(filas, hoy, hoy);
+}
+
+// Llegadas de mañana (Tomorrow's Arrivals) según llegada_fecha del memo.
+export function casitasConLlegadaManana(filas: readonly OperacionMemo[], hoy: string): Set<string> {
+  return casitasConLlegadaEn(filas, hoy, shiftDay(hoy, 1));
 }
 
 // Salidas del día (Today's Departure / salida_fecha = hoy).

@@ -14,7 +14,7 @@ import { createRevision, fetchCanalRevisiones, fetchInicioRevisiones } from "@/a
 import { applyRevisionActivityChange, type RevisionActivity } from "@/lib/casitas-sin-revision";
 import { runDetailTransition } from "@/lib/detail-transition";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
-import { casitaNumber, todayKey } from "@/lib/revisiones-display";
+import { casitaNumber, keepInicioRevisiones, todayKey } from "@/lib/revisiones-display";
 import { applyUpsellChange } from "@/lib/revisiones-map";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { discardUpload, releaseUploads, resolveEvidenciaUrls } from "@/lib/revision-evidence-upload";
@@ -232,9 +232,11 @@ export function RevisionesProvider({
     generation.current += 1;
     if (inFlight.current) pendingForce.current = true;
     const casita = casitaNumber(row.casita);
-    const next = [row, ...revisionesRef.current.filter((item) =>
-      item.id !== row.id && !(item.pendiente && casitaNumber(item.casita) === casita))]
-      .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100);
+    const next = keepInicioRevisiones(
+      [row, ...revisionesRef.current.filter((item) =>
+        item.id !== row.id && !(item.pendiente && casitaNumber(item.casita) === casita))],
+      todayKey(),
+    );
     const nextUpsells = row.pendiente ? upsellsRef.current : applyUpsellChange(upsellsRef.current, "INSERT", row, null);
     const nextActivity = row.pendiente ? activityRef.current : applyRevisionActivityChange(activityRef.current, "INSERT", row, null, todayKey());
     revisionesRef.current = next;
