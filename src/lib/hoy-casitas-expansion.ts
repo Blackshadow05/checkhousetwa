@@ -2,11 +2,8 @@ import type { HoyBoardChip, HoyBoardGroup } from "@/lib/revisiones-display";
 
 export const HOY_GRUPO_CHIP_LIMITE = 12;
 
-export function conteoEncabezadoGrupo(group: Pick<HoyBoardGroup, "rows" | "sections">): number {
-  return (
-    group.rows.length +
-    (group.sections?.reduce((sum, section) => sum + conteoEncabezadoGrupo(section), 0) ?? 0)
-  );
+export function conteoEncabezadoGrupo(group: Pick<HoyBoardGroup, "rows">): number {
+  return group.rows.length;
 }
 
 export function grupoMuestraExpansion(filasDirectas: number): boolean {

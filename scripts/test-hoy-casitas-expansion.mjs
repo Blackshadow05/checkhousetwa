@@ -10,6 +10,7 @@ import {
   vistaExpansionGrupo,
   vistasTableroHoy,
 } from "../src/lib/hoy-casitas-expansion.ts";
+import { contarCasitasHoy } from "../src/lib/revisiones-display.ts";
 
 function chip(casita, tone = "teal") {
   return {
@@ -149,17 +150,19 @@ const tests = [
     },
   },
   {
-    name: "ocupación 12 directas + 3 pendientes: total 15, sin Ver todas en el padre",
+    name: "ocupación 12 directas + 3 pendientes: encabezado 12, pendiente 3, sin Ver todas en el padre",
     run() {
       const vista = vistaExpansionGrupo(ocupacionScreenshot, false);
-      assert.equal(conteoEncabezadoGrupo(ocupacionScreenshot), 15);
-      assert.equal(vista.encabezado, 15);
+      assert.equal(conteoEncabezadoGrupo(ocupacionScreenshot), 12);
+      assert.equal(vista.encabezado, 12);
       assert.equal(vista.muestraControl, false);
       assert.equal(vista.filasVisibles.length, 12);
       const nested = vistaExpansionGrupo(ocupacionScreenshot.sections[0], false);
+      assert.equal(conteoEncabezadoGrupo(ocupacionScreenshot.sections[0]), 3);
       assert.equal(nested.encabezado, 3);
       assert.equal(nested.muestraControl, false);
       assert.equal(nested.filasVisibles.length, 3);
+      assert.equal(contarCasitasHoy([ocupacionScreenshot]), 15);
       assert.deepEqual(
         casitasAlcanzablesHoy([ocupacionScreenshot], new Set()),
         [...ocupacionScreenshot.rows.map((item) => item.casita), "20", "21", "22"],
@@ -171,10 +174,11 @@ const tests = [
     run() {
       const expandido = alternarExpansionGrupo(new Set(), "ocupacion");
       const padre = vistaDe([ocupacionNestedOverflow], "ocupacion", expandido);
-      assert.equal(padre.encabezado, 25);
+      assert.equal(padre.encabezado, 12);
       assert.equal(padre.muestraControl, false);
       assert.equal(padre.filasVisibles.length, 12);
       assert.equal(padre.etiquetaControl, null);
+      assert.equal(contarCasitasHoy([ocupacionNestedOverflow]), 25);
     },
   },
   {
@@ -194,7 +198,7 @@ const tests = [
       const padre = vistaDe([ocupacionNestedOverflow], "ocupacion", expandido);
       assert.equal(padre.muestraControl, false);
       assert.equal(padre.filasVisibles.length, 12);
-      assert.equal(padre.encabezado, 25);
+      assert.equal(padre.encabezado, 12);
     },
   },
   {
@@ -243,9 +247,12 @@ const tests = [
       let expandido = alternarExpansionGrupo(new Set(), "ocupacion");
       const padre = vistaDe([padreGrande], "ocupacion", expandido);
       const nested = vistaDe([padreGrande], "pendiente_guardar", expandido);
+      assert.equal(padre.encabezado, 13);
       assert.equal(padre.filasVisibles.length, 13);
+      assert.equal(nested.encabezado, 13);
       assert.equal(nested.filasVisibles.length, 12);
       assert.equal(nested.etiquetaControl, "Ver todas");
+      assert.equal(contarCasitasHoy([padreGrande]), 26);
       const alcanzables = casitasAlcanzablesHoy([padreGrande], expandido);
       assert.equal(alcanzables.length, 25);
       assert.ok(alcanzables.includes("pendiente_guardar-12"));
@@ -282,7 +289,7 @@ const tests = [
     },
   },
   {
-    name: "el conteo del encabezado es el total real, no el recorte visible",
+    name: "el encabezado cuenta solo las fichas propias, no el recorte visible ni el pendiente",
     run() {
       const group = grupo({
         id: "ocupacion",
@@ -293,10 +300,52 @@ const tests = [
       });
       const colapsado = vistaExpansionGrupo(group, false);
       const abierto = vistaExpansionGrupo(group, true);
+      const nested = vistaExpansionGrupo(group.sections[0], false);
       assert.equal(colapsado.filasVisibles.length, 12);
       assert.equal(abierto.filasVisibles.length, 13);
-      assert.equal(colapsado.encabezado, 17);
-      assert.equal(abierto.encabezado, 17);
+      assert.equal(colapsado.encabezado, 13);
+      assert.equal(abierto.encabezado, 13);
+      assert.equal(nested.encabezado, 4);
+      assert.equal(contarCasitasHoy([group]), 17);
+    },
+  },
+  {
+    name: "tablero 24: ocupación 12, pendiente 3, total global 24 con todas las casitas",
+    run() {
+      const tablero24 = [
+        grupo({ id: "check_in_hoy", label: "Check in de hoy", n: 4 }),
+        grupo({
+          id: "ocupacion",
+          label: "En ocupación",
+          tone: "teal",
+          n: 12,
+          sections: [
+            grupo({
+              id: "pendiente_guardar",
+              label: "Pendiente de Guardar",
+              tone: "amber",
+              n: 3,
+            }),
+          ],
+        }),
+        grupo({ id: "upsell", label: "Upsell", tone: "blue", n: 2 }),
+        grupo({ id: "check_out", label: "Check out", tone: "rose", n: 2 }),
+        grupo({ id: "check_in_manana", label: "Check in de mañana", n: 1 }),
+      ];
+      const vistas = vistasTableroHoy(tablero24, new Set());
+      const porId = Object.fromEntries(vistas.map((vista) => [vista.id, vista]));
+      assert.equal(porId.ocupacion.encabezado, 12);
+      assert.equal(porId.ocupacion.filasVisibles.length, 12);
+      assert.equal(porId.ocupacion.muestraControl, false);
+      assert.equal(porId.pendiente_guardar.encabezado, 3);
+      assert.equal(porId.pendiente_guardar.filasVisibles.length, 3);
+      assert.equal(porId.pendiente_guardar.muestraControl, false);
+      assert.equal(porId.check_in_hoy.encabezado, 4);
+      assert.equal(porId.upsell.encabezado, 2);
+      assert.equal(porId.check_out.encabezado, 2);
+      assert.equal(porId.check_in_manana.encabezado, 1);
+      assert.equal(contarCasitasHoy(tablero24), 24);
+      assert.equal(casitasAlcanzablesHoy(tablero24, new Set()).length, 24);
     },
   },
   {
