@@ -17,6 +17,14 @@ function tituloGrupo(group: HoyBoardGroup) {
   return group.id === "upsell" ? "Upsells vigentes" : group.label;
 }
 
+function conteoEncabezadoGrupo(group: HoyBoardGroup) {
+  return group.rows.length;
+}
+
+function chipsVisiblesFilas(rows: HoyBoardChip[]) {
+  return rows.length > HOY_GRUPO_CHIP_LIMITE ? rows.slice(0, HOY_GRUPO_CHIP_LIMITE) : rows;
+}
+
 function ChipsGrupo({
   group,
   titulo,
@@ -76,16 +84,16 @@ function Grupo({
 }) {
   const Title = heading;
   const titulo = tituloGrupo(group);
-  const total = group.rows.length + (group.sections?.reduce((sum, section) => sum + section.rows.length, 0) ?? 0);
+  const encabezado = conteoEncabezadoGrupo(group);
   const overflow = group.rows.length > HOY_GRUPO_CHIP_LIMITE;
-  const visibles = overflow ? group.rows.slice(0, HOY_GRUPO_CHIP_LIMITE) : group.rows;
+  const visibles = chipsVisiblesFilas(group.rows);
 
   return (
     <div className={heading === "h3" ? styles.group : styles.subGroup}>
       <div className={styles.groupHeading}>
         <span className={styles.groupDot} data-tone={group.tone} aria-hidden="true" />
         <Title>{titulo}</Title>
-        <span>{total}</span>
+        <span>{encabezado}</span>
       </div>
       {group.rows.length > 0 && (
         <>
