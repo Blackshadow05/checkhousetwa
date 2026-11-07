@@ -1,28 +1,18 @@
 "use client";
 
-import { ChevronRight, House, LoaderCircle } from "lucide-react";
+import { House, LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { fetchLatestRevisionCasita } from "@/app/actions/revisiones";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
-import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { vistaExpansionGrupo } from "@/lib/hoy-casitas-expansion";
 import {
   type HoyBoardChip,
   type HoyBoardGroup,
 } from "@/lib/revisiones-display";
 import styles from "./inicio-screen.module.css";
 
-const HOY_GRUPO_CHIP_LIMITE = 12;
-
 function tituloGrupo(group: HoyBoardGroup) {
   return group.id === "upsell" ? "Upsells vigentes" : group.label;
-}
-
-function conteoEncabezadoGrupo(group: HoyBoardGroup) {
-  return group.rows.length;
-}
-
-function chipsVisiblesFilas(rows: HoyBoardChip[]) {
-  return rows.length > HOY_GRUPO_CHIP_LIMITE ? rows.slice(0, HOY_GRUPO_CHIP_LIMITE) : rows;
 }
 
 function ChipsGrupo({
@@ -34,12 +24,12 @@ function ChipsGrupo({
 }: {
   group: HoyBoardGroup;
   titulo: string;
-  rows: HoyBoardChip[];
+  rows: readonly HoyBoardChip[];
   opening: string | null;
   onOpen: (chip: HoyBoardChip) => void;
 }) {
   return (
-    <div className={styles.chips}>
+    <div className={styles.chips} id={`hoy-chips-${group.id}`} data-hoy-chips={group.id}>
       {rows.map((chip) => {
         const estado =
           (group.id === "check_in" || group.id === "check_in_hoy" || group.id === "check_in_manana") &&
@@ -74,46 +64,47 @@ function Grupo({
   heading,
   opening,
   onOpen,
-  onVerTodas,
 }: {
   group: HoyBoardGroup;
   heading: "h3" | "h4";
   opening: string | null;
   onOpen: (chip: HoyBoardChip) => void;
-  onVerTodas: (group: HoyBoardGroup) => void;
 }) {
   const Title = heading;
   const titulo = tituloGrupo(group);
-  const encabezado = conteoEncabezadoGrupo(group);
-  const overflow = group.rows.length > HOY_GRUPO_CHIP_LIMITE;
-  const visibles = chipsVisiblesFilas(group.rows);
+  const [expandido, setExpandido] = useState(false);
+  const vista = vistaExpansionGrupo(group, expandido);
 
   return (
-    <div className={heading === "h3" ? styles.group : styles.subGroup}>
+    <div className={heading === "h3" ? styles.group : styles.subGroup} data-hoy-grupo={group.id}>
       <div className={styles.groupHeading}>
         <span className={styles.groupDot} data-tone={group.tone} aria-hidden="true" />
         <Title>{titulo}</Title>
-        <span>{encabezado}</span>
+        <span>{vista.encabezado}</span>
       </div>
-      {group.rows.length > 0 && (
+      {group.rows.length > 0 ? (
         <>
-          <ChipsGrupo group={group} titulo={titulo} rows={visibles} opening={opening} onOpen={onOpen} />
-          {overflow && (
+          <ChipsGrupo
+            group={group}
+            titulo={titulo}
+            rows={vista.filasVisibles}
+            opening={opening}
+            onOpen={onOpen}
+          />
+          {vista.muestraControl && vista.etiquetaControl ? (
             <button
-              className={styles.showAll}
+              className={styles.expandGroup}
               type="button"
-              aria-haspopup="dialog"
-              onClick={() => onVerTodas(group)}
+              aria-expanded={expandido}
+              aria-controls={`hoy-chips-${group.id}`}
+              data-hoy-expansion={group.id}
+              onClick={() => setExpandido((actual) => !actual)}
             >
-              Ver todas
-              <span>
-                {group.rows.length}
-                <ChevronRight size={18} aria-hidden="true" />
-              </span>
+              {vista.etiquetaControl}
             </button>
-          )}
+          ) : null}
         </>
-      )}
+      ) : null}
       {group.sections?.map((section) => (
         <Grupo
           key={section.id}
@@ -121,7 +112,6 @@ function Grupo({
           heading="h4"
           opening={opening}
           onOpen={onOpen}
-          onVerTodas={onVerTodas}
         />
       ))}
     </div>
@@ -138,7 +128,6 @@ export function HoyCasitas({
   const { openRevision } = useRevisiones();
   const [opening, setOpening] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [grupoAbierto, setGrupoAbierto] = useState<HoyBoardGroup | null>(null);
 
   const openChip = (chip: HoyBoardChip) => {
     if (opening) return;
@@ -172,14 +161,14 @@ export function HoyCasitas({
         <span className={styles.count}>{total}</span>
       </div>
       <div className={styles.card}>
-        {groups.length === 0 && (
+        {groups.length === 0 ? (
           <div className={styles.empty}>
             <span className={styles.emptyIcon}>
               <House size={20} aria-hidden="true" />
             </span>
             <p>Sin movimientos por ahora</p>
           </div>
-        )}
+        ) : null}
         {groups.map((group) => (
           <Grupo
             key={group.id}
@@ -187,26 +176,10 @@ export function HoyCasitas({
             heading="h3"
             opening={opening}
             onOpen={(chip) => openChip(chip)}
-            onVerTodas={setGrupoAbierto}
           />
         ))}
-        {notice && <p className={styles.notice} role="status">{notice}</p>}
+        {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
       </div>
-      <BottomSheet
-        open={grupoAbierto !== null}
-        onClose={() => setGrupoAbierto(null)}
-        title={grupoAbierto ? tituloGrupo(grupoAbierto) : ""}
-      >
-        {grupoAbierto && (
-          <ChipsGrupo
-            group={grupoAbierto}
-            titulo={tituloGrupo(grupoAbierto)}
-            rows={grupoAbierto.rows}
-            opening={opening}
-            onOpen={(chip) => openChip(chip)}
-          />
-        )}
-      </BottomSheet>
     </section>
   );
 }

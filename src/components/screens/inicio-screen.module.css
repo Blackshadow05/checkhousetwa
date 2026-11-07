@@ -473,6 +473,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+.expandGroup {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 2px;
+  padding: 8px 4px 2px 0;
+  color: var(--primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: left;
+}
+
 .empty {
   display: flex;
   align-items: center;

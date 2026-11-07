@@ -16,6 +16,7 @@
     "test:reportes": "node scripts/test-reportes-revision.mjs",
     "test:consejos": "node scripts/test-consejos-diarios.mjs",
     "test:hoy-casitas": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-group-hoy-casitas.mjs",
+    "test:hoy-expansion": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-hoy-casitas-expansion.mjs",
     "test:evidencias": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-revision-evidence-edit.mjs"
   },
   "dependencies": {
