@@ -377,12 +377,11 @@ export function groupHoyCasitas(
       }
     }
     for (const [number, row] of ultimas) {
-      if (ocupadas.has(number)) continue;
-      if (hoyBoardGroup(row.caja_fuerte) !== "upsell" || checkInHoy.has(number)) continue;
+      if (ocupadas.has(number) || saleHoy(number)) continue;
+      if (hoyBoardGroup(row.caja_fuerte) !== "upsell") continue;
       if (conoceCasa && enCasa?.has(number)) continue;
-      // Con In house Guests en el memo: Upsell sin huésped ni llegada hoy/mañana
-      // no se queda en vigentes; pasa a Pendiente de Guardar.
-      if (conoceCasa || inHouseDelDia !== null) continue;
+      // Última caja fuerte Upsell y sin ocupación/llegada: vigente azul.
+      // No se vence por antigüedad. Solo sale a pendiente si hay salida/check out de hoy.
       upsellVigentes.push(row);
       ocupadas.add(number);
     }
@@ -390,6 +389,7 @@ export function groupHoyCasitas(
       for (const [number, row] of ultimas) {
         if (ocupadas.has(number)) continue;
         if (inHouseDelDia.has(number)) continue;
+        if (hoyBoardGroup(row.caja_fuerte) === "upsell" && !saleHoy(number)) continue;
         if (!esEstadoPendienteDeGuardar(row.caja_fuerte)) continue;
         pendienteRows.push(row);
         ocupadas.add(number);
@@ -398,7 +398,8 @@ export function groupHoyCasitas(
       for (const [number, row] of ultimas) {
         if (ocupadas.has(number)) continue;
         const estado = hoyBoardGroup(row.caja_fuerte);
-        if (estado === "upsell" && (conoceCasa || inHouseDelDia !== null)) {
+        if (estado === "upsell") {
+          if (!saleHoy(number)) continue;
           pendienteRows.push(row);
           ocupadas.add(number);
           continue;

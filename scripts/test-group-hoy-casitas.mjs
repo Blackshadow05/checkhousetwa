@@ -327,10 +327,10 @@ const tests = [
     },
   },
   {
-    name: "Upsell viejo sin huésped ni llegada va a Pendiente de Guardar, no a vigentes",
+    name: "Upsell desocupado sin llegada ni salida sigue vigente en azul",
     run() {
       const upsell = revision({
-        id: "up-stale",
+        id: "up-vigente",
         casita: "28",
         caja_fuerte: "Upsell",
         created_at: `${AYER} 18:00`,
@@ -346,10 +346,8 @@ const tests = [
 
       assert.equal(grupo(groups, "check_in"), null);
       assert.equal(grupo(groups, "check_in_hoy"), null);
-      assert.equal(grupo(groups, "upsell"), null);
-      assert.deepEqual(chipsSeccion(groups, "ocupacion", "pendiente_guardar"), [
-        { casita: "28", tone: "amber" },
-      ]);
+      assert.deepEqual(chips(groups, "upsell"), [{ casita: "28", tone: "blue" }]);
+      assert.equal(seccion(groups, "ocupacion", "pendiente_guardar"), null);
     },
   },
   {
@@ -631,8 +629,8 @@ const tests = [
       assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "7", tone: "sage" }]);
       assert.deepEqual(chipsSeccion(groups, "ocupacion", "pendiente_guardar"), [
         { casita: "9", tone: "amber" },
-        { casita: "11", tone: "amber" },
       ]);
+      assert.deepEqual(chips(groups, "upsell"), [{ casita: "11", tone: "blue" }]);
       assert.equal(contarCasitasHoy(groups), 5);
       assertSinDuplicados(groups);
     },
@@ -761,6 +759,40 @@ const tests = [
         filas,
       );
       assert.deepEqual(chips(groups, "check_in_manana"), [{ casita: "41", tone: "sage" }]);
+    },
+  },
+  {
+    name: "Pipeline: última revisión Upsell sin ocupación ni salida sigue en Upsells vigentes",
+    run() {
+      const filas = [
+        memoFila({ casita: "13", tipo: "Today's Arrivals", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: MANANA }),
+        memoFila({ casita: "13", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: MANANA }),
+        memoFila({ casita: "1", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: AYER, salida_fecha: MANANA }),
+        memoFila({ casita: "9", tipo: "Today´s Departure", fecha_memo: HOY, llegada_fecha: AYER, salida_fecha: HOY }),
+      ];
+      const rows = [
+        revision({ id: "ci-13-pipe", casita: "13", caja_fuerte: "Check in", created_at: `${HOY} 10:00` }),
+        revision({ id: "ci-1-pipe", casita: "1", caja_fuerte: "Check in", created_at: `${AYER} 09:00` }),
+        revision({ id: "ci-9-pipe", casita: "9", caja_fuerte: "Check in", created_at: `${AYER} 11:00` }),
+      ];
+      const upsells = [
+        revision({ id: "up-desocupado", casita: "18", caja_fuerte: "Upsell", created_at: `${HOY} 23:23` }),
+        revision({ id: "up-salida", casita: "14", caja_fuerte: "Upsell", created_at: `${AYER} 03:24` }),
+      ];
+      const groups = groupHoyCasitasConMemo(rows, HOY, upsells, [
+        ...filas,
+        memoFila({ casita: "14", tipo: "Today´s Departure", fecha_memo: HOY, llegada_fecha: AYER, salida_fecha: HOY }),
+      ]);
+
+      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "13", tone: "sage" }]);
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "1", tone: "sage" }]);
+      assert.deepEqual(chips(groups, "upsell"), [{ casita: "18", tone: "blue" }]);
+      assert.deepEqual(chipsSeccion(groups, "ocupacion", "pendiente_guardar"), [
+        { casita: "9", tone: "rose" },
+        { casita: "14", tone: "rose" },
+      ]);
+      assert.equal(todasLasCasitas(groups).filter((n) => n === "18").length, 1);
+      assertSinDuplicados(groups);
     },
   },
 ];
