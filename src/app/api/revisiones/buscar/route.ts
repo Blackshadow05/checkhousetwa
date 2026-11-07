@@ -159,6 +159,19 @@ type Opciones = {
   maxTokens?: number;
 };
 
+// Conserva el status de OpenRouter para avisar al usuario si falla la clave, los créditos o el límite de uso.
+class ErrorModelo extends Error {
+  constructor(readonly status: number, detalle: string) {
+    super(detalle ? `status ${status}: ${detalle}` : `status ${status}`);
+  }
+}
+
+async function detalleError(response: Response) {
+  const body = await response.json().catch(() => null) as { error?: { message?: unknown } } | null;
+  const mensaje = typeof body?.error?.message === "string" ? body.error.message : "";
+  return mensaje.replace(/sk-[\w-]+/g, "[clave]").slice(0, 200);
+}
+
 async function llamarModelo(apiKey: string, messages: Mensaje[], opciones: Opciones, timeoutMs: number) {
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -174,7 +187,7 @@ async function llamarModelo(apiKey: string, messages: Mensaje[], opciones: Opcio
       max_tokens: opciones.maxTokens ?? 400,
     }),
   });
-  if (!response.ok) throw new Error(`status ${response.status}`);
+  if (!response.ok) throw new ErrorModelo(response.status, await detalleError(response));
   const body = await response.json() as { choices?: { message?: Mensaje }[] };
   const message = body.choices?.[0]?.message;
   if (!message) throw new Error("sin respuesta");
@@ -204,6 +217,17 @@ async function redactar(
   const texto = limpiarRespuestaDetallada(message.content ?? "");
   if (!texto) throw new Error("redacción vacía");
   return completarVinetas(texto, rows, total, hoy);
+}
+
+function falloServicio(error: unknown) {
+  if (!(error instanceof ErrorModelo)) return null;
+  // En OpenRouter solo el 401 indica clave inválida; el 403 es moderación o límite de la clave y va al mensaje genérico.
+  if (error.status === 401) {
+    return fail("La búsqueda inteligente no está disponible: la clave del servicio de IA no es válida. Avisa al administrador.", 503);
+  }
+  if (error.status === 402) return fail("La búsqueda inteligente no tiene créditos disponibles. Avisa al administrador.", 503);
+  if (error.status === 429) return fail("Hay demasiadas búsquedas en este momento. Espera un momento e inténtalo de nuevo.", 429);
+  return null;
 }
 
 function esTimeout(error: unknown) {
@@ -293,7 +317,7 @@ export async function POST(request: Request) {
       message = await llamarModelo(apiKey, messages, { tools: herramientas(lectura), toolChoice: ronda === 0 ? "required" : "auto" }, Math.min(MODEL_MAX_MS, restante));
     } catch (error) {
       console.error("buscar-revisiones: falló", error instanceof Error ? error.message : "error");
-      if (!ultima) return fail(esTimeout(error) ? "La búsqueda tardó demasiado. Inténtalo de nuevo." : "No pudimos completar la búsqueda. Inténtalo de nuevo.", esTimeout(error) ? 504 : 502);
+      if (!ultima) return falloServicio(error) ?? fail(esTimeout(error) ? "La búsqueda tardó demasiado. Inténtalo de nuevo." : "No pudimos completar la búsqueda. Inténtalo de nuevo.", esTimeout(error) ? 504 : 502);
       break;
     }
     const calls = message.tool_calls ?? [];
@@ -390,9 +414,9 @@ export async function POST(request: Request) {
     }
   }
   if (!ultima && falloLectura) {
-    return esTimeout(falloLectura)
+    return falloServicio(falloLectura) ?? (esTimeout(falloLectura)
       ? fail("La búsqueda por significado tardó demasiado. Inténtalo de nuevo o con un periodo más corto.", 504)
-      : fail("No pudimos completar la búsqueda. Inténtalo de nuevo.", 502);
+      : fail("No pudimos completar la búsqueda. Inténtalo de nuevo.", 502));
   }
   if (!ultima) return fail("No entendimos la búsqueda. Prueba escribiéndola de otra forma.", 422);
   const { filtros, total, rows, stats } = ultima;
