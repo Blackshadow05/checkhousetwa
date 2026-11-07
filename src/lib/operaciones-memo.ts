@@ -55,25 +55,48 @@ function filasMemoDelDia(filas: readonly OperacionMemo[], hoy: string) {
   return filas.filter((fila) => fila.fecha_memo === hoy);
 }
 
-export function casitasConLlegada(filas: readonly OperacionMemo[], hoy: string): Set<string> {
-  const manana = shiftDay(hoy, 1);
+function tipoMemo(tipo: string | null | undefined) {
+  return (tipo ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[´’]/g, "'")
+    .toLowerCase()
+    .trim();
+}
+
+// El memo real no tiene "Tomorrow's Arrivals": las llegadas de mañana
+// están en el memo del día siguiente como "Today's Arrivals".
+function esTipoLlegada(tipo: string | null | undefined) {
+  const t = tipoMemo(tipo);
+  if (!t) return false;
+  if (t === "today's arrivals" || t === "tomorrow's arrivals" || t === "tomorrows arrivals") return true;
+  if (t === "llegadas" || t === "llegadas de hoy" || t === "llegadas de manana") return true;
+  return t.includes("arrival") && !t.includes("depart");
+}
+
+function cuentaComoLlegada(fila: OperacionMemo, hoy: string, llegada: string) {
+  if (fila.llegada_fecha === llegada) {
+    if (esTipoLlegada(fila.tipo)) return true;
+    return fila.fecha_memo === hoy || fila.fecha_memo === llegada || !fila.fecha_memo;
+  }
+  return !fila.llegada_fecha && esTipoLlegada(fila.tipo) && fila.fecha_memo === llegada;
+}
+
+function casitasConLlegadaEn(filas: readonly OperacionMemo[], hoy: string, llegada: string): Set<string> {
   const casitas = new Set<string>();
-  for (const fila of filasMemoDelDia(filas, hoy)) {
-    if (fila.llegada_fecha !== hoy && fila.llegada_fecha !== manana) continue;
+  for (const fila of filas) {
+    if (!cuentaComoLlegada(fila, hoy, llegada)) continue;
     const numero = numeroCasita(fila.casita);
     if (numero) casitas.add(numero);
   }
   return casitas;
 }
 
-function casitasConLlegadaEn(filas: readonly OperacionMemo[], hoy: string, llegada: string): Set<string> {
-  const casitas = new Set<string>();
-  for (const fila of filasMemoDelDia(filas, hoy)) {
-    if (fila.llegada_fecha !== llegada) continue;
-    const numero = numeroCasita(fila.casita);
-    if (numero) casitas.add(numero);
-  }
-  return casitas;
+export function casitasConLlegada(filas: readonly OperacionMemo[], hoy: string): Set<string> {
+  return new Set([
+    ...casitasConLlegadaEn(filas, hoy, hoy),
+    ...casitasConLlegadaEn(filas, hoy, shiftDay(hoy, 1)),
+  ]);
 }
 
 // Solo llegadas con fecha de hoy (Today's Arrivals / ingresos del día).
@@ -81,7 +104,7 @@ export function casitasConLlegadaHoy(filas: readonly OperacionMemo[], hoy: strin
   return casitasConLlegadaEn(filas, hoy, hoy);
 }
 
-// Llegadas de mañana (Tomorrow's Arrivals) según llegada_fecha del memo.
+// Llegadas de mañana: Today's Arrivals del memo de mañana, o llegada_fecha = mañana.
 export function casitasConLlegadaManana(filas: readonly OperacionMemo[], hoy: string): Set<string> {
   return casitasConLlegadaEn(filas, hoy, shiftDay(hoy, 1));
 }
@@ -101,15 +124,6 @@ function numeroCasita(casita: string) {
   const numero = Number(casita.trim());
   if (!Number.isInteger(numero) || numero < 1) return null;
   return String(numero);
-}
-
-function tipoMemo(tipo: string | null | undefined) {
-  return (tipo ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[´’]/g, "'")
-    .toLowerCase()
-    .trim();
 }
 
 // In house Guests listados en el memo del día (fecha_memo).

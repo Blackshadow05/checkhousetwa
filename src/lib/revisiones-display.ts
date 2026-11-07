@@ -342,13 +342,16 @@ export function groupHoyCasitas(
 
   // Montaje por llegada_fecha del memo, no por el día de la revisión.
   // Check in: sage. Upsell: blue. Revisión de ayer con llegada hoy → Check in de hoy.
+  const saleHoy = (number: string) =>
+    Boolean(salidasHoy?.has(number) || checkOutHoy.has(number));
+
   const montarPorLlegada = (
     dest: HoyBoardChip[],
     setIngresos: ReadonlySet<string> | null,
   ) => {
     if (!setIngresos) return;
     for (const number of setIngresos) {
-      if (ocupadas.has(number)) continue;
+      if (ocupadas.has(number) || saleHoy(number)) continue;
       const row = ultimas.get(number);
       if (!row) continue;
       const estado = hoyBoardGroup(row.caja_fuerte);
@@ -367,7 +370,7 @@ export function groupHoyCasitas(
     montarPorLlegada(montajesHoy, setHoy);
     montarPorLlegada(montajesManana, setManana);
     for (const [number, row] of ultimas) {
-      if (ocupadas.has(number)) continue;
+      if (ocupadas.has(number) || saleHoy(number)) continue;
       if (hoyBoardGroup(row.caja_fuerte) !== "upsell") continue;
       if (checkInHoy.has(number) || llegadas.has(number)) {
         marcarCheckIn(row, "blue");

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { groupHoyCasitasConMemo } from "../src/lib/hoy-casitas-board.ts";
 import {
   casitasConLlegada,
   casitasConLlegadaHoy,
@@ -52,6 +53,22 @@ function revision({
     nota_extra: null,
     room_move: null,
     pendiente,
+  };
+}
+
+function memoFila({
+  casita,
+  tipo,
+  fecha_memo,
+  llegada_fecha = null,
+  salida_fecha = null,
+}) {
+  return {
+    casita: String(casita),
+    tipo,
+    fecha_memo,
+    llegada_fecha,
+    salida_fecha,
   };
 }
 
@@ -652,6 +669,98 @@ const tests = [
       const kept = keepInicioRevisiones([montajeAyer, ...recientes], HOY);
       assert.equal(kept.some((row) => row.id === "keep-ayer"), true);
       assert.equal(kept.length > INICIO_LIST_LIMIT, true);
+    },
+  },
+  {
+    name: "Today's Arrivals del memo de mañana no se pierden por filtrar fecha_memo === hoy",
+    run() {
+      const filas = [
+        memoFila({ casita: "13", tipo: "Today's Arrivals", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: MANANA }),
+        memoFila({ casita: "13", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: MANANA }),
+        memoFila({ casita: "1", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: AYER, salida_fecha: MANANA }),
+        memoFila({ casita: "8", tipo: "Today's Arrivals", fecha_memo: MANANA, llegada_fecha: MANANA, salida_fecha: "2026-11-08" }),
+        memoFila({ casita: "8", tipo: "In house Guests", fecha_memo: MANANA, llegada_fecha: MANANA, salida_fecha: "2026-11-08" }),
+        memoFila({ casita: "16", tipo: "In house Guests", fecha_memo: MANANA, llegada_fecha: HOY, salida_fecha: "2026-11-08" }),
+      ];
+      assert.deepEqual([...casitasConLlegadaHoy(filas, HOY)].sort(), ["13"]);
+      assert.deepEqual([...casitasConLlegadaManana(filas, HOY)].sort(), ["8"]);
+      assert.equal(casitasConLlegadaHoy(filas, HOY).has("16"), false);
+      assert.equal(casitasConLlegadaManana(filas, HOY).has("16"), false);
+    },
+  },
+  {
+    name: "Pipeline de Inicio: montaje el día anterior con Today's Arrivals en el memo de mañana",
+    run() {
+      const filas = [
+        memoFila({ casita: "13", tipo: "Today's Arrivals", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: MANANA }),
+        memoFila({ casita: "13", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: MANANA }),
+        memoFila({ casita: "1", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: AYER, salida_fecha: MANANA }),
+        memoFila({ casita: "45", tipo: "Today´s Departure", fecha_memo: HOY, llegada_fecha: AYER, salida_fecha: HOY }),
+        memoFila({ casita: "8", tipo: "Today's Arrivals", fecha_memo: MANANA, llegada_fecha: MANANA, salida_fecha: "2026-11-08" }),
+        memoFila({ casita: "27", tipo: "Today's Arrivals", fecha_memo: MANANA, llegada_fecha: MANANA, salida_fecha: "2026-11-10" }),
+        memoFila({ casita: "45", tipo: "Today's Arrivals", fecha_memo: MANANA, llegada_fecha: MANANA, salida_fecha: "2026-11-10" }),
+        memoFila({ casita: "16", tipo: "In house Guests", fecha_memo: MANANA, llegada_fecha: HOY, salida_fecha: "2026-11-08" }),
+      ];
+      const rows = [
+        revision({ id: "ci-13", casita: "13", caja_fuerte: "Check in", created_at: `${HOY} 10:00` }),
+        revision({ id: "ci-8", casita: "8", caja_fuerte: "Check in", created_at: `${HOY} 22:54` }),
+        revision({ id: "ci-27", casita: "27", caja_fuerte: "Check in", created_at: `${HOY} 01:12` }),
+        revision({ id: "ci-1", casita: "1", caja_fuerte: "Check in", created_at: `${AYER} 09:00` }),
+        revision({ id: "ci-16", casita: "16", caja_fuerte: "Check in", created_at: `${AYER} 12:00` }),
+      ];
+      const upsells = [
+        revision({ id: "up-45", casita: "45", caja_fuerte: "Upsell", created_at: `${AYER} 03:24` }),
+      ];
+      const groups = groupHoyCasitasConMemo(rows, HOY, upsells, filas);
+
+      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "13", tone: "sage" }]);
+      assert.deepEqual(chips(groups, "check_in_manana"), [
+        { casita: "8", tone: "sage" },
+        { casita: "27", tone: "sage" },
+      ]);
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "1", tone: "sage" }]);
+      assert.deepEqual(chipsSeccion(groups, "ocupacion", "pendiente_guardar"), [
+        { casita: "16", tone: "amber" },
+        { casita: "45", tone: "rose" },
+      ]);
+      assert.equal(grupo(groups, "check_in"), null);
+      assertSinDuplicados(groups);
+      assert.equal(contarCasitasHoy(groups), 6);
+    },
+  },
+  {
+    name: "El mismo montaje y memo de mañana pasan a Check in de hoy al cambiar el día",
+    run() {
+      const filas = [
+        memoFila({ casita: "8", tipo: "Today's Arrivals", fecha_memo: MANANA, llegada_fecha: MANANA, salida_fecha: "2026-11-08" }),
+        memoFila({ casita: "8", tipo: "In house Guests", fecha_memo: MANANA, llegada_fecha: MANANA, salida_fecha: "2026-11-08" }),
+      ];
+      const rows = [
+        revision({ id: "ci-8-rollover", casita: "8", caja_fuerte: "Check in", created_at: `${HOY} 22:54` }),
+      ];
+      const vispera = groupHoyCasitasConMemo(rows, HOY, [], filas);
+      const diaLlegada = groupHoyCasitasConMemo(rows, MANANA, [], filas);
+
+      assert.deepEqual(chips(vispera, "check_in_manana"), [{ casita: "8", tone: "sage" }]);
+      assert.equal(grupo(vispera, "check_in_hoy"), null);
+      assert.deepEqual(chips(diaLlegada, "check_in_hoy"), [{ casita: "8", tone: "sage" }]);
+      assert.equal(grupo(diaLlegada, "check_in_manana"), null);
+    },
+  },
+  {
+    name: "Apóstrofe raro de Today's Arrivals y fecha_memo mañana siguen contando como llegada",
+    run() {
+      const filas = [
+        memoFila({ casita: "41", tipo: "Today´s Arrivals", fecha_memo: MANANA, llegada_fecha: MANANA, salida_fecha: "2026-11-10" }),
+      ];
+      assert.deepEqual([...casitasConLlegadaManana(filas, HOY)], ["41"]);
+      const groups = groupHoyCasitasConMemo(
+        [revision({ id: "ci-41", casita: "41", caja_fuerte: "Check in", created_at: `${HOY} 21:00` })],
+        HOY,
+        [],
+        filas,
+      );
+      assert.deepEqual(chips(groups, "check_in_manana"), [{ casita: "41", tone: "sage" }]);
     },
   },
 ];

@@ -22,8 +22,8 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { casitasSinRevision } from "@/lib/casitas-sin-revision";
 import { menuDateHeading } from "@/lib/menus";
 import { useOperacionesMemo } from "@/hooks/use-operaciones-memo";
-import { casitasConLlegada, casitasConLlegadaHoy, casitasConLlegadaManana, casitasConSalidaHoy, casitasInHouseGuestsDelDia, estadiasEnCasa } from "@/lib/operaciones-memo";
-import { casitaNumber, contarCasitasHoy, groupHoyCasitas, initials } from "@/lib/revisiones-display";
+import { groupHoyCasitasConMemo } from "@/lib/hoy-casitas-board";
+import { casitaNumber, contarCasitasHoy, initials } from "@/lib/revisiones-display";
 import { useOnline } from "@/lib/use-online";
 import { usePullToRefresh } from "@/lib/use-pull-to-refresh";
 import type { MenuDelDia as MenuDelDiaRow } from "@/types/database";
@@ -162,20 +162,9 @@ export function InicioScreen({
   const greeting = useSyncExternalStore(subscribeClock, greetingNow, greetingNow);
   const memo = useOperacionesMemo(true);
   const memoRows = memo.confirmado && memo.rows ? memo.rows : null;
-  const inHouseDelDia = memoRows ? casitasInHouseGuestsDelDia(memoRows, today) : null;
   const groups = useMemo(
-    () => groupHoyCasitas(
-      revisiones,
-      today,
-      upsells,
-      memoRows ? casitasConLlegada(memoRows, today) : null,
-      memoRows ? estadiasEnCasa(memoRows, today) : null,
-      inHouseDelDia,
-      memoRows ? casitasConLlegadaHoy(memoRows, today) : null,
-      memoRows ? casitasConSalidaHoy(memoRows, today) : null,
-      memoRows ? casitasConLlegadaManana(memoRows, today) : null,
-    ),
-    [revisiones, today, upsells, memoRows, inHouseDelDia],
+    () => groupHoyCasitasConMemo(revisiones, today, upsells, memoRows),
+    [revisiones, today, upsells, memoRows],
   );
   const totalHoy = contarCasitasHoy(groups);
   const pendientes = casitasSinRevision(revisionActivity, today, days);
