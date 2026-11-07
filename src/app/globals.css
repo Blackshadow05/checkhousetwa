@@ -1628,6 +1628,15 @@ svg {
   color: var(--muted-foreground);
   font-size: 0.8125rem;
 }
+.detail-evidence-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 14px;
+}
 .detail-screen.is-editing .detail-tile {
   border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
 }

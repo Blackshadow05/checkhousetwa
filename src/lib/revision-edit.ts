@@ -5,6 +5,7 @@ import {
   QUANTITY_LIMITS,
   evidencePhotoLimit,
 } from "@/lib/revision-form";
+import { EVIDENCE_EDIT_LABELS, EVIDENCE_FIELDS } from "@/lib/revision-evidence";
 import { normalizeText } from "@/lib/revisiones-display";
 import { esRolAdmin } from "@/lib/usuarios-admin";
 import type { RevisionCasitaInicio } from "@/types/database";
@@ -69,7 +70,7 @@ export function auditRawLabel(value: string | null | undefined) {
 export function formatRevisionAuditLine(
   id: string,
   casita: string | null | undefined,
-  field: RevisionEditField,
+  field: string,
   value: string | null | undefined,
 ) {
   return `[${id}] casita ${casita == null ? "null" : casita} ${field}: ${auditRawLabel(value)}`;
@@ -129,10 +130,18 @@ export function mapRegistroEdicion(row: {
     createdAt: row.created_at,
     actor: row["Usuario que Edito"]?.trim() || "Alguien del equipo",
     field,
-    label: isRevisionEditField(field) ? REVISION_EDIT_LABELS[field] : "Cambio",
+    label: revisionAuditLabel(field),
     previous: previous ? previous.value : auditFallbackValue(row.Dato_anterior),
     next: next ? next.value : auditFallbackValue(row.Dato_nuevo),
   };
+}
+
+export function revisionAuditLabel(field: string) {
+  if (isRevisionEditField(field)) return REVISION_EDIT_LABELS[field];
+  if ((EVIDENCE_FIELDS as readonly string[]).includes(field)) {
+    return EVIDENCE_EDIT_LABELS[field as (typeof EVIDENCE_FIELDS)[number]];
+  }
+  return "Cambio";
 }
 
 export function persistRevisionFieldValue(field: RevisionEditField, value: string | null) {

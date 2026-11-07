@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRight,
   CalendarDays,
+  Camera,
   Check,
   ChevronLeft,
   CircleAlert,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { EvidenceGallery } from "@/components/screens/evidence-gallery";
 import { RevisionEditSheet } from "@/components/screens/revision-edit-sheet";
+import { RevisionEvidenceEditSheet } from "@/components/screens/revision-evidence-edit-sheet";
 import { RevisionNoteSheet } from "@/components/screens/revision-note-sheet";
 import { RevisionRecognitionDetail } from "@/components/screens/revision-recognition-detail";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -43,6 +45,7 @@ import {
   type RevisionNoteItem,
 } from "@/lib/revision-notes";
 import type { InicioRevisionRow, UsuarioShell } from "@/types/database";
+import { evidencePhotoLimit } from "@/lib/revision-form";
 import { useOnline } from "@/lib/use-online";
 import { useInventarioCasitas } from "@/hooks/use-inventario-casitas";
 import { faltantesRevision, resumenFaltantes, resumenNoLleva } from "@/lib/revision-faltantes";
@@ -260,6 +263,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
   const loadingMoreRef = useRef(false);
   const [copyMessage, setCopyMessage] = useState("");
   const [editingField, setEditingField] = useState<RevisionEditField | null>(null);
+  const [editingEvidence, setEditingEvidence] = useState(false);
   const [editing, setEditing] = useState(false);
   const [history, setHistory] = useState<RevisionEditHistoryItem[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -313,6 +317,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
     setNoteMessage(null);
     setNoteSheetOpen(false);
     setEditing(false);
+    setEditingEvidence(false);
   }, [selectedRevision?.id]);
 
   useEffect(() => {
@@ -407,6 +412,10 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
         return;
       }
       if (document.querySelector(".bottom-sheet[open]")) return;
+      if (editingEvidence) {
+        setEditingEvidence(false);
+        return;
+      }
       if (editing) {
         setEditing(false);
         return;
@@ -415,7 +424,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [closeRevision, editing]);
+  }, [closeRevision, editing, editingEvidence]);
 
   if (!selectedRevision) return null;
 
@@ -440,6 +449,8 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
   const editable = puedeEditarRevision(usuario, row.quien_revisa);
   const onEdit = editing && editable ? setEditingField : null;
+  const photoLimit = evidencePhotoLimit(row.caja_fuerte === "—" ? "" : row.caja_fuerte);
+  const canEditPhotos = editing && editable && (photoLimit > 0 || images.length > 0);
   const actions = (
     <DetailActions
       editing={editing}
@@ -551,11 +562,23 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
             </div>
           )}
 
-          {editing && editable && (
+          {editing && editable ? (
             <p className="detail-edit-hint" role="status">
-              Toca el dato que quieras cambiar.
+              {canEditPhotos
+                ? "Toca el dato que quieras cambiar. También puedes añadir o quitar fotos de evidencia."
+                : "Toca el dato que quieras cambiar."}
             </p>
-          )}
+          ) : null}
+          {canEditPhotos ? (
+            <button
+              type="button"
+              className="secondary-button detail-evidence-edit"
+              onClick={() => setEditingEvidence(true)}
+            >
+              <Camera size={16} aria-hidden="true" />
+              {images.length ? "Añadir o quitar fotos" : "Añadir fotos de evidencia"}
+            </button>
+          ) : null}
 
           {faltantes ? (
             <div
@@ -831,6 +854,13 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
           revisionId={row.id}
           field={editingField}
           onClose={() => setEditingField(null)}
+          onSaved={() => setHistoryTick((tick) => tick + 1)}
+        />
+      ) : null}
+      {editingEvidence ? (
+        <RevisionEvidenceEditSheet
+          revisionId={row.id}
+          onClose={() => setEditingEvidence(false)}
           onSaved={() => setHistoryTick((tick) => tick + 1)}
         />
       ) : null}

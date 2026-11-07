@@ -7,7 +7,8 @@ import { costaRicaDateTime, pendienteInsert, revisionInsert, validatePendienteFo
 import { isEvidenceCloudinaryPath } from "@/lib/revision-evidence";
 import { isRevisionEditField, persistRevisionFieldValue, puedeEditarRevision, validateRevisionField, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
 import { mapNotaRevision, noteRevisionPage, NOTAS_REVISION_PAGE_SIZE, persistNotaRevision, persistNotaRevisionImage, validateNotaRevision, validateNotaRevisionImage, type RevisionNoteItem } from "@/lib/revision-notes";
-import { saveRevision, saveNotaRevision, editRevisionCampo, type SaveNoteResult } from "@/lib/save-revision";
+import { parseEvidenceEditPayload, puedeEditarEvidencias } from "@/lib/revision-evidence-edit";
+import { saveRevision, saveNotaRevision, editRevisionCampo, editRevisionEvidencias, type SaveNoteResult } from "@/lib/save-revision";
 import { getSesionUsuario } from "@/lib/auth/session";
 import { mapInicioRevision } from "@/lib/revisiones-map";
 import type { InicioRevisionRow, RevisionCasitaInicio } from "@/types/database";
@@ -239,6 +240,34 @@ export async function editRevisionField(input: {
       esperado: input.esperado,
       nuevo: persistRevisionFieldValue(campo, input.nuevo),
     }, session.usuario.id);
+  } catch {
+    return { row: null, error: "No pudimos conectar para guardar el cambio." };
+  }
+}
+
+export async function editRevisionEvidence(input: unknown): Promise<{
+  row: InicioRevisionRow | null;
+  error: string | null;
+  needsLogin?: boolean;
+}> {
+  try {
+    const parsed = parseEvidenceEditPayload(input);
+    if ("error" in parsed) return { row: null, error: parsed.error };
+    if (!REVISION_ID.test(parsed.id)) return { row: null, error: "No encontramos esta revisión." };
+    const session = await createPrivateSession();
+    if (!session) return { row: null, error: "Inicia sesión para guardar este cambio.", needsLogin: true };
+    const actual = await getRevisionInicioById(session.client, parsed.id);
+    if (actual.error) return { row: null, error: "No pudimos comprobar la revisión. Vuelve a intentarlo." };
+    if (!actual.data) return { row: null, error: "No encontramos esta revisión." };
+    if (!puedeEditarEvidencias(session.usuario, actual.data.quien_revisa)) {
+      return { row: null, error: SOLO_AUTOR };
+    }
+    return await editRevisionEvidencias(session.client, {
+      id: parsed.id,
+      esperado: parsed.esperado,
+      fotos: parsed.fotos,
+      editor: session.usuario.nombre,
+    });
   } catch {
     return { row: null, error: "No pudimos conectar para guardar el cambio." };
   }

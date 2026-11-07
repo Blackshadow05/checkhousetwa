@@ -1,7 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { NOTAS_REVISIONES_TABLE } from "@/lib/constants";
-import { isRevisionEditField, type RevisionEditField } from "@/lib/revision-edit";
+import { NOTAS_REVISIONES_TABLE, REGISTRO_EDICIONES_TABLE, REVISIONES_TABLE } from "@/lib/constants";
+import { EVIDENCE_FIELDS } from "@/lib/revision-evidence";
+import {
+  compactEvidenceSlots,
+  evidencePathsFromSlots,
+  evidenceSlotsFromRow,
+  revisionEvidenceEditDecision,
+  validateEvidencePaths,
+  validateRevisionEvidencePhotos,
+  type EvidenceSlots,
+} from "@/lib/revision-evidence-edit";
+import { formatRevisionAuditLine, isRevisionEditField, type RevisionEditField } from "@/lib/revision-edit";
 import { mapNotaRevision, sameNotaRevisionPayload, type RevisionNoteItem } from "@/lib/revision-notes";
+import { INICIO_REVISION_COLUMNS } from "@/lib/revisiones-display";
 import { mapInicioRevision } from "@/lib/revisiones-map";
 import type { Database, InicioRevisionRow, Json, NotaRevisionCasitaInsert, RevisionCasitaInsert } from "@/types/database";
 
@@ -119,5 +130,93 @@ export async function editRevisionCampo(
     return { row: null, error: "No pudimos confirmar el cambio. Conservamos el valor anterior." };
   }
   if (!result.data) return { row: null, error: "No pudimos confirmar el cambio. Conservamos el valor anterior." };
+  return { row: mapInicioRevision(result.data), error: null };
+}
+
+function costaRicaAuditTimestamp(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Costa_Rica",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}:${part("second")}`;
+}
+
+async function recordEvidenceEdits(
+  client: Client,
+  editor: string,
+  row: { id: string; casita: string | null },
+  previous: EvidenceSlots,
+  next: EvidenceSlots,
+) {
+  const entries = EVIDENCE_FIELDS.flatMap((field) => {
+    if (previous[field] === next[field]) return [];
+    return [{
+      created_at: costaRicaAuditTimestamp(),
+      "Usuario que Edito": editor,
+      Dato_anterior: formatRevisionAuditLine(row.id, row.casita, field, previous[field]),
+      Dato_nuevo: formatRevisionAuditLine(row.id, row.casita, field, next[field]),
+    }];
+  });
+  if (!entries.length) return;
+  const result = await client.from(REGISTRO_EDICIONES_TABLE).insert(entries);
+  if (result.error) {
+    console.warn("[revisiones] No se pudo registrar el historial de evidencias:", result.error.message);
+  }
+}
+
+export async function editRevisionEvidencias(
+  client: Client,
+  input: { id: string; esperado: EvidenceSlots; fotos: string[]; editor: string },
+): Promise<SaveResult> {
+  // evidencias no están en editar_campo_revision_casita. Solo se escriben estas
+  // tres columnas ya existentes; el resto de la fila no se toca.
+  if (!Array.isArray(input.fotos)) {
+    return { row: null, error: "Revisa los datos e inténtalo de nuevo." };
+  }
+  const pathError = validateEvidencePaths(input.fotos);
+  if (pathError) return { row: null, error: pathError };
+  const next = compactEvidenceSlots(input.fotos);
+
+  const actual = await client
+    .from(REVISIONES_TABLE)
+    .select(INICIO_REVISION_COLUMNS)
+    .eq("id", input.id)
+    .maybeSingle();
+  if (actual.error) return { row: null, error: "No pudimos comprobar la revisión. Vuelve a intentarlo." };
+  if (!actual.data) return { row: null, error: "No encontramos esta revisión." };
+
+  const current = evidenceSlotsFromRow(actual.data);
+  const expected = evidenceSlotsFromRow(input.esperado);
+  const countError = validateRevisionEvidencePhotos(actual.data.caja_fuerte, evidencePathsFromSlots(next));
+  if (countError) return { row: null, error: countError };
+
+  const decision = revisionEvidenceEditDecision(current, expected, next);
+  if (decision === "noop") return { row: mapInicioRevision(actual.data), error: null };
+  if (decision === "stale") return { row: null, error: "Las fotos cambiaron. Cierra y vuelve a editarlas." };
+
+  const payload = {
+    evidencia_01: next.evidencia_01,
+    evidencia_02: next.evidencia_02,
+    evidencia_03: next.evidencia_03,
+  };
+  let query = client.from(REVISIONES_TABLE).update(payload).eq("id", input.id);
+  for (const field of EVIDENCE_FIELDS) {
+    const raw = actual.data[field];
+    query = raw == null ? query.is(field, null) : query.eq(field, raw);
+  }
+  const result = await query.select(INICIO_REVISION_COLUMNS).maybeSingle();
+  if (result.error) {
+    return { row: null, error: "No pudimos confirmar el cambio. Conservamos las fotos anteriores." };
+  }
+  if (!result.data) return { row: null, error: "Las fotos cambiaron. Cierra y vuelve a editarlas." };
+
+  await recordEvidenceEdits(client, input.editor, result.data, current, next);
   return { row: mapInicioRevision(result.data), error: null };
 }
