@@ -72,6 +72,7 @@ next-env.d.ts
 !/scripts/build-pantalla-analyzer.mjs
 !/scripts/build-articulos-detector.mjs
 !/scripts/test-group-hoy-casitas.mjs
+!/scripts/test-hoy-casitas-expansion.mjs
 !/scripts/test-revision-evidence-edit.mjs
 !/scripts/ts-alias-loader.mjs
 /CLAUDE.md
