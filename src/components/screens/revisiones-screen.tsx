@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   CalendarDays,
   Check,
@@ -124,6 +124,13 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   };
   const sentinelRef = useRef<HTMLDivElement>(null);
   const busquedaSentinelRef = useRef<HTMLDivElement>(null);
+  const searchBarRef = useRef<HTMLDivElement>(null);
+  const searchStickySentinelRef = useRef<HTMLDivElement>(null);
+  const [searchStuck, setSearchStuck] = useState(false);
+  const [searchAway, setSearchAway] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  // Con foco o con una búsqueda abierta la barra no se esconde; arriba del todo (sin pegar) tampoco.
+  const searchHidden = searchAway && searchStuck && !searchFocused && !busqueda;
   const busquedaConMas = busqueda?.estado === "lista" && busqueda.revisiones.length < busqueda.total && !busqueda.errorMas;
   const chipsBusqueda = busqueda?.estado === "lista" ? chipsDeFiltros(busqueda.filtros) : [];
   const { cargarMas } = inteligente;
@@ -150,6 +157,96 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             : "back",
     });
   }
+
+  // Un encabezado está pegado si cruza la línea donde se pegan: el borde inferior de la barra, que se mueve con
+  // ellos (misma transición), o su posición fija si la barra todavía no se pegó. Primero se leen todas las
+  // posiciones y después se escriben los atributos, para no forzar un layout por encabezado.
+  const marcarEncabezados = useCallback(() => {
+    const bar = searchBarRef.current;
+    const root = bar?.closest<HTMLElement>(".app-screen");
+    const section = bar?.parentElement;
+    if (!bar || !root || !section) return;
+    const line = Math.min(bar.getBoundingClientRect().bottom, root.getBoundingClientRect().top + bar.offsetHeight) + 1;
+    const headings = Array.from(section.querySelectorAll<HTMLElement>(`.${styles.dayHeading}`));
+    const stuck = headings.map((heading) => {
+      const rect = heading.getBoundingClientRect();
+      return rect.top <= line && rect.bottom > line;
+    });
+    headings.forEach((heading, index) => heading.toggleAttribute("data-stuck", stuck[index]));
+  }, []);
+
+  // La lista cambia sin scroll (filtros, búsqueda, más filas) y la barra se esconde o aparece: se recalcula ya
+  // aplicado el DOM; al terminar la transición de la barra (onTransitionEnd) se recalcula con la posición final.
+  useLayoutEffect(marcarEncabezados, [marcarEncabezados, searchHidden, groups, busqueda, guardadas.length]);
+
+  // La altura de la barra fija queda en --search-bar-height (en el contenedor con scroll, que también la usa para su
+  // scroll-padding) para que los encabezados de fecha se peguen justo debajo.
+  useEffect(() => {
+    const bar = searchBarRef.current;
+    const root = bar?.closest<HTMLElement>(".app-screen");
+    if (!bar || !root) return;
+    const observer = new ResizeObserver(() => {
+      root.style.setProperty("--search-bar-height", `${bar.offsetHeight}px`);
+      marcarEncabezados();
+    });
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--search-bar-height");
+    };
+  }, [marcarEncabezados]);
+
+  // Cuando el marcador previo a la barra sale por arriba, la barra está pegada: se muestra el borde y la sombra.
+  useEffect(() => {
+    const node = searchStickySentinelRef.current;
+    if (!node) return;
+    const root = node.closest(".app-screen");
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.rootBounds) return;
+        setSearchStuck(!entry.isIntersecting && entry.boundingClientRect.top < entry.rootBounds.top);
+      },
+      { root: root instanceof Element ? root : null },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  // Bajar esconde la barra y subir la trae de vuelta, con el mismo umbral que el "+" flotante (app-shell): 8 px
+  // acumulados, y siempre visible cerca del inicio o del final. En el mismo cuadro se marcan los encabezados pegados.
+  useEffect(() => {
+    const root = searchBarRef.current?.closest<HTMLElement>(".app-screen");
+    if (!root) return;
+    let last = root.scrollTop;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const top = root.scrollTop;
+      const delta = top - last;
+      const atEdge = top < 80 || top + root.clientHeight >= root.scrollHeight - 24;
+      if (atEdge || Math.abs(delta) > 8) {
+        setSearchAway(!atEdge && delta > 0);
+        last = top;
+      }
+      marcarEncabezados();
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      root.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [marcarEncabezados]);
+
+  // Al enviar una búsqueda o pregunta el resultado (botón Preguntar, respuesta, contador) está arriba de la pantalla.
+  const irAlInicio = () => {
+    searchBarRef.current?.closest(".app-screen")?.scrollTo({
+      top: 0,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+    });
+  };
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -183,7 +280,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
   }, [busquedaConMas, cargarMas, busqueda]);
 
   return (
-    <section className={`home-screen ${styles.screen}`} aria-label="Revisiones">
+    <section className={`home-screen ${styles.screen}`} aria-label="Revisiones" data-search-hidden={searchHidden || undefined}>
       {!archive.online && (
         <div className="inline-notice" role="status">
           <WifiOff size={17} />
@@ -214,11 +311,29 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
         </div>
       )}
 
-      <div className={styles.toolbar}>
-        <div className={styles.titleRow}>
-          <h2>Revisiones</h2>
-          <span>{busqueda?.estado === "lista" ? busqueda.total : busqueda ? "" : archive.total}</span>
-        </div>
+      <div className={styles.titleRow}>
+        <h2>Revisiones</h2>
+        <span>{busqueda?.estado === "lista" ? busqueda.total : busqueda ? "" : archive.total}</span>
+      </div>
+      {/* Hijo directo de la sección para que el sticky abarque toda la pantalla y no solo la barra de herramientas. */}
+      <div ref={searchStickySentinelRef} aria-hidden="true" />
+      <div
+        ref={searchBarRef}
+        className={styles.searchBar}
+        data-stuck={searchStuck || undefined}
+        data-hidden={searchHidden || undefined}
+        // Solo el campo (o un foco de teclado visible) la mantiene fija: al cerrar los filtros el foco vuelve a su
+        // botón y no debe dejarla fija. Al perder el foco no se esconde hasta el próximo scroll hacia abajo: en Safari
+        // tocar ✕ o filtros quita el foco del campo antes del click y la barra escondida no lo recibiría.
+        onFocus={(event) => setSearchFocused(event.target instanceof HTMLInputElement || event.target.matches(":focus-visible"))}
+        onBlur={() => {
+          setSearchFocused(false);
+          setSearchAway(false);
+        }}
+        onTransitionEnd={(event) => {
+          if (event.target === event.currentTarget && event.propertyName === "top") marcarEncabezados();
+        }}
+      >
         <form
           className={styles.searchRow}
           role="search"
@@ -226,6 +341,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             event.preventDefault();
             if (esPreguntaNatural(archive.searchInput) && archive.online) void inteligente.preguntar(archive.searchInput);
             if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            irAlInicio();
           }}
         >
           <label className={styles.search}>
@@ -268,12 +384,17 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             ) : null}
           </button>
         </form>
+      </div>
+      <div className={styles.toolbar}>
         {puedePreguntar && (
           <button
             type="button"
             className={styles.askButton}
             disabled={!archive.online}
-            onClick={() => void inteligente.preguntar(archive.searchInput)}
+            onClick={() => {
+              void inteligente.preguntar(archive.searchInput);
+              irAlInicio();
+            }}
           >
             <Sparkles size={17} aria-hidden="true" />
             <span>{archive.online ? `Preguntar «${archive.searchInput.trim()}»` : "Preguntar requiere conexión"}</span>
