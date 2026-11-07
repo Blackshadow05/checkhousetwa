@@ -1,6 +1,12 @@
 export const EVIDENCE_FIELDS = ["evidencia_01", "evidencia_02", "evidencia_03"] as const;
 export type EvidenceField = (typeof EVIDENCE_FIELDS)[number];
 
+export const EVIDENCE_EDIT_LABELS: Record<EvidenceField, string> = {
+  evidencia_01: "Evidencia 1",
+  evidencia_02: "Evidencia 2",
+  evidencia_03: "Evidencia 3",
+};
+
 export const EVIDENCE_MONTHS = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
