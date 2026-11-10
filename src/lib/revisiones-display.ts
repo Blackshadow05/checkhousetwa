@@ -221,6 +221,15 @@ export function contarCasitasHoy(groups: readonly HoyBoardGroup[]) {
 }
 
 
+function shiftIsoDay(day: string, days: number) {
+  const date = new Date(`${day}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const dayNum = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${dayNum}`;
+}
+
 function revisionCheckInOUpsellEnEstadia(
   rows: readonly InicioRevisionRow[],
   upsells: readonly InicioRevisionRow[],
@@ -229,11 +238,13 @@ function revisionCheckInOUpsellEnEstadia(
   salida: string,
 ): InicioRevisionRow | null {
   const candidatas: InicioRevisionRow[] = [];
+  // Montaje de la víspera (día anterior a la llegada) pertenece a esta estadía.
+  const desde = shiftIsoDay(llegada, -1);
   const tomar = (row: InicioRevisionRow) => {
     if (row.pendiente) return;
     if (casitaNumber(row.casita) !== casita) return;
     const dia = revisionDay(row.created_at);
-    if (dia === "sin-fecha" || dia < llegada || dia >= salida) return;
+    if (dia === "sin-fecha" || dia < desde || dia >= salida) return;
     const estado = hoyBoardGroup(row.caja_fuerte);
     if (estado !== "check_in" && estado !== "upsell") return;
     candidatas.push(row);
@@ -242,15 +253,6 @@ function revisionCheckInOUpsellEnEstadia(
   for (const row of upsells) tomar(row);
   if (!candidatas.length) return null;
   return candidatas.reduce((best, row) => (row.created_at > best.created_at ? row : best));
-}
-
-function shiftIsoDay(day: string, days: number) {
-  const date = new Date(`${day}T12:00:00`);
-  date.setDate(date.getDate() + days);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const dayNum = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${dayNum}`;
 }
 
 export function mergeInicioRevisiones(
@@ -436,7 +438,7 @@ export function groupHoyCasitas(
   const checkout = porHoy("check_out", "rose");
   for (const chip of [...back, ...room, ...checkout]) ocupadas.add(chip.casita);
 
-  // En ocupación: In house Guests con Check in/Upsell en la estadía actual (desde llegada).
+  // En ocupación: In house Guests con Check in/Upsell de la estadía (desde la víspera de llegada).
   // No basta la última revisión si después hubo un Si u otro estado.
   const sueltas: HoyBoardChip[] = [];
   if (estadias) {
