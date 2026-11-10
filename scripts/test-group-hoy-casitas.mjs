@@ -795,6 +795,60 @@ const tests = [
       assertSinDuplicados(groups);
     },
   },
+  {
+    name: "Pipeline: montaje de la víspera pasa a En ocupación al día siguiente de la llegada",
+    run() {
+      const llegada = "2026-11-09";
+      const vispera = "2026-11-08";
+      const ocupado = "2026-11-10";
+      const salida = "2026-11-13";
+      const rows = [
+        revision({ id: "ci-38-vispera", casita: "38", caja_fuerte: "Check in", created_at: `${vispera} 23:00` }),
+        revision({ id: "co-38-previo", casita: "38", caja_fuerte: "Check out", created_at: `${vispera} 09:42` }),
+        revision({ id: "ci-38-previo", casita: "38", caja_fuerte: "Check in", created_at: "2026-11-04 00:49" }),
+      ];
+      const memoLlegada = [
+        memoFila({ casita: "38", tipo: "Today's Arrivals", fecha_memo: llegada, llegada_fecha: llegada, salida_fecha: salida }),
+        memoFila({ casita: "38", tipo: "In house Guests", fecha_memo: llegada, llegada_fecha: llegada, salida_fecha: salida }),
+      ];
+      const memoOcupado = [
+        memoFila({ casita: "38", tipo: "In house Guests", fecha_memo: ocupado, llegada_fecha: llegada, salida_fecha: salida }),
+      ];
+      const diaLlegada = groupHoyCasitasConMemo(rows, llegada, [], memoLlegada);
+      const diaOcupado = groupHoyCasitasConMemo(rows, ocupado, [], memoOcupado);
+
+      assert.deepEqual(chips(diaLlegada, "check_in_hoy"), [{ casita: "38", tone: "sage" }]);
+      assert.equal(grupo(diaLlegada, "ocupacion"), null);
+      assert.deepEqual(chips(diaOcupado, "ocupacion"), [{ casita: "38", tone: "sage" }]);
+      assert.equal(grupo(diaOcupado, "check_in_hoy"), null);
+      assert.equal(seccion(diaOcupado, "ocupacion", "pendiente_guardar"), null);
+      assert.equal(grupo(diaOcupado, "check_in_manana"), null);
+    },
+  },
+  {
+    name: "En ocupación no usa un Check in de dos días antes de la llegada",
+    run() {
+      const groups = agrupar({
+        rows: [
+          revision({
+            id: "ci-viejo",
+            casita: "22",
+            caja_fuerte: "Check in",
+            created_at: "2026-11-02 22:00",
+          }),
+        ],
+        today: HOY,
+        llegadas: new Set(),
+        llegadasHoy: new Set(),
+        llegadasManana: new Set(),
+        estadias: new Map([["22", { llegada: AYER, salida: MANANA }]]),
+        inHouseDelDia: new Set(["22"]),
+      });
+
+      assert.equal(grupo(groups, "ocupacion"), null);
+      assert.equal(seccion(groups, "ocupacion", "pendiente_guardar"), null);
+    },
+  },
 ];
 
 let failed = 0;
