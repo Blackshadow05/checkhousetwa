@@ -237,20 +237,29 @@ function revisionCheckInOUpsellEnEstadia(
   llegada: string,
   salida: string,
 ): InicioRevisionRow | null {
-  const candidatas: InicioRevisionRow[] = [];
-  // Montaje de la víspera (día anterior a la llegada) pertenece a esta estadía.
-  const desde = shiftIsoDay(llegada, -1);
+  const propias: InicioRevisionRow[] = [];
   const tomar = (row: InicioRevisionRow) => {
     if (row.pendiente) return;
     if (casitaNumber(row.casita) !== casita) return;
-    const dia = revisionDay(row.created_at);
-    if (dia === "sin-fecha" || dia < desde || dia >= salida) return;
-    const estado = hoyBoardGroup(row.caja_fuerte);
-    if (estado !== "check_in" && estado !== "upsell") return;
-    candidatas.push(row);
+    propias.push(row);
   };
   for (const row of rows) tomar(row);
   for (const row of upsells) tomar(row);
+
+  const candidatas = propias.filter((row) => {
+    const dia = revisionDay(row.created_at);
+    if (dia === "sin-fecha" || dia >= salida) return false;
+    const estado = hoyBoardGroup(row.caja_fuerte);
+    if (estado !== "check_in" && estado !== "upsell") return false;
+    // Un Check out entre este montaje y la llegada es de la estadía anterior.
+    const checkOutDeEstadiaPrevia = propias.some((other) => {
+      if (hoyBoardGroup(other.caja_fuerte) !== "check_out") return false;
+      if (other.created_at <= row.created_at) return false;
+      const diaOut = revisionDay(other.created_at);
+      return diaOut !== "sin-fecha" && diaOut < llegada;
+    });
+    return !checkOutDeEstadiaPrevia;
+  });
   if (!candidatas.length) return null;
   return candidatas.reduce((best, row) => (row.created_at > best.created_at ? row : best));
 }
@@ -438,8 +447,8 @@ export function groupHoyCasitas(
   const checkout = porHoy("check_out", "rose");
   for (const chip of [...back, ...room, ...checkout]) ocupadas.add(chip.casita);
 
-  // En ocupación: In house Guests con Check in/Upsell de la estadía (desde la víspera de llegada).
-  // No basta la última revisión si después hubo un Si u otro estado.
+  // En ocupación: In house con Check in/Upsell de esta estadía (montaje aunque sea varios días antes).
+  // Un Check out entre ese montaje y la llegada pertenece a la estadía anterior.
   const sueltas: HoyBoardChip[] = [];
   if (estadias) {
     for (const number of [...estadias.keys()].sort(compararCasita)) {
