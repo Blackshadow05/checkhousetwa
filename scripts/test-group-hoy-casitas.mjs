@@ -826,7 +826,37 @@ const tests = [
     },
   },
   {
-    name: "En ocupación no usa un Check in de dos días antes de la llegada",
+    name: "Pipeline: montaje dos días antes de la llegada pasa a En ocupación (casita 33)",
+    run() {
+      const llegada = "2026-11-10";
+      const montaje = "2026-11-08";
+      const ocupado = "2026-11-11";
+      const salida = "2026-11-13";
+      const rows = [
+        revision({ id: "ci-33-montaje", casita: "33", caja_fuerte: "Check in", created_at: `${montaje} 23:16` }),
+        revision({ id: "co-33-previo", casita: "33", caja_fuerte: "Check out", created_at: `${montaje} 09:32` }),
+        revision({ id: "ci-33-previo", casita: "33", caja_fuerte: "Check in", created_at: "2026-11-06 22:54" }),
+      ];
+      const memoLlegada = [
+        memoFila({ casita: "33", tipo: "Today's Arrivals", fecha_memo: llegada, llegada_fecha: llegada, salida_fecha: salida }),
+        memoFila({ casita: "33", tipo: "In house Guests", fecha_memo: llegada, llegada_fecha: llegada, salida_fecha: salida }),
+      ];
+      const memoOcupado = [
+        memoFila({ casita: "33", tipo: "In house Guests", fecha_memo: ocupado, llegada_fecha: llegada, salida_fecha: salida }),
+      ];
+      const diaLlegada = groupHoyCasitasConMemo(rows, llegada, [], memoLlegada);
+      const diaOcupado = groupHoyCasitasConMemo(rows, ocupado, [], memoOcupado);
+
+      assert.deepEqual(chips(diaLlegada, "check_in_hoy"), [{ casita: "33", tone: "sage" }]);
+      assert.equal(grupo(diaLlegada, "ocupacion"), null);
+      assert.deepEqual(chips(diaOcupado, "ocupacion"), [{ casita: "33", tone: "sage" }]);
+      assert.equal(grupo(diaOcupado, "check_in_hoy"), null);
+      assert.equal(seccion(diaOcupado, "ocupacion", "pendiente_guardar"), null);
+      assert.equal(todasLasCasitas(diaOcupado).filter((n) => n === "33").length, 1);
+    },
+  },
+  {
+    name: "En ocupación no usa un Check in si hubo Check out antes de la llegada",
     run() {
       const groups = agrupar({
         rows: [
@@ -835,6 +865,12 @@ const tests = [
             casita: "22",
             caja_fuerte: "Check in",
             created_at: "2026-11-02 22:00",
+          }),
+          revision({
+            id: "co-corte",
+            casita: "22",
+            caja_fuerte: "Check out",
+            created_at: "2026-11-03 10:00",
           }),
         ],
         today: HOY,
