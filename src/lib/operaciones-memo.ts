@@ -119,11 +119,9 @@ function esTipoLlegada(tipo: string | null | undefined) {
 }
 
 function cuentaComoLlegada(fila: OperacionMemo, hoy: string, llegada: string) {
-  if (fila.llegada_fecha === llegada) {
-    if (esTipoLlegada(fila.tipo)) return true;
-    return fila.fecha_memo === hoy || fila.fecha_memo === llegada || !fila.fecha_memo;
-  }
-  return !fila.llegada_fecha && esTipoLlegada(fila.tipo) && fila.fecha_memo === llegada;
+  if (fila.llegada_fecha !== llegada) return false;
+  if (esTipoLlegada(fila.tipo)) return true;
+  return fila.fecha_memo === hoy || fila.fecha_memo === llegada || !fila.fecha_memo;
 }
 
 function casitasConLlegadaEn(filas: readonly OperacionMemo[], hoy: string, llegada: string): Set<string> {
@@ -138,19 +136,24 @@ function casitasConLlegadaEn(filas: readonly OperacionMemo[], hoy: string, llega
 
 export function casitasConLlegada(filas: readonly OperacionMemo[], hoy: string): Set<string> {
   return new Set([
-    ...casitasConLlegadaEn(filas, hoy, hoy),
-    ...casitasConLlegadaEn(filas, hoy, shiftDay(hoy, 1)),
+    ...casitasConLlegadaHoy(filas, hoy),
+    ...casitasConLlegadaManana(filas, hoy),
   ]);
 }
 
-// Solo llegadas con fecha de hoy (Today's Arrivals / ingresos del día).
+// Solo filas con llegada_fecha = hoy (Today's Arrivals / ingresos del día).
 export function casitasConLlegadaHoy(filas: readonly OperacionMemo[], hoy: string): Set<string> {
   return casitasConLlegadaEn(filas, hoy, hoy);
 }
 
-// Llegadas de mañana: Today's Arrivals del memo de mañana, o llegada_fecha = mañana.
+// Llegadas de mañana: llegada_fecha = mañana. No incluye a quien ya está en casa hoy
+// (el memo de mañana a veces reescribe In house con llegada = ese día).
 export function casitasConLlegadaManana(filas: readonly OperacionMemo[], hoy: string): Set<string> {
-  return casitasConLlegadaEn(filas, hoy, shiftDay(hoy, 1));
+  const llegadas = casitasConLlegadaEn(filas, hoy, shiftDay(hoy, 1));
+  const enCasa = casitasInHouseGuestsDelDia(filas, hoy);
+  if (!enCasa) return llegadas;
+  for (const numero of enCasa) llegadas.delete(numero);
+  return llegadas;
 }
 
 function filasFuenteSalidas(filas: readonly OperacionMemo[], hoy: string): readonly OperacionMemo[] {

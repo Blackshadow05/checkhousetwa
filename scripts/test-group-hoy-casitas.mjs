@@ -1111,6 +1111,124 @@ const tests = [
     },
   },
   {
+    name: "In house de mañana con llegada reescrita no saca de ocupación a quien ya está en casa",
+    run() {
+      const hoy = "2026-11-12";
+      const ayer = "2026-11-11";
+      const manana = "2026-11-13";
+      const filas = [
+        memoFila({
+          casita: "38",
+          tipo: "In house Guests",
+          fecha_memo: ayer,
+          llegada_fecha: "2026-11-09",
+          salida_fecha: manana,
+        }),
+        memoFila({
+          casita: "38",
+          tipo: "Today's Arrivals",
+          fecha_memo: hoy,
+          llegada_fecha: "2026-11-09",
+          salida_fecha: manana,
+        }),
+        memoFila({
+          casita: "38",
+          tipo: "In house Guests",
+          fecha_memo: manana,
+          llegada_fecha: manana,
+          salida_fecha: "2026-11-17",
+        }),
+        memoFila({
+          casita: "21",
+          tipo: "In house Guests",
+          fecha_memo: ayer,
+          llegada_fecha: ayer,
+          salida_fecha: manana,
+        }),
+        memoFila({
+          casita: "21",
+          tipo: "Today's Arrivals",
+          fecha_memo: hoy,
+          llegada_fecha: ayer,
+          salida_fecha: manana,
+        }),
+        memoFila({
+          casita: "21",
+          tipo: "In house Guests",
+          fecha_memo: manana,
+          llegada_fecha: manana,
+          salida_fecha: "2026-11-17",
+        }),
+        memoFila({
+          casita: "13",
+          tipo: "Today's Arrivals",
+          fecha_memo: hoy,
+          llegada_fecha: hoy,
+          salida_fecha: "2026-11-16",
+        }),
+        memoFila({
+          casita: "43",
+          tipo: "Today's Arrivals",
+          fecha_memo: manana,
+          llegada_fecha: manana,
+          salida_fecha: "2026-11-17",
+        }),
+      ];
+      const rows = [
+        revision({ id: "ci-38-casa", casita: "38", caja_fuerte: "Check in", created_at: "2026-11-08 23:00" }),
+        revision({ id: "ci-21-casa", casita: "21", caja_fuerte: "Check in", created_at: "2026-11-10 16:21" }),
+        revision({ id: "ci-13-casa", casita: "13", caja_fuerte: "Check in", created_at: `${hoy} 08:00` }),
+        revision({ id: "ci-43-casa", casita: "43", caja_fuerte: "Check in", created_at: `${hoy} 21:00` }),
+      ];
+      const groups = groupHoyCasitasConMemo(rows, hoy, [], filas);
+
+      assert.deepEqual([...casitasConLlegadaHoy(filas, hoy)].sort(), ["13"]);
+      assert.deepEqual([...casitasConLlegadaManana(filas, hoy)].sort(), ["43"]);
+      assert.equal(casitasConLlegadaHoy(filas, hoy).has("21"), false);
+      assert.equal(casitasConLlegadaHoy(filas, hoy).has("38"), false);
+      assert.equal(casitasConLlegadaManana(filas, hoy).has("21"), false);
+      assert.equal(casitasConLlegadaManana(filas, hoy).has("38"), false);
+      assert.deepEqual(chips(groups, "ocupacion"), [
+        { casita: "21", tone: "sage" },
+        { casita: "38", tone: "sage" },
+      ]);
+      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "13", tone: "sage" }]);
+      assert.deepEqual(chips(groups, "check_in_manana"), [{ casita: "43", tone: "sage" }]);
+      assert.equal(seccion(groups, "ocupacion", "pendiente_guardar"), null);
+    },
+  },
+  {
+    name: "Today's Arrivals de mañana no pisa ocupación si la estadía de hoy cubre el día",
+    run() {
+      const hoy = "2026-11-12";
+      const filas = [
+        memoFila({
+          casita: "38",
+          tipo: "In house Guests",
+          fecha_memo: "2026-11-11",
+          llegada_fecha: "2026-11-09",
+          salida_fecha: "2026-11-13",
+        }),
+        memoFila({
+          casita: "38",
+          tipo: "Today's Arrivals",
+          fecha_memo: "2026-11-13",
+          llegada_fecha: "2026-11-13",
+          salida_fecha: "2026-11-17",
+        }),
+      ];
+      const groups = groupHoyCasitasConMemo(
+        [revision({ id: "ci-38-btb", casita: "38", caja_fuerte: "Check in", created_at: "2026-11-08 23:00" })],
+        hoy,
+        [],
+        filas,
+      );
+      assert.equal(casitasConLlegadaManana(filas, hoy).has("38"), false);
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "38", tone: "sage" }]);
+      assert.equal(grupo(groups, "check_in_manana"), null);
+    },
+  },
+  {
     name: "En ocupación no usa un Check in si hubo Check out antes de la llegada",
     run() {
       const groups = agrupar({
