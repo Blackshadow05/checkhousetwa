@@ -55,6 +55,50 @@ function filasMemoDelDia(filas: readonly OperacionMemo[], hoy: string) {
   return filas.filter((fila) => fila.fecha_memo === hoy);
 }
 
+function esTipoSalida(tipo: string | null | undefined) {
+  const t = tipoMemo(tipo);
+  if (!t) return false;
+  if (t === "today's departure" || t === "tomorrow's departure") return true;
+  if (t.includes("depart") || t.includes("salida")) return true;
+  return false;
+}
+
+function cubreEstadiaHoy(fila: OperacionMemo, hoy: string) {
+  if (!fila.llegada_fecha || !fila.salida_fecha) return false;
+  if (fila.llegada_fecha > hoy) return false;
+  if (fila.salida_fecha <= hoy) return false;
+  if (esTipoSalida(fila.tipo)) return false;
+  return true;
+}
+
+function memoDelDiaTieneInHouse(filas: readonly OperacionMemo[], hoy: string) {
+  return filasMemoDelDia(filas, hoy).some((fila) => tipoMemo(fila.tipo) === "in house guests");
+}
+
+function memoDelDiaTieneSalidas(filas: readonly OperacionMemo[], hoy: string) {
+  return filasMemoDelDia(filas, hoy).some(
+    (fila) => esTipoSalida(fila.tipo) || fila.salida_fecha === hoy,
+  );
+}
+
+// Si el memo de hoy no trae In house (aún no sube, o solo llegadas), usamos el
+// último día anterior que sí tenga ocupación y proyectamos con llegada/salida.
+function filasFuenteOcupacion(filas: readonly OperacionMemo[], hoy: string): readonly OperacionMemo[] {
+  if (memoDelDiaTieneInHouse(filas, hoy)) return filasMemoDelDia(filas, hoy);
+  const fechasPrevias = [
+    ...new Set(
+      filas
+        .map((fila) => fila.fecha_memo)
+        .filter((dia): dia is string => typeof dia === "string" && dia < hoy),
+    ),
+  ].sort();
+  for (let i = fechasPrevias.length - 1; i >= 0; i -= 1) {
+    const deDia = filas.filter((fila) => fila.fecha_memo === fechasPrevias[i]);
+    if (deDia.some((fila) => tipoMemo(fila.tipo) === "in house guests")) return deDia;
+  }
+  return filas;
+}
+
 function tipoMemo(tipo: string | null | undefined) {
   return (tipo ?? "")
     .normalize("NFD")
@@ -109,10 +153,16 @@ export function casitasConLlegadaManana(filas: readonly OperacionMemo[], hoy: st
   return casitasConLlegadaEn(filas, hoy, shiftDay(hoy, 1));
 }
 
-// Salidas del día (Today's Departure / salida_fecha = hoy).
+function filasFuenteSalidas(filas: readonly OperacionMemo[], hoy: string): readonly OperacionMemo[] {
+  if (memoDelDiaTieneSalidas(filas, hoy)) return filasMemoDelDia(filas, hoy);
+  return filasFuenteOcupacion(filas, hoy);
+}
+
+// Salidas del día: memo de hoy si ya trae departures; si no, proyectadas
+// (salida_fecha = hoy) desde el último memo con ocupación.
 export function casitasConSalidaHoy(filas: readonly OperacionMemo[], hoy: string): Set<string> {
   const casitas = new Set<string>();
-  for (const fila of filasMemoDelDia(filas, hoy)) {
+  for (const fila of filasFuenteSalidas(filas, hoy)) {
     if (fila.salida_fecha !== hoy) continue;
     const numero = numeroCasita(fila.casita);
     if (numero) casitas.add(numero);
@@ -126,34 +176,47 @@ function numeroCasita(casita: string) {
   return String(numero);
 }
 
-// In house Guests listados en el memo del día (fecha_memo).
-export function casitasInHouseGuestsDelDia(filas: readonly OperacionMemo[], hoy: string): Set<string> | null {
-  if (!filas.some((fila) => fila.tipo?.trim())) return null;
-  const casitas = new Set<string>();
-  for (const fila of filasMemoDelDia(filas, hoy)) {
-    if (tipoMemo(fila.tipo) !== "in house guests") continue;
-    const numero = numeroCasita(fila.casita);
-    if (numero) casitas.add(numero);
-  }
-  return casitas;
-}
-
 export type EstadiaEnCasa = { llegada: string; salida: string };
 
-// Huésped en casa hoy: In house Guests del memo del día, ya llegó y sale después de hoy.
+function aportaOcupacionHoy(
+  fila: OperacionMemo,
+  hoy: string,
+  memoHoyCompleto: boolean,
+) {
+  if (memoHoyCompleto) {
+    if (tipoMemo(fila.tipo) !== "in house guests") return false;
+    if (!fila.llegada_fecha || fila.llegada_fecha > hoy) return false;
+    if (!fila.salida_fecha || fila.salida_fecha <= hoy) return false;
+    return true;
+  }
+  if (!cubreEstadiaHoy(fila, hoy)) return false;
+  if (tipoMemo(fila.tipo) === "in house guests") return true;
+  // Llegada de un memo anterior que sigue en casa hoy. Las llegadas de hoy
+  // se quedan en Check in de hoy, no en ocupación.
+  return Boolean(fila.llegada_fecha && fila.llegada_fecha < hoy);
+}
+
+// In house de hoy, o proyectado desde el último memo con ocupación si el de
+// hoy aún no sube / solo trae llegadas.
+export function casitasInHouseGuestsDelDia(filas: readonly OperacionMemo[], hoy: string): Set<string> | null {
+  const estadias = estadiasEnCasa(filas, hoy);
+  return estadias ? new Set(estadias.keys()) : null;
+}
+
+// Huésped en casa hoy: In house del memo del día, o estadía proyectada
+// (llegada ≤ hoy < salida) desde el último memo anterior con In house.
 // null cuando el memo guardado no trae tipo: no alcanza para decidir ocupación.
 export function estadiasEnCasa(
   filas: readonly OperacionMemo[],
   hoy: string,
 ): Map<string, EstadiaEnCasa> | null {
   if (!filas.some((fila) => fila.tipo?.trim())) return null;
+  const memoHoyCompleto = memoDelDiaTieneInHouse(filas, hoy);
   const estadias = new Map<string, EstadiaEnCasa>();
-  for (const fila of filasMemoDelDia(filas, hoy)) {
-    if (tipoMemo(fila.tipo) !== "in house guests") continue;
-    if (!fila.llegada_fecha || fila.llegada_fecha > hoy) continue;
-    if (!fila.salida_fecha || fila.salida_fecha <= hoy) continue;
+  for (const fila of filasFuenteOcupacion(filas, hoy)) {
+    if (!aportaOcupacionHoy(fila, hoy, memoHoyCompleto)) continue;
     const numero = numeroCasita(fila.casita);
-    if (!numero) continue;
+    if (!numero || !fila.llegada_fecha || !fila.salida_fecha) continue;
     const actual = estadias.get(numero);
     if (!actual || fila.llegada_fecha > actual.llegada) {
       estadias.set(numero, { llegada: fila.llegada_fecha, salida: fila.salida_fecha });

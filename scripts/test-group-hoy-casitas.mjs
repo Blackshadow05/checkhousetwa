@@ -4,7 +4,11 @@ import {
   casitasConLlegada,
   casitasConLlegadaHoy,
   casitasConLlegadaManana,
+  casitasConSalidaHoy,
+  casitasInHouseGuestsDelDia,
+  estadiasEnCasa,
 } from "../src/lib/operaciones-memo.ts";
+import { costaRicaDateTime } from "../src/lib/revision-form.ts";
 import {
   INICIO_LIST_LIMIT,
   contarCasitasHoy,
@@ -853,6 +857,257 @@ const tests = [
       assert.equal(grupo(diaOcupado, "check_in_hoy"), null);
       assert.equal(seccion(diaOcupado, "ocupacion", "pendiente_guardar"), null);
       assert.equal(todasLasCasitas(diaOcupado).filter((n) => n === "33").length, 1);
+    },
+  },
+  {
+    name: "Sin memo de hoy: ocupación se proyecta del último In house (salida > hoy)",
+    run() {
+      const filas = [
+        memoFila({
+          casita: "33",
+          tipo: "In house Guests",
+          fecha_memo: AYER,
+          llegada_fecha: "2026-11-03",
+          salida_fecha: MANANA,
+        }),
+        memoFila({
+          casita: "9",
+          tipo: "In house Guests",
+          fecha_memo: AYER,
+          llegada_fecha: "2026-11-02",
+          salida_fecha: HOY,
+        }),
+      ];
+      const rows = [
+        revision({ id: "ci-33-ayer", casita: "33", caja_fuerte: "Check in", created_at: `${AYER} 23:16` }),
+        revision({ id: "ci-9-ayer", casita: "9", caja_fuerte: "Check in", created_at: `${AYER} 10:00` }),
+      ];
+      const groups = groupHoyCasitasConMemo(rows, HOY, [], filas);
+
+      assert.deepEqual([...estadiasEnCasa(filas, HOY).keys()].sort(), ["33"]);
+      assert.deepEqual([...casitasInHouseGuestsDelDia(filas, HOY)].sort(), ["33"]);
+      assert.deepEqual([...casitasConSalidaHoy(filas, HOY)].sort(), ["9"]);
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "33", tone: "sage" }]);
+      assert.deepEqual(chipsSeccion(groups, "ocupacion", "pendiente_guardar"), [
+        { casita: "9", tone: "rose" },
+      ]);
+      assert.equal(grupo(groups, "check_in_hoy"), null);
+    },
+  },
+  {
+    name: "Memo de hoy solo llegadas: In house de ayer cubre ocupación; Show Room sin estadía sigue pendiente",
+    run() {
+      const filas = [
+        memoFila({
+          casita: "5",
+          tipo: "In house Guests",
+          fecha_memo: AYER,
+          llegada_fecha: "2026-11-03",
+          salida_fecha: MANANA,
+        }),
+        memoFila({
+          casita: "10",
+          tipo: "In house Guests",
+          fecha_memo: AYER,
+          llegada_fecha: "2026-11-02",
+          salida_fecha: MANANA,
+        }),
+        memoFila({
+          casita: "5",
+          tipo: "Today's Arrivals",
+          fecha_memo: HOY,
+          llegada_fecha: "2026-11-03",
+          salida_fecha: MANANA,
+        }),
+        memoFila({
+          casita: "10",
+          tipo: "Today's Arrivals",
+          fecha_memo: HOY,
+          llegada_fecha: "2026-11-02",
+          salida_fecha: MANANA,
+        }),
+        memoFila({
+          casita: "13",
+          tipo: "Today's Arrivals",
+          fecha_memo: HOY,
+          llegada_fecha: HOY,
+          salida_fecha: MANANA,
+        }),
+      ];
+      const rows = [
+        revision({ id: "ci-5-parcial", casita: "5", caja_fuerte: "Check in", created_at: `${AYER} 23:44` }),
+        revision({ id: "ci-10-parcial", casita: "10", caja_fuerte: "Check in", created_at: `${AYER} 00:25` }),
+        revision({ id: "ci-13-parcial", casita: "13", caja_fuerte: "Check in", created_at: `${HOY} 08:00` }),
+        revision({ id: "sr-1-parcial", casita: "1", caja_fuerte: "Show Room", created_at: `${AYER} 10:53` }),
+      ];
+      const groups = groupHoyCasitasConMemo(rows, HOY, [], filas);
+
+      assert.deepEqual([...estadiasEnCasa(filas, HOY).keys()].sort(), ["10", "5"]);
+      assert.deepEqual(chips(groups, "ocupacion"), [
+        { casita: "5", tone: "sage" },
+        { casita: "10", tone: "sage" },
+      ]);
+      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "13", tone: "sage" }]);
+      assert.deepEqual(chipsSeccion(groups, "ocupacion", "pendiente_guardar"), [
+        { casita: "1", tone: "amber" },
+      ]);
+      assert.equal(todasLasCasitas(groups).filter((n) => n === "5").length, 1);
+    },
+  },
+  {
+    name: "Memo de hoy con In house manda: no se proyecta ocupación de ayer",
+    run() {
+      const filas = [
+        memoFila({
+          casita: "7",
+          tipo: "In house Guests",
+          fecha_memo: AYER,
+          llegada_fecha: "2026-11-02",
+          salida_fecha: MANANA,
+        }),
+        memoFila({
+          casita: "22",
+          tipo: "In house Guests",
+          fecha_memo: AYER,
+          llegada_fecha: "2026-11-01",
+          salida_fecha: MANANA,
+        }),
+        memoFila({
+          casita: "7",
+          tipo: "In house Guests",
+          fecha_memo: HOY,
+          llegada_fecha: "2026-11-02",
+          salida_fecha: MANANA,
+        }),
+      ];
+      const rows = [
+        revision({ id: "ci-7-hoy", casita: "7", caja_fuerte: "Check in", created_at: `${AYER} 09:00` }),
+        revision({ id: "ci-22-hoy", casita: "22", caja_fuerte: "Check in", created_at: `${AYER} 11:00` }),
+      ];
+      const groups = groupHoyCasitasConMemo(rows, HOY, [], filas);
+
+      assert.deepEqual([...estadiasEnCasa(filas, HOY).keys()].sort(), ["7"]);
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "7", tone: "sage" }]);
+      assert.deepEqual(chipsSeccion(groups, "ocupacion", "pendiente_guardar"), [
+        { casita: "22", tone: "amber" },
+      ]);
+    },
+  },
+  {
+    name: "Memo futuro no sustituye el In house de ayer cuando hoy está vacío",
+    run() {
+      const filas = [
+        memoFila({
+          casita: "5",
+          tipo: "In house Guests",
+          fecha_memo: AYER,
+          llegada_fecha: "2026-11-03",
+          salida_fecha: MANANA,
+        }),
+        memoFila({
+          casita: "50",
+          tipo: "In house Guests",
+          fecha_memo: MANANA,
+          llegada_fecha: "2026-11-03",
+          salida_fecha: "2026-11-10",
+        }),
+      ];
+      const rows = [
+        revision({ id: "ci-5-futuro", casita: "5", caja_fuerte: "Check in", created_at: `${AYER} 12:00` }),
+        revision({ id: "ci-50-futuro", casita: "50", caja_fuerte: "Check in", created_at: `${AYER} 13:00` }),
+      ];
+      const groups = groupHoyCasitasConMemo(rows, HOY, [], filas);
+
+      assert.deepEqual([...estadiasEnCasa(filas, HOY).keys()].sort(), ["5"]);
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "5", tone: "sage" }]);
+      assert.equal(chips(groups, "ocupacion").some((chip) => chip.casita === "50"), false);
+    },
+  },
+  {
+    name: "Llegadas mal etiquetadas de hoy (llegada anterior) cubren ocupación si no hay In house previo",
+    run() {
+      const filas = [
+        memoFila({
+          casita: "24",
+          tipo: "Today's Arrivals",
+          fecha_memo: HOY,
+          llegada_fecha: AYER,
+          salida_fecha: MANANA,
+        }),
+        memoFila({
+          casita: "13",
+          tipo: "Today's Arrivals",
+          fecha_memo: HOY,
+          llegada_fecha: HOY,
+          salida_fecha: MANANA,
+        }),
+      ];
+      const rows = [
+        revision({ id: "ci-24-tag", casita: "24", caja_fuerte: "Check in", created_at: `${AYER} 22:51` }),
+        revision({ id: "ci-13-tag", casita: "13", caja_fuerte: "Check in", created_at: `${HOY} 08:10` }),
+      ];
+      const groups = groupHoyCasitasConMemo(rows, HOY, [], filas);
+
+      assert.deepEqual([...estadiasEnCasa(filas, HOY).keys()].sort(), ["24"]);
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "24", tone: "sage" }]);
+      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "13", tone: "sage" }]);
+    },
+  },
+  {
+    name: "todayKey Costa Rica: 05:13 CR ya es el 12; de madrugada UTC sigue siendo el 11 en CR",
+    run() {
+      const cincoTreceCr = new Date("2026-11-12T11:13:00.000Z");
+      const ultimoMinutoOnce = new Date("2026-11-12T05:59:59.000Z");
+      const medianocheCr = new Date("2026-11-12T06:00:00.000Z");
+
+      assert.equal(costaRicaDateTime(cincoTreceCr).slice(0, 16), "2026-11-12T05:13");
+      assert.equal(costaRicaDateTime(ultimoMinutoOnce).slice(0, 16), "2026-11-11T23:59");
+      assert.equal(costaRicaDateTime(medianocheCr).slice(0, 16), "2026-11-12T00:00");
+
+      const filas = [
+        memoFila({
+          casita: "33",
+          tipo: "In house Guests",
+          fecha_memo: "2026-11-11",
+          llegada_fecha: "2026-11-10",
+          salida_fecha: "2026-11-13",
+        }),
+        memoFila({
+          casita: "13",
+          tipo: "Today's Arrivals",
+          fecha_memo: "2026-11-12",
+          llegada_fecha: "2026-11-12",
+          salida_fecha: "2026-11-14",
+        }),
+      ];
+      const rows = [
+        revision({
+          id: "ci-33-tz",
+          casita: "33",
+          caja_fuerte: "Check in",
+          created_at: "2026-11-08 23:16",
+        }),
+        revision({
+          id: "ci-13-tz",
+          casita: "13",
+          caja_fuerte: "Check in",
+          created_at: "2026-11-12 08:00",
+        }),
+      ];
+      const hoyCr = costaRicaDateTime(cincoTreceCr).slice(0, 10);
+      const groupsCr = groupHoyCasitasConMemo(rows, hoyCr, [], filas);
+      assert.equal(hoyCr, "2026-11-12");
+      assert.deepEqual(chips(groupsCr, "ocupacion"), [{ casita: "33", tone: "sage" }]);
+      assert.deepEqual(chips(groupsCr, "check_in_hoy"), [{ casita: "13", tone: "sage" }]);
+
+      // 23:59 CR del 11 = 05:59 UTC del 12. El tablero usa CR, no el día UTC.
+      const hoyAntesMedianoche = costaRicaDateTime(ultimoMinutoOnce).slice(0, 10);
+      const hoyUtcEquivocado = ultimoMinutoOnce.toISOString().slice(0, 10);
+      assert.equal(hoyAntesMedianoche, "2026-11-11");
+      assert.equal(hoyUtcEquivocado, "2026-11-12");
+      const groupsAntesMedianoche = groupHoyCasitasConMemo(rows, hoyAntesMedianoche, [], filas);
+      assert.deepEqual(chips(groupsAntesMedianoche, "ocupacion"), [{ casita: "33", tone: "sage" }]);
+      assert.equal(grupo(groupsAntesMedianoche, "check_in_hoy"), null);
     },
   },
   {
