@@ -1802,6 +1802,12 @@ svg {
 .evidence-pswp .pswp__button:disabled {
   opacity: 0.3;
 }
+/* Custom icons use currentColor, which PhotoSwipe maps to its dark secondary
+   color (#4f4f4f); paint them like the built-in zoom/close icons instead. */
+.pswp .pswp__icn--custom {
+  color: var(--pswp-icon-color);
+  filter: drop-shadow(0 0 1px #0009);
+}
 .evidence-pswp-status {
   position: absolute;
   left: 12px;
