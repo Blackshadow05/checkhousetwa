@@ -210,6 +210,7 @@ export function MenuDelDia({
         open={open}
         onClose={() => setOpen(false)}
         title="Menús"
+        swipeToClose
       >
         <div className="menu-day-chips" aria-label="Días con menú">
           {menus.map((menu) => (
