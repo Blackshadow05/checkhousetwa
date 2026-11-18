@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, CalendarDays, Monitor, Plus, RefreshCw, FileDown, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, ArrowRight, CalendarDays, ClipboardCheck, Monitor, Plus, RefreshCw, FileDown, FileSpreadsheet } from "lucide-react";
 import { fetchPantallas } from "@/app/actions/pantallas";
 import { AdminUsuariosFeature, AdminUsuariosScreen } from "@/components/screens/admin-usuarios";
 import { HorariosScreen } from "@/components/screens/horarios-screen";
@@ -157,7 +157,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
       <div className="pantalla-tabs" aria-label="Vista de pantallas"><SegmentIndicator activeIndex={tabIndex} />{["historial", "inventario"].map(t => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)}>{t === "historial" ? "Historial" : "Inventario"}</button>)}</div>
       <label>Ubicación<select name="ubicacion" aria-label="Ubicación" value={location} onChange={e => setLocation(e.target.value)}><option value="">Todas las ubicaciones</option>{UBICACIONES.map(v => <option key={v} value={v}>{ubicacionLabel(v)}</option>)}</select></label>
       <div key={tab} className="slide-enter" data-direction={tabDirection}>{tab === "historial" ? <>
-        <div className="pantalla-filters"><label>Tipo<select name="tipo" aria-label="Tipo" value={type} onChange={e => setType(e.target.value)}><option value="reporte">Reportes</option><option value="movimiento">Movimientos</option></select></label></div>
+        <div className="pantalla-type" role="group" aria-labelledby="pantalla-type-label"><span id="pantalla-type-label">Tipo</span><div className="pantalla-type-options">{([["reporte", "Reportes", ClipboardCheck], ["movimiento", "Movimientos", ArrowLeftRight]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={type === value} onClick={() => setType(value)}><Icon size={18} aria-hidden />{label}</button>)}</div></div>
         <div className="pantalla-toolbar"><span>{loading && !snapshot ? "Cargando registros…" : `${reports.length} ${reports.length === 1 ? "registro" : "registros"}`}</span><button type="button" disabled={!pdfCandidates.length} onClick={() => setPdfReports(pdfCandidates)}><FileDown size={18} aria-hidden /> Crear PDF</button></div>
         {loading && !snapshot && <div className="pantalla-skeleton" aria-label="Cargando registros" />}
         {!loading && !reports.length && <div className="pantalla-card"><h3>{snapshot ? "No hay registros para esta búsqueda" : "Todavía no hay datos disponibles"}</h3><p>{snapshot ? "Prueba otra ubicación o crea el primer reporte." : "Conéctate y pulsa actualizar para cargar el historial."}</p></div>}

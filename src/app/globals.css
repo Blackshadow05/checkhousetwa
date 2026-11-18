@@ -58,10 +58,14 @@
 @keyframes slideEnterBack { from { opacity: 0; transform: translateX(-28px); } }
 @keyframes slideEnterFade { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .segment-indicator, .pantalla-tabs button { transition: none; }
+  .segment-indicator, .pantalla-tabs button, .otros-screen .pantalla-type-options button { transition: none; }
   .slide-enter[data-direction] { animation: none; }
 }
-.pantalla-filters { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+.pantalla-type { display: grid; gap: 6px; margin: 14px 0; }
+.pantalla-type > span { font-weight: 550; }
+.pantalla-type-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.otros-screen .pantalla-type-options button { border: 1px solid var(--border); background: var(--card); color: var(--muted-foreground); -webkit-tap-highlight-color: transparent; transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease; }
+.otros-screen .pantalla-type-options button[aria-pressed=true] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, var(--card)); color: var(--primary); }
 .pantalla-photos { display: grid; grid-template-columns: repeat(auto-fit,minmax(100px,1fr)); gap: 10px; margin-top: 16px; }
 .pantalla-photos figure { min-width: 0; margin: 0; }
 .pantalla-photos img { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 10px; background: var(--secondary); }
@@ -125,7 +129,6 @@
 .admin-confirm .pantalla-error { margin-top: 12px; }
 @media (max-width: 360px) {
   .pantalla-feature-icon { padding: 9px; }
-  .pantalla-filters { grid-template-columns: 1fr; gap: 0; }
   .pantalla-photo-item { grid-template-columns: 48px minmax(0,1fr) auto; gap: 7px; padding: 7px; }
   .otros-screen .pantalla-photo-thumb-button { width: 48px; min-width: 48px; height: 48px; min-height: 48px; }
   .otros-screen .pantalla-photo-item-actions button { width: 44px; min-width: 44px; }
