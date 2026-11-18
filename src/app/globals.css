@@ -1240,6 +1240,10 @@ svg {
 .bottom-sheet[open]::backdrop {
   animation: backdrop-enter 360ms ease-out;
 }
+/* Swipe-to-close: the backdrop fades as the sheet is dragged down. */
+.bottom-sheet[data-dragging]::backdrop {
+  opacity: calc(1 - var(--sheet-drag-progress, 0));
+}
 .bottom-sheet[data-closing] {
   pointer-events: none;
   animation: sheet-exit 260ms cubic-bezier(0.4, 0, 0.7, 0.2) forwards;
@@ -2802,7 +2806,7 @@ button.detail-tile:active {
 }
 @keyframes sheet-exit {
   from {
-    transform: translateY(0);
+    transform: translateY(var(--sheet-drag-offset, 0px));
   }
   to {
     transform: translateY(100%);
