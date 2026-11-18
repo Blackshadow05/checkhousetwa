@@ -7,7 +7,7 @@ import "photoswipe/style.css";
 import type { PantallaFoto } from "@/lib/pantallas";
 import styles from "./pantalla-photo-gallery.module.css";
 
-const DOWNLOAD_ICON = '<svg class="pswp__icn" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5v15m-6-6 6 6 6-6M7 22v5h18v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const DOWNLOAD_ICON = '<svg class="pswp__icn pswp__icn--custom" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5v15m-6-6 6 6 6-6M7 22v5h18v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 function closeViewer(viewer: PhotoSwipe | null) {
   if (!viewer || viewer.isDestroying) return;
