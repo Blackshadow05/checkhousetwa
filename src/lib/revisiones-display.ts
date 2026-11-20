@@ -217,11 +217,15 @@ function ordenarChips(items: HoyBoardChip[]) {
   return [...items].sort((left, right) => compararCasita(left.casita, right.casita));
 }
 
+// Casitas distintas: una casita puede estar a la vez en Check in y En ocupación.
 export function contarCasitasHoy(groups: readonly HoyBoardGroup[]) {
-  return groups.reduce(
-    (sum, group) => sum + group.rows.length + (group.sections?.reduce((inner, section) => inner + section.rows.length, 0) ?? 0),
-    0,
-  );
+  const casitas = new Set<string>();
+  const sumar = (group: HoyBoardGroup) => {
+    for (const chip of group.rows) casitas.add(chip.casita);
+    group.sections?.forEach(sumar);
+  };
+  groups.forEach(sumar);
+  return casitas.size;
 }
 
 
@@ -344,6 +348,7 @@ export function groupHoyCasitas(
   const pendienteRows: InicioRevisionRow[] = [];
   const upsellVigentes: InicioRevisionRow[] = [];
   const ocupadas = new Set<string>();
+  let llegadasDeHoy: ReadonlySet<string> | null = null;
 
   const marcarCheckIn = (row: InicioRevisionRow, tone: "sage" | "blue") => {
     const number = casitaNumber(row.casita);
@@ -388,6 +393,7 @@ export function groupHoyCasitas(
       (setManana
         ? new Set([...llegadas].filter((number) => !setManana.has(number)))
         : llegadas);
+    llegadasDeHoy = setHoy;
     montarPorLlegada(montajesHoy, setHoy);
     montarPorLlegada(montajesManana, setManana);
     for (const [number, row] of ultimas) {
@@ -478,6 +484,16 @@ export function groupHoyCasitas(
       sueltas.push({ row, casita: number, tone });
       ocupadas.add(number);
     }
+  }
+
+  // Quien llega hoy ya está en ocupación: se copia a esa lista y sigue en Check in.
+  const enOcupacion = new Set(sueltas.map((chip) => chip.casita));
+  const llegaHoy = (chip: HoyBoardChip) =>
+    llegadasDeHoy === null || llegadasDeHoy.has(chip.casita);
+  for (const chip of [...montajesHoy, ...checkInChips.filter(llegaHoy)]) {
+    if (enOcupacion.has(chip.casita)) continue;
+    enOcupacion.add(chip.casita);
+    sueltas.push({ ...chip });
   }
 
   const sections: HoyBoardGroup[] = [];

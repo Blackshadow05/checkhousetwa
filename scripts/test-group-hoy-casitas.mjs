@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { groupHoyCasitasConMemo } from "../src/lib/hoy-casitas-board.ts";
+import { groupHoyCasitasConMemo as groupHoyCasitasConMemoReal } from "../src/lib/hoy-casitas-board.ts";
 import {
   casitasConLlegada,
   casitasConLlegadaHoy,
@@ -12,7 +12,7 @@ import { costaRicaDateTime } from "../src/lib/revision-form.ts";
 import {
   INICIO_LIST_LIMIT,
   contarCasitasHoy,
-  groupHoyCasitas,
+  groupHoyCasitas as groupHoyCasitasReal,
   keepInicioRevisiones,
 } from "../src/lib/revisiones-display.ts";
 
@@ -76,6 +76,28 @@ function memoFila({
   };
 }
 
+// Quien llega hoy también se copia a En ocupación (se prueba aparte, con las
+// funciones reales). Estos helpers devuelven la vista sin esa copia para que los
+// tests existentes sigan comprobando la ubicación principal de cada casita.
+function sinCopiaDeLlegadas(groups) {
+  const llegadas = new Set(
+    groups
+      .filter((item) => item.id === "check_in" || item.id === "check_in_hoy")
+      .flatMap((item) => item.rows.map((chip) => chip.casita)),
+  );
+  return groups
+    .map((item) =>
+      item.id === "ocupacion"
+        ? { ...item, rows: item.rows.filter((chip) => !llegadas.has(chip.casita)) }
+        : item,
+    )
+    .filter((item) => item.id !== "ocupacion" || item.rows.length || item.sections?.length);
+}
+
+function groupHoyCasitasConMemo(...args) {
+  return sinCopiaDeLlegadas(groupHoyCasitasConMemoReal(...args));
+}
+
 function agrupar({
   rows,
   today = HOY,
@@ -87,7 +109,16 @@ function agrupar({
   salidasHoy = null,
   llegadasManana = null,
 } = {}) {
-  return groupHoyCasitas(
+  return sinCopiaDeLlegadas(agrupar_real({
+    rows, today, upsells, llegadas, estadias, inHouseDelDia, llegadasHoy, salidasHoy, llegadasManana,
+  }));
+}
+
+function agrupar_real({
+  rows, today = HOY, upsells = [], llegadas = null, estadias = null, inHouseDelDia = null,
+  llegadasHoy = null, salidasHoy = null, llegadasManana = null,
+}) {
+  return groupHoyCasitasReal(
     rows,
     today,
     upsells,
@@ -710,6 +741,58 @@ const tests = [
       const ocupacion = grupo(groups, "ocupacion");
       assert.ok(ocupacion, "falta el grupo ocupacion");
       assert.equal(JSON.stringify(ocupacion).includes('"49"'), true);
+    },
+  },
+  {
+    name: "Quien llega hoy aparece en Check in de hoy y también en En ocupación, contado una sola vez",
+    run() {
+      const checkIn = revision({ id: "lh-ci", casita: "5", caja_fuerte: "Check in", created_at: `${HOY} 09:00` });
+      const upsell = revision({ id: "lh-up", casita: "6", caja_fuerte: "Upsell", created_at: `${HOY} 10:00` });
+      const enCasa = revision({ id: "lh-en", casita: "7", caja_fuerte: "Check in", created_at: "2026-11-03 10:00" });
+      const memo = [
+        memoFila({ casita: "5", tipo: "Today's Arrivals", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: "2026-11-08" }),
+        memoFila({ casita: "5", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: "2026-11-08" }),
+        memoFila({ casita: "6", tipo: "Today's Arrivals", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: "2026-11-08" }),
+        memoFila({ casita: "6", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: "2026-11-08" }),
+        memoFila({ casita: "7", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: "2026-11-04", salida_fecha: "2026-11-09" }),
+      ];
+      const groups = groupHoyCasitasConMemoReal([checkIn, enCasa], HOY, [upsell], memo);
+      assert.deepEqual(chips(groups, "check_in_hoy"), [
+        { casita: "5", tone: "sage" },
+        { casita: "6", tone: "blue" },
+      ]);
+      assert.deepEqual(chips(groups, "ocupacion"), [
+        { casita: "5", tone: "sage" },
+        { casita: "6", tone: "blue" },
+        { casita: "7", tone: "sage" },
+      ]);
+      assert.equal(contarCasitasHoy(groups), 3);
+    },
+  },
+  {
+    name: "Llegada de mañana no se copia a En ocupación; salida de hoy tampoco",
+    run() {
+      const manana = revision({ id: "lm-ci", casita: "8", caja_fuerte: "Check in", created_at: `${HOY} 09:00` });
+      const sale = revision({ id: "lm-out", casita: "9", caja_fuerte: "Check in", created_at: `${HOY} 08:00` });
+      const memo = [
+        memoFila({ casita: "8", tipo: "Today's Arrivals", fecha_memo: MANANA, llegada_fecha: MANANA, salida_fecha: "2026-11-09" }),
+        memoFila({ casita: "9", tipo: "Today's Arrivals", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: HOY }),
+        memoFila({ casita: "9", tipo: "Today´s Departure", fecha_memo: HOY, llegada_fecha: HOY, salida_fecha: HOY }),
+      ];
+      const groups = groupHoyCasitasConMemoReal([manana, sale], HOY, [], memo);
+      assert.deepEqual(chips(groups, "check_in_manana"), [{ casita: "8", tone: "sage" }]);
+      assert.equal(chips(groups, "ocupacion").some((chip) => chip.casita === "8"), false);
+      assert.equal(chips(groups, "ocupacion").some((chip) => chip.casita === "9"), false);
+    },
+  },
+  {
+    name: "Sin memo: el Check in de hoy también se copia a En ocupación",
+    run() {
+      const checkIn = revision({ id: "sm-ci", casita: "3", caja_fuerte: "Check in", created_at: `${HOY} 09:00` });
+      const groups = groupHoyCasitasReal([checkIn], HOY, []);
+      assert.deepEqual(chips(groups, "check_in_hoy"), [{ casita: "3", tone: "sage" }]);
+      assert.deepEqual(chips(groups, "ocupacion"), [{ casita: "3", tone: "sage" }]);
+      assert.equal(contarCasitasHoy(groups), 1);
     },
   },
   {
