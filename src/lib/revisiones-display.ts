@@ -6,6 +6,10 @@ export const INICIO_REVISION_COLUMNS =
 
 export const INICIO_LIST_LIMIT = 100;
 export const INICIO_RECENT_DAYS = 2;
+// Check in / Check out / Upsell se conservan este tiempo aunque queden fuera de
+// las últimas INICIO_LIST_LIMIT filas: "En ocupación" los necesita para saber si
+// la estadía en curso ya tuvo su montaje.
+export const INICIO_ESTADIA_DAYS = 60;
 
 export const ELECTRONIC_FIELDS = [
   { key: "chromecast", label: "Chromecast" },
@@ -286,6 +290,7 @@ export function keepInicioRevisiones(
   recentDays = INICIO_RECENT_DAYS,
 ): InicioRevisionRow[] {
   const fromDay = shiftIsoDay(today, -recentDays);
+  const fromEstadia = shiftIsoDay(today, -INICIO_ESTADIA_DAYS);
   const sorted = [...rows].sort((left, right) =>
     right.created_at.localeCompare(left.created_at),
   );
@@ -295,7 +300,12 @@ export function keepInicioRevisiones(
     if (row.id && seen.has(row.id)) continue;
     const day = revisionDay(row.created_at);
     const recent = day !== "sin-fecha" && day >= fromDay;
-    if (index >= limit && !recent) continue;
+    const montaje =
+      !row.pendiente &&
+      day !== "sin-fecha" &&
+      day >= fromEstadia &&
+      ["check_in", "check_out", "upsell"].includes(hoyBoardGroup(row.caja_fuerte) ?? "");
+    if (index >= limit && !recent && !montaje) continue;
     if (row.id) seen.add(row.id);
     kept.push(row);
   }

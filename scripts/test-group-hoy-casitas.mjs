@@ -674,6 +674,45 @@ const tests = [
     },
   },
   {
+    name: "keepInicioRevisiones conserva Check in/out/Upsell de 60 días y descarta lo demás",
+    run() {
+      const checkIn = revision({ id: "est-in", casita: "49", caja_fuerte: "Check in", created_at: "2026-10-20 18:08" });
+      const checkOut = revision({ id: "est-out", casita: "7", caja_fuerte: "Check out", created_at: "2026-10-15 10:00" });
+      const upsell = revision({ id: "est-up", casita: "8", caja_fuerte: "Upsell", created_at: "2026-10-10 10:00" });
+      const viejo = revision({ id: "est-viejo", casita: "9", caja_fuerte: "Check in", created_at: "2026-08-01 10:00" });
+      const ruido = revision({ id: "est-si", casita: "10", caja_fuerte: "Si", created_at: "2026-10-18 10:00" });
+      const pendiente = revision({ id: "est-pend", casita: "11", caja_fuerte: "Check in", created_at: "2026-10-19 10:00", pendiente: true });
+      const recientes = Array.from({ length: INICIO_LIST_LIMIT }, (_, index) =>
+        revision({ id: `est-n-${index}`, casita: String(20 + (index % 20)), caja_fuerte: "Si", created_at: `${HOY} 10:${String(index % 60).padStart(2, "0")}` }),
+      );
+      const ids = new Set(keepInicioRevisiones([checkIn, checkOut, upsell, viejo, ruido, pendiente, ...recientes], HOY).map((row) => row.id));
+      for (const id of ["est-in", "est-out", "est-up"]) assert.equal(ids.has(id), true, id);
+      for (const id of ["est-viejo", "est-si", "est-pend"]) assert.equal(ids.has(id), false, id);
+    },
+  },
+  {
+    name: "En ocupación incluye la casita cuyo Check in quedó fuera de las últimas 100 revisiones",
+    run() {
+      const llegada = "2026-10-25";
+      const salida = "2026-11-12";
+      const memo = [
+        memoFila({ casita: "49", tipo: "In house Guests", fecha_memo: HOY, llegada_fecha: llegada, salida_fecha: salida }),
+      ];
+      const checkIn = revision({ id: "oc-49", casita: "49", caja_fuerte: "Check in", created_at: "2026-10-24 18:08" });
+      const ruido = Array.from({ length: INICIO_LIST_LIMIT + 20 }, (_, index) =>
+        revision({ id: `oc-n-${index}`, casita: String(60 + (index % 20)), caja_fuerte: "Si", created_at: `2026-11-0${1 + (index % 4)} 10:${String(index % 60).padStart(2, "0")}` }),
+      );
+      const sinConservar = keepInicioRevisiones(ruido, HOY, INICIO_LIST_LIMIT);
+      const conservadas = keepInicioRevisiones([checkIn, ...ruido], HOY, INICIO_LIST_LIMIT);
+      assert.equal(sinConservar.some((row) => row.id === "oc-49"), false);
+      assert.equal(conservadas.some((row) => row.id === "oc-49"), true);
+      const groups = groupHoyCasitasConMemo(conservadas, HOY, [], memo);
+      const ocupacion = grupo(groups, "ocupacion");
+      assert.ok(ocupacion, "falta el grupo ocupacion");
+      assert.equal(JSON.stringify(ocupacion).includes('"49"'), true);
+    },
+  },
+  {
     name: "Today's Arrivals del memo de mañana no se pierden por filtrar fecha_memo === hoy",
     run() {
       const filas = [

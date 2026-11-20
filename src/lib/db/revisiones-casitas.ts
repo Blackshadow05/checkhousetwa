@@ -6,6 +6,7 @@ import type { RevisionActivity } from "@/lib/casitas-sin-revision";
 import { createPrivateClient } from "@/lib/auth/session";
 import {
   INICIO_LIST_LIMIT,
+  INICIO_ESTADIA_DAYS,
   INICIO_RECENT_DAYS,
   INICIO_REVISION_COLUMNS,
   casitaNumber,
@@ -72,6 +73,21 @@ export async function listRevisionesDesde(
 ) {
   return revisionesCasitas(client)
     .select(INICIO_REVISION_COLUMNS)
+    .gte("created_at", `${fromDay} 00:00:00`)
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+}
+
+// Check in / Check out / Upsell de los últimos días: "En ocupación" busca el
+// montaje de la estadía en curso aunque haya más de 100 revisiones posteriores.
+export async function listRevisionesDeEstadia(
+  client: Client,
+  fromDay: string,
+  limit = 500,
+) {
+  return revisionesCasitas(client)
+    .select(INICIO_REVISION_COLUMNS)
+    .or("caja_fuerte.ilike.check in%,caja_fuerte.ilike.check out%,caja_fuerte.ilike.upsell%")
     .gte("created_at", `${fromDay} 00:00:00`)
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(limit);
@@ -163,14 +179,16 @@ export async function getInicioRevisiones(today = todayKey()): Promise<{
 }> {
   try {
     const supabase = await createPrivateClient();
-    const [latestResult, recentResult, upsellsResult, activityResult] = await Promise.allSettled([
+    const [latestResult, recentResult, estadiaResult, upsellsResult, activityResult] = await Promise.allSettled([
       listLatestRevisionesCasitas(supabase),
       listRevisionesDesde(supabase, shiftDay(today, -INICIO_RECENT_DAYS)),
+      listRevisionesDeEstadia(supabase, shiftDay(today, -INICIO_ESTADIA_DAYS)),
       listCurrentUpsells(supabase),
       listRevisionActivity(supabase, today),
     ]);
     const latest = latestResult.status === "fulfilled" ? latestResult.value : null;
     const recent = recentResult.status === "fulfilled" ? recentResult.value : null;
+    const estadia = estadiaResult.status === "fulfilled" ? estadiaResult.value : null;
     const currentUpsells = upsellsResult.status === "fulfilled" ? upsellsResult.value : null;
     const activity = activityResult.status === "fulfilled" ? activityResult.value : null;
 
@@ -181,8 +199,12 @@ export async function getInicioRevisiones(today = todayKey()): Promise<{
       recent?.error || !recent?.data
         ? []
         : recent.data.map((row: RevisionCasitaInicio) => mapInicioRevision(row));
+    const estadiaRows =
+      estadia?.error || !estadia?.data
+        ? []
+        : estadia.data.map((row: RevisionCasitaInicio) => mapInicioRevision(row));
     const revisiones = keepInicioRevisiones(
-      mergeInicioRevisiones(latestRows, recentRows),
+      mergeInicioRevisiones(latestRows, recentRows, estadiaRows),
       today,
     );
     const upsells =
