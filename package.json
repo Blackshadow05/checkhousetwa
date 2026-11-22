@@ -18,6 +18,8 @@
     "test:hoy-casitas": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-group-hoy-casitas.mjs",
     "test:hoy-expansion": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-hoy-casitas-expansion.mjs",
     "test:sesion-usuario": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-usuario-session-tiempo.mjs",
+    "test:sesion-status": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-session-status.mjs",
+    "test:sesion-offline": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-offline-session.mjs",
     "test:evidencias": "node --experimental-strip-types --no-warnings --import ./scripts/ts-alias-loader.mjs scripts/test-revision-evidence-edit.mjs"
   },
   "dependencies": {

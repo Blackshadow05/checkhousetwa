@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { BedDouble, Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, Lock, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
+import { Camera, Check, CheckCheck, ClipboardCheck, CloudCheck, House, ImagePlus, ListChecks, Lock, Minus, Plus, ScanSearch, WifiOff } from "lucide-react";
 import { revisionDraftHasProgress, useRevisionDraft } from "@/hooks/use-revision-draft";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
@@ -21,9 +21,6 @@ import { useEscaneoArticulos } from "@/hooks/use-escaneo-articulos";
 import { useReveladoEscaneo } from "@/hooks/use-revelado-escaneo";
 import { articulosEnFoto, conEscaneo } from "@/lib/revision-scan";
 import { createUuid } from "@/lib/uuid";
-import { cajaFuerteSugerida } from "@/lib/caja-fuerte-sugerida";
-import { cajaFuertePorMemo } from "@/lib/operaciones-memo";
-import { useOperacionesMemo } from "@/hooks/use-operaciones-memo";
 
 function FieldError({ name, errors }: { name: keyof RevisionFormErrors; errors: RevisionFormErrors }) {
   return errors[name] ? <p className="revision-field-error" id={`error-${name}`}>{errors[name]}</p> : null;
@@ -124,14 +121,16 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
 }) {
   const { draft, storage, update, detach, keepForLater } = useRevisionDraft(open, mode);
   const [salida, setSalida] = useState<{ leave: () => void } | null>(null);
+  const [confirmarCaja, setConfirmarCaja] = useState<{ valor: string; quitadas: number; limite: number } | null>(null);
   const [guardandoSalida, setGuardandoSalida] = useState(false);
   const [errorSalida, setErrorSalida] = useState("");
   const draftRef = useRef(draft);
+  const previasCountRef = useRef(0);
   useEffect(() => { draftRef.current = draft; }, [draft]);
   useEffect(() => {
     if (!onExitGuard) return;
     onExitGuard((leave) => {
-      if (!revisionDraftHasProgress(draftRef.current)) return false;
+      if (!revisionDraftHasProgress(draftRef.current) && previasCountRef.current === 0) return false;
       setErrorSalida("");
       setSalida({ leave });
       return true;
@@ -139,6 +138,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     return () => onExitGuard(null);
   }, [onExitGuard]);
   if (!open && salida) setSalida(null);
+  if (!open && confirmarCaja) setConfirmarCaja(null);
   const { online, revisiones } = useRevisiones();
   const [errors, setErrors] = useState<RevisionFormErrors>({});
   const [message, setMessage] = useState("");
@@ -148,21 +148,22 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const recognition = draft?.mode === "reconocimiento";
-  const { rows: operacionesMemo } = useOperacionesMemo(open);
   const inventario = useInventarioCasitas(open && recognition);
   const escaneo = useEscaneoArticulos(open && recognition, draft, update);
   const fotosEscaneo = recognition && draft ? draft.photos : SIN_FOTOS;
   const revelado = useReveladoEscaneo(useMemo(() => fotosEscaneo.map((photo) => photo.id), [fotosEscaneo]), draft?.escaneos, escaneo.fallidas);
   const [resultadosVistos, setResultadosVistos] = useState(false);
-  const [previas, setPrevias] = useState<FotoPrevia[]>([]);
+  const [previas, setPrevias] = useState<Array<FotoPrevia & { draftId: string }>>([]);
+  const activeDraftId = draft?.id;
+  const previasActivas = useMemo(
+    () => (activeDraftId ? previas.filter((item) => item.draftId === activeDraftId) : []),
+    [previas, activeDraftId],
+  );
+  useEffect(() => { previasCountRef.current = previasActivas.length; }, [previasActivas.length]);
   const [scanError, setScanError] = useState("");
   const [avisoFotos, setAvisoFotos] = useState("");
   const [avisoEspera, setAvisoEspera] = useState(false);
   const [editarRevisor, setEditarRevisor] = useState(false);
-  const [sugerida, setSugerida] = useState("");
-  const sugeridaRef = useRef("");
-  const cajaTocada = useRef(false);
-  const esperandoMemo = useRef(false);
   const [shownDraftId, setShownDraftId] = useState(draft?.id);
   if (shownDraftId !== draft?.id) {
     setShownDraftId(draft?.id);
@@ -172,10 +173,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     setAvisoFotos("");
     setAvisoEspera(false);
     setEditarRevisor(false);
-    setSugerida("");
-    sugeridaRef.current = "";
-    cajaTocada.current = false;
-    esperandoMemo.current = false;
+    setConfirmarCaja(null);
     setResultadosVistos(false);
   }
 
@@ -209,81 +207,6 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     if (open) scrollRef.current?.scrollTo(0, 0);
   }, [draft?.id, open]);
 
-  const escribirCaja = (valor: string) => {
-    const current = draftRef.current;
-    if (!current || current.values.caja_fuerte === valor) return;
-    const limite = revisionPhotoLimit(current.mode, valor);
-    const quitadas = current.mode === "reconocimiento" ? Math.max(0, current.photos.length - limite) : 0;
-    update((previous) => {
-      const limit = revisionPhotoLimit(previous.mode, valor);
-      for (const photo of previous.photos.slice(limit)) void discardUpload(photo.id);
-      const next = conEscaneo({
-        ...previous,
-        photos: previous.photos.slice(0, limit),
-        values: { ...previous.values, caja_fuerte: valor, room_move: valor === "Room Move" ? previous.values.room_move : "" },
-      });
-      draftRef.current = next;
-      return next;
-    });
-    setErrors((previous) => ({ ...previous, caja_fuerte: undefined, evidencias: undefined, room_move: undefined }));
-    setMessage("");
-    if (current.mode === "reconocimiento") {
-      setScanError("");
-      setAvisoFotos(quitadas > 0
-        ? limite === 0
-          ? "Esta opción no usa fotos; se quitaron las que habías agregado."
-          : limite === 1
-            ? "Esta opción usa solo 1 foto; se quitaron las demás."
-            : `Esta opción usa hasta ${limite} fotos; se quitaron ${quitadas}.`
-        : "");
-    }
-  };
-
-  const recordarSugerencia = (valor: string, porMemo: boolean) => {
-    sugeridaRef.current = valor;
-    setSugerida(porMemo ? "" : valor);
-  };
-
-  const aplicarCajaDeCasita = (casita: string, cajaActual: string, alElegir: boolean) => {
-    if (!operacionesMemo) {
-      if (alElegir) esperandoMemo.current = true;
-      return;
-    }
-    const porMemo = cajaFuertePorMemo(operacionesMemo, casita);
-    esperandoMemo.current = false;
-    if (porMemo) {
-      if (porMemo !== cajaActual) escribirCaja(porMemo);
-      recordarSugerencia(porMemo, true);
-      return;
-    }
-    if (!alElegir) return;
-    if (recognition || (cajaActual && cajaActual !== sugeridaRef.current)) {
-      recordarSugerencia("", false);
-      return;
-    }
-    const next = cajaFuerteSugerida(revisiones, casita);
-    if (next !== cajaActual) escribirCaja(next);
-    recordarSugerencia(next, false);
-  };
-
-  useEffect(() => {
-    if (!open || operacionesMemo === null || cajaTocada.current) return;
-    const current = draftRef.current;
-    const casita = current?.values.casita ?? "";
-    if (!casita) return;
-    const caja = current?.values.caja_fuerte ?? "";
-    if (!esperandoMemo.current && caja) return;
-    const porMemo = cajaFuertePorMemo(operacionesMemo, casita);
-    if (porMemo) {
-      esperandoMemo.current = false;
-      if (caja !== porMemo) escribirCaja(porMemo);
-      recordarSugerencia(porMemo, true);
-      return;
-    }
-    if (!esperandoMemo.current) return;
-    aplicarCajaDeCasita(casita, caja, true);
-  }, [open, operacionesMemo, draft?.values.casita, draft?.values.caja_fuerte, recognition, revisiones, update]);
-
   if (!draft) return open ? <div className="revision-form-screen"><p className="revision-form-loading" role="status">Preparando tu revisión…</p></div> : null;
   const { values, photos } = draft;
   const hayFotosEvidencia = photos.length > 0;
@@ -298,7 +221,11 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const scan = recognition ? draft.scan ?? null : null;
   const sinEscanear = recognition ? photos.filter((photo) => !draft.escaneos?.[photo.id]) : [];
   const falloEscaneo = sinEscanear.map((photo) => escaneo.fallidas[photo.id]).find(Boolean) ?? "";
-  const scanNotice = falloEscaneo || scanError || (avisoEspera && sinEscanear.length ? "Espera a que terminen de escanearse las fotos." : "");
+  const scanNotice = falloEscaneo || scanError || (avisoEspera && (previasActivas.length > 0 || sinEscanear.length > 0)
+    ? previasActivas.length > 0
+      ? "Espera a que terminen de prepararse las fotos."
+      : "Espera a que terminen de escanearse las fotos."
+    : "");
   const casitaInventario = values.casita ? inventario.rows?.find((row) => row.casita === Number(values.casita)) ?? null : null;
   const noCoinciden = scan && casitaInventario
     ? new Set<InventoryKey>(compararInventario(values, scan.detectados, casitaInventario).revisar
@@ -346,9 +273,9 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     input?.scrollIntoView({ block: "center", behavior: "instant" });
   };
 
-  const applyChange = (name: keyof RevisionFormValues, value: string) => {
+  const applyFieldChange = (name: keyof RevisionFormValues, value: string) => {
     const nuevoLimite = revisionPhotoLimit(draft.mode, value);
-    const quitadas = name === "caja_fuerte" && recognition ? Math.max(0, photos.length - nuevoLimite) : 0;
+    const quitadas = name === "caja_fuerte" ? Math.max(0, photos.length - nuevoLimite) : 0;
     update((previous) => {
       const next = name !== "caja_fuerte"
         ? { ...previous, values: { ...previous.values, [name]: value } }
@@ -380,16 +307,15 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   const change = (name: keyof RevisionFormValues, value: string) => {
     if (recognition && !hayFotosEvidencia) return;
     if (recognition && name === "casita" && !values.caja_fuerte) return;
-    applyChange(name, value);
     if (name === "caja_fuerte") {
-      cajaTocada.current = true;
-      esperandoMemo.current = false;
-      recordarSugerencia("", false);
-      return;
+      const nuevoLimite = revisionPhotoLimit(draft.mode, value);
+      const quitadas = Math.max(0, photos.length - nuevoLimite);
+      if (quitadas > 0) {
+        setConfirmarCaja({ valor: value, quitadas, limite: nuevoLimite });
+        return;
+      }
     }
-    if (name !== "casita") return;
-    cajaTocada.current = false;
-    aplicarCajaDeCasita(value, values.caja_fuerte, true);
+    applyFieldChange(name, value);
   };
   const focusError = (nextErrors: RevisionFormErrors) => {
     const first = (recognition ? RECOGNITION_ERROR_ORDER.find((key) => nextErrors[key]) : undefined) ?? Object.keys(nextErrors)[0];
@@ -431,7 +357,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     else if (selected.length > room) setMessage(`Solo se agregaron ${room === 1 ? "1 foto" : `${room} fotos`}; el máximo es ${photoLimit}.`);
   };
   const addScanPhotos = async (files: FileList | null) => {
-    const room = photoLimit - photos.length - previas.length;
+    const room = photoLimit - photos.length - previasActivas.length;
     if (!files?.length || inFlight.current || room <= 0) return;
     setScanError("");
     setAvisoFotos("");
@@ -439,11 +365,12 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     setErrors((previous) => ({ ...withoutInventoryErrors(previous), evidencias: undefined }));
     const draftId = draft.id;
     const items = Array.from(files).slice(0, room).map((file) => ({ id: createUuid(), file, url: URL.createObjectURL(file) }));
-    setPrevias((previous) => [...previous, ...items.map(({ id, url }) => ({ id, url }))]);
+    setPrevias((previous) => [...previous, ...items.map(({ id, url }) => ({ id, url, draftId }))]);
     let failure = "";
     for (const item of items) {
       try {
         const { photo, extra } = await prepareRevisionPhotoWith(item.file, (image) => entradaDesdeImagen(image, image.naturalWidth, image.naturalHeight));
+        if (draftRef.current?.id !== draftId) continue;
         escaneo.registrar(photo.id, extra);
         update((previous) => previous.id !== draftId ? previous : conEscaneo({
           ...previous,
@@ -456,7 +383,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
         URL.revokeObjectURL(item.url);
       }
     }
-    if (failure) setScanError(failure);
+    if (failure && draftRef.current?.id === draftId) setScanError(failure);
   };
   const focusScanCard = () => {
     requestAnimationFrame(() => {
@@ -489,6 +416,12 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     }
     const nextErrors = validateRevisionForm(stamped, undefined, photos.length);
     if (recognition && !hayFotosEvidencia) {
+      if (previasActivas.length > 0) {
+        setErrors({});
+        setAvisoEspera(true);
+        focusScanCard();
+        return;
+      }
       const soloFotos: RevisionFormErrors = { evidencias: "Añade al menos una foto de evidencia." };
       setErrors(soloFotos);
       setAvisoEspera(false);
@@ -506,10 +439,10 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
       for (const key of INVENTARIO_KEYS) delete nextErrors[key];
       delete nextErrors.camas_ordenadas;
     }
-    if (recognition && (!draft.scan || sinEscanear.length)) {
+    if (recognition && (previasActivas.length > 0 || !draft.scan || sinEscanear.length)) {
       const visible = Object.fromEntries(Object.entries(withoutInventoryErrors(nextErrors)).filter(([key]) => key !== "camas_ordenadas")) as RevisionFormErrors;
       setErrors(visible);
-      if (photos.length && !falloEscaneo) setAvisoEspera(true);
+      if ((photos.length || previasActivas.length) && !falloEscaneo) setAvisoEspera(true);
       if (Object.keys(visible).length) focusError(visible);
       else focusScanCard();
       return;
@@ -574,8 +507,8 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     <FormCard icon={conTitulo ? <Lock size={18} /> : undefined} title={conTitulo ? "Caja fuerte" : undefined} locked={conTitulo && cajaBloqueada} lockHint="Primero añade las fotos de evidencia.">
       <ChoiceField name="caja_fuerte" label="Caja fuerte" options={CAJA_FUERTE_FILTERS} value={values.caja_fuerte} onChange={change} errors={errors}
         disabledOptions={recognition ? CAJA_FUERTE_NO_EVIDENCE : undefined}
-        hint={cajaBloqueada ? undefined : recognition ? "Si y No no llevan fotos (usa Ingreso manual). Check out y Guardar Upsell usan solo 1." : sugerida && values.caja_fuerte === sugerida ? "Sugerido según el último registro" : undefined} />
-      {recognition && avisoFotos && <p className="inline-notice revision-field-notice" role="status"><span>{avisoFotos}</span></p>}
+        hint={cajaBloqueada ? undefined : recognition ? "Si y No no llevan fotos (usa Ingreso manual). Check out y Guardar Upsell usan solo 1." : undefined} />
+      {avisoFotos && <p className="inline-notice revision-field-notice" role="status"><span>{avisoFotos}</span></p>}
       <ChoiceField name="puertas_ventanas" label="Puertas y ventanas" options={PUERTAS_VENTANAS} value={values.puertas_ventanas} onChange={change} errors={errors} plain />
       {values.caja_fuerte === "Room Move" && <div className="revision-text-field"><label htmlFor="revision-room_move">Movimiento entre casitas<small>Ej. De casita 12 a casita 24</small></label><input id="revision-room_move" name="room_move" placeholder="Ej. De casita 12 a casita 24" maxLength={120} value={values.room_move} onChange={(e) => change("room_move", e.target.value)} aria-invalid={Boolean(errors.room_move)} aria-describedby={errors.room_move ? "error-room_move" : undefined} /><FieldError name="room_move" errors={errors} /></div>}
     </FormCard>
@@ -611,7 +544,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
             {!recognition && datosRevisionCard}
             {!completarDespues && recognition && <>
               <FormCard icon={<ScanSearch size={18} />} title="Fotos de evidencia">
-                <RecognitionScanCard photos={photos} previas={previas} limit={photoLimit} scan={scan} status={photoStatus} marks={scanMarks} progreso={revelado.progreso}
+                <RecognitionScanCard photos={photos} previas={previasActivas} limit={photoLimit} scan={scan} status={photoStatus} marks={scanMarks} progreso={revelado.progreso}
                   error={scanNotice} disabled={busy} active={open} onPick={(files) => void addScanPhotos(files)} onRemove={removePhoto}
                   onRetry={falloEscaneo ? escaneo.reintentar : undefined} listoHint={listoHint}>
                   <FieldError name="evidencias" errors={errors} />
@@ -630,7 +563,6 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
                       renderCamas={(extras) => quantity(CAMAS_FIELD, extras)} />
                   </FormCard>
                 </div>}
-                {mostrarResultados && (values.camas_ordenadas === "Si" || values.camas_ordenadas === "No") && <FormCard icon={<BedDouble size={18} />} title="Habitación">{quantity(CAMAS_FIELD)}</FormCard>}
               </> : <>
                 {cajaFuerteCard()}
                 {FORM_INVENTORY_GROUPS.map((fields) => <FormCard key={fields[0].key}>{fields.map((field) => quantity(field))}</FormCard>)}
@@ -653,7 +585,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
           {Object.values(errors).some(Boolean) && <p className="sr-only" role="alert">Revisa los campos marcados antes de continuar.</p>}
           <footer className="revision-form-footer">
             <button type="button" className="secondary-button" disabled={busy} onClick={() => {
-              if (revisionDraftHasProgress(draft)) {
+              if (revisionDraftHasProgress(draft) || previasActivas.length > 0) {
                 setErrorSalida("");
                 setSalida({ leave: onClose });
               } else onClose();
@@ -662,6 +594,37 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
           </footer>
         </div>
       </form>
+      <BottomSheet
+        open={Boolean(confirmarCaja)}
+        onClose={() => setConfirmarCaja(null)}
+        title={confirmarCaja ? `¿Cambiar a ${statusAppearance(confirmarCaja.valor).label}?` : "Cambiar caja fuerte"}
+      >
+        {confirmarCaja && (
+          <>
+            <p className="sheet-description">
+              {confirmarCaja.limite === 0
+                ? `Esta opción no usa fotos de evidencia. Si cambias, se ${confirmarCaja.quitadas === 1 ? "quitará la foto agregada" : `quitarán las ${confirmarCaja.quitadas} fotos agregadas`}.`
+                : `Esta opción usa solo ${confirmarCaja.limite} foto de evidencia. Si cambias, se ${confirmarCaja.quitadas === 1 ? "quitará 1 foto adicional" : `quitarán ${confirmarCaja.quitadas} fotos adicionales`}${recognition ? " y su escaneo" : ""}.`}
+            </p>
+            <div className="revision-exit-actions">
+              <button type="button" className="primary-button" onClick={() => setConfirmarCaja(null)}>
+                Mantener fotos
+              </button>
+              <button
+                type="button"
+                className="text-action revision-exit-discard"
+                onClick={() => {
+                  const target = confirmarCaja.valor;
+                  setConfirmarCaja(null);
+                  applyFieldChange("caja_fuerte", target);
+                }}
+              >
+                {confirmarCaja.quitadas === 1 ? "Cambiar y quitar 1 foto" : `Cambiar y quitar ${confirmarCaja.quitadas} fotos`}
+              </button>
+            </div>
+          </>
+        )}
+      </BottomSheet>
       <BottomSheet open={Boolean(salida)} onClose={() => { if (!guardandoSalida) setSalida(null); }} title="¿Salir de la revisión?">
         <p className="sheet-description">Puedes guardar tu avance y terminarlo después desde Revisiones.</p>
         {errorSalida && <p className="inline-notice notice-error" role="alert">{errorSalida}</p>}

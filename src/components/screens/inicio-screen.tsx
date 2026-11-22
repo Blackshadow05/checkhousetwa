@@ -190,22 +190,32 @@ export function InicioScreen({
     setOpening(casita);
     setNotice(null);
     const wasSheet = showAll;
-    if (showAll) setShowAll(false);
     const number = String(casita);
     const local = [...revisiones, ...upsells]
       .filter((row) => !row.pendiente && casitaNumber(row.casita) === number)
       .sort((left, right) => right.created_at.localeCompare(left.created_at))[0];
-    if (local) {
+    const latestActivity = (revisionActivity ?? [])
+      .filter((row) => casitaNumber(row.casita) === number)
+      .sort((left, right) => (right.created_at ?? "").localeCompare(left.created_at ?? ""))[0];
+    const localConfirmedLatest = Boolean(local && latestActivity && local.id === latestActivity.id);
+    if (localConfirmedLatest && local) {
       fromSheet.current = wasSheet;
+      if (wasSheet) setShowAll(false);
       openRevision(local);
       openingRef.current = null;
       setOpening(null);
       return;
     }
     if (!navigator.onLine) {
-      setNotice(
-        `Casita ${casita}: sin conexión, no tenemos su revisión en este dispositivo.`,
-      );
+      if (local) {
+        fromSheet.current = wasSheet;
+        if (wasSheet) setShowAll(false);
+        openRevision(local);
+      } else {
+        setNotice(
+          `Casita ${casita}: sin conexión, no tenemos su revisión en este dispositivo.`,
+        );
+      }
       openingRef.current = null;
       setOpening(null);
       return;
@@ -221,6 +231,7 @@ export function InicioScreen({
         return;
       }
       fromSheet.current = wasSheet;
+      if (wasSheet) setShowAll(false);
       openRevision(result.row);
     } catch {
       setNotice(`Casita ${casita}: no pudimos abrir la última revisión.`);
@@ -342,7 +353,7 @@ export function InicioScreen({
                 </>
               )}
               {pendientes.length > 10 && (
-                <button className={styles.showAll} type="button" aria-haspopup="dialog" onClick={() => setShowAll(true)}>
+                <button className={styles.showAll} type="button" aria-haspopup="dialog" onClick={() => { setNotice(null); setShowAll(true); }}>
                   Ver todas
                   <span>
                     {pendientes.length}
@@ -354,11 +365,22 @@ export function InicioScreen({
           )}
         </div>
       </section>
-      <BottomSheet open={showAll} onClose={() => setShowAll(false)} title={`Más de ${days} días sin revisión`}>
+      <BottomSheet
+        open={showAll}
+        onClose={() => {
+          if (openingRef.current !== null) return;
+          setShowAll(false);
+          setNotice(null);
+        }}
+        title={`Más de ${days} días sin revisión`}
+      >
         {showAll && pendientes !== null && (
-          <ul className={`${styles.pendingGrid} ${styles.sheetGrid}`} aria-label="Todas las casitas sin revisión reciente">
-            {pendingItems(pendientes)}
-          </ul>
+          <>
+            <ul className={`${styles.pendingGrid} ${styles.sheetGrid}`} aria-label="Todas las casitas sin revisión reciente">
+              {pendingItems(pendientes)}
+            </ul>
+            {notice && <p className={styles.notice} role="status">{notice}</p>}
+          </>
         )}
       </BottomSheet>
       <BottomSheet open={accountOpen} onClose={() => setAccountOpen(false)} title="Cuenta">

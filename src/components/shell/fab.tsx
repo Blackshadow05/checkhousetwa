@@ -27,6 +27,8 @@ export function NewRevisionFab({ away = false, onSelect }: { away?: boolean; onS
     onSelect(mode);
   };
 
+  const isAway = away && !open;
+
   return (
     <>
       {open && <div className="new-revision-scrim" aria-hidden="true" onClick={() => setOpen(false)} />}
@@ -44,7 +46,9 @@ export function NewRevisionFab({ away = false, onSelect }: { away?: boolean; onS
         ref={fabRef}
         type="button"
         className="new-revision-fab"
-        data-away={away && !open ? "" : undefined}
+        data-away={isAway ? "" : undefined}
+        aria-hidden={isAway || undefined}
+        tabIndex={isAway ? -1 : undefined}
         onClick={() => setOpen((value) => !value)}
         aria-label={open ? "Cerrar opciones de revisión" : "Crear nueva revisión"}
         aria-haspopup="menu"

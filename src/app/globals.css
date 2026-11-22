@@ -449,8 +449,8 @@ svg {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
   touch-action: pan-y pinch-zoom;
-  padding: var(--screen-padding-top) max(20px, env(safe-area-inset-right)) 26px
-    max(20px, env(safe-area-inset-left));
+  padding: var(--screen-padding-top) max(20px, env(safe-area-inset-right))
+    calc(26px + var(--keyboard-inset, 0px)) max(20px, env(safe-area-inset-left));
 }
 .app-screen:not([hidden]) {
   animation: screen-enter 180ms ease-out;
@@ -2846,7 +2846,7 @@ button.detail-tile:active {
   }
   .app-screen {
     --screen-padding-top: 24px;
-    padding: var(--screen-padding-top) 32px 36px;
+    padding: var(--screen-padding-top) 32px calc(36px + var(--keyboard-inset, 0px));
   }
   /* Mismo ancho de contenido que las pantallas de la app (borde de .app-shell + 32px). */
   .detail-screen {
@@ -3133,7 +3133,7 @@ button.detail-tile:active {
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 16px max(20px, env(safe-area-inset-right)) 24px max(20px, env(safe-area-inset-left));
+  padding: 16px max(20px, env(safe-area-inset-right)) calc(24px + var(--keyboard-inset, 0px)) max(20px, env(safe-area-inset-left));
 }
 .revision-draft-status { display: flex; align-items: center; gap: 6px; min-height: 20px; margin-bottom: 14px; color: var(--muted-foreground); font-size: .625rem; line-height: 1.6; }
 .revision-draft-status.is-warning { color: var(--amber-text); }
@@ -3283,6 +3283,10 @@ div.revision-photo-open { background-position: center; background-size: cover; }
   .is-creating-revision .brand-mark { width: 34px; height: 34px; }
   .revision-form-footer { margin-top: 14px; }
 }
+:root[data-keyboard-open] .is-creating-revision .header-inner { min-height: 52px; padding-block: 6px; }
+:root[data-keyboard-open] .is-creating-revision .brand-caption { display: none; }
+:root[data-keyboard-open] .is-creating-revision .brand-mark { width: 34px; height: 34px; }
+:root[data-keyboard-open] .revision-form-footer { margin-top: 14px; }
 .auth-form { display: grid; gap: 16px; }
 .auth-form .revision-text-field { display: grid; gap: 6px; margin: 0; font-size: .875rem; font-weight: 550; }
 .auth-form .revision-text-field > label { margin: 0; font: inherit; }

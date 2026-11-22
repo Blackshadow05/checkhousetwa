@@ -13,6 +13,7 @@ import {
   type AuthProfile,
 } from "@/lib/auth/profile";
 import {
+  checkSesionUsuario,
   clearStartedAt,
   clearSupabaseSession,
   completeSupabaseSession,
@@ -126,6 +127,10 @@ function enrollmentResult(enrollment: EnrollResponse): AuthenticatorResult {
 
 export async function currentUsuario() {
   return getSesionUsuario();
+}
+
+export async function checkCurrentUsuario() {
+  return checkSesionUsuario();
 }
 
 export async function logoutUsuario() {

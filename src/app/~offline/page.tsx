@@ -4,6 +4,7 @@ import { todayKey } from "@/lib/revisiones-display";
 export default function OfflinePage() {
   return (
     <AppShell
+      offlineFallback
       initialScreen="inicio"
       revisionesInicio={[]}
       revisionesError="offline"

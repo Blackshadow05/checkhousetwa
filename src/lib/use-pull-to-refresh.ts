@@ -7,6 +7,24 @@ const MAX_PULL = 104;
 const REST = 68;
 const MIN_SPIN_MS = 600;
 
+function hasScrolledContainer(target: Element | null, root: HTMLElement): boolean {
+  let node = target;
+  while (node && node !== root) {
+    if (node instanceof HTMLElement && node.scrollTop > 0 && node.scrollHeight > node.clientHeight) {
+      return true;
+    }
+    node = node.parentElement;
+  }
+  return false;
+}
+
+function shouldIgnorePull(target: EventTarget | null, root: HTMLElement): boolean {
+  if (document.querySelector("dialog[open]") !== null) return true;
+  const element = target instanceof Element ? target : null;
+  if (element?.closest("dialog, [role='dialog'], .pswp")) return true;
+  return hasScrolledContainer(element, root);
+}
+
 export function usePullToRefresh(
   anchor: RefObject<HTMLElement | null>,
   indicator: RefObject<HTMLElement | null>,
@@ -45,9 +63,21 @@ export function usePullToRefresh(
       mark.dataset.state = state;
     };
 
+    const onCancel = () => {
+      tracking = false;
+      if (!pulling) return;
+      pulling = false;
+      show(0, "idle");
+    };
+
     const onStart = (event: TouchEvent) => {
       pulling = false;
-      tracking = !busy && event.touches.length === 1 && root.scrollTop <= 0 && navigator.onLine;
+      tracking =
+        !busy &&
+        event.touches.length === 1 &&
+        root.scrollTop <= 0 &&
+        navigator.onLine &&
+        !shouldIgnorePull(event.target, root);
       if (!tracking) return;
       startX = event.touches[0].clientX;
       startY = event.touches[0].clientY;
@@ -55,6 +85,10 @@ export function usePullToRefresh(
 
     const onMove = (event: TouchEvent) => {
       if (!tracking) return;
+      if (event.touches.length !== 1 || shouldIgnorePull(event.target, root)) {
+        onCancel();
+        return;
+      }
       const dx = event.touches[0].clientX - startX;
       const dy = event.touches[0].clientY - startY;
       if (!pulling) {
@@ -97,14 +131,14 @@ export function usePullToRefresh(
     root.addEventListener("touchstart", onStart, { passive: true });
     root.addEventListener("touchmove", onMove, { passive: false });
     root.addEventListener("touchend", onEnd);
-    root.addEventListener("touchcancel", onEnd);
+    root.addEventListener("touchcancel", onCancel);
     return () => {
       live = false;
       settle.current = null;
       root.removeEventListener("touchstart", onStart);
       root.removeEventListener("touchmove", onMove);
       root.removeEventListener("touchend", onEnd);
-      root.removeEventListener("touchcancel", onEnd);
+      root.removeEventListener("touchcancel", onCancel);
     };
   }, [anchor, indicator]);
 }

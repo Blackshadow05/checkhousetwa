@@ -10,6 +10,7 @@ import {
   cloudinaryViewerUrl,
 } from "@/lib/cloudinary";
 import { evidenceFileName, evidencePathMark } from "@/lib/revision-evidence";
+import { createUuid } from "@/lib/uuid";
 
 type EvidenceGalleryProps = {
   paths: string[];
@@ -230,6 +231,8 @@ export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
   const pathsRef = useRef(paths);
   const casitaRef = useRef(casita);
   const openingRef = useRef(false);
+  const galleryTokenRef = useRef<string | null>(null);
+  const closingFromPopRef = useRef(false);
 
   useEffect(() => {
     pathsRef.current = paths;
@@ -318,11 +321,70 @@ export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
       const current = lightbox.pswp?.currIndex;
       if (current !== undefined) prefetchOriginal(pathsRef.current[current]);
     };
-    lightbox.on("afterInit", prefetchCurrent);
+    const pushGalleryHistory = () => {
+      if (galleryTokenRef.current) return;
+      const token = createUuid();
+      try {
+        window.history.pushState(
+          { ...window.history.state, casitaGallery: token },
+          "",
+          window.location.href,
+        );
+        galleryTokenRef.current = token;
+      } catch {
+        galleryTokenRef.current = null;
+      }
+    };
+    const onPopState = () => {
+      const token = galleryTokenRef.current;
+      if (!token) return;
+      const currentToken = (window.history.state as { casitaGallery?: string } | null)?.casitaGallery;
+      if (currentToken === token) return;
+      galleryTokenRef.current = null;
+      closingFromPopRef.current = true;
+      lightbox.pswp?.close();
+    };
+    lightbox.on("afterInit", () => {
+      pushGalleryHistory();
+      prefetchCurrent();
+    });
     lightbox.on("change", prefetchCurrent);
+    lightbox.on("destroy", () => {
+      const token = galleryTokenRef.current;
+      galleryTokenRef.current = null;
+      if (closingFromPopRef.current) {
+        closingFromPopRef.current = false;
+        return;
+      }
+      if (
+        token &&
+        (window.history.state as { casitaGallery?: string } | null)?.casitaGallery === token
+      ) {
+        window.history.back();
+      }
+    });
+    window.addEventListener("popstate", onPopState);
     lightbox.init();
     lightboxRef.current = lightbox;
     return () => {
+      window.removeEventListener("popstate", onPopState);
+      const token = galleryTokenRef.current;
+      galleryTokenRef.current = null;
+      closingFromPopRef.current = false;
+      if (
+        token &&
+        (window.history.state as { casitaGallery?: string } | null)?.casitaGallery === token
+      ) {
+        try {
+          window.history.replaceState(
+            { ...window.history.state, casitaGallery: null },
+            "",
+            window.location.href,
+          );
+        } catch {
+          // Ignore restricted history APIs on unmount.
+        }
+      }
       lightbox.destroy();
       lightboxRef.current = null;
     };

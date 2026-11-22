@@ -162,27 +162,25 @@ export function RecognitionResults({ values, scan, inventario, inventarioStatus,
           {pendientes > 0
             ? <span className={styles.badgeAlert}><TriangleAlert size={13} aria-hidden="true" />{pendientes} por revisar</span>
             : <span className={styles.badgeOk}><CircleCheck size={13} aria-hidden="true" />Todo identificado</span>}
-          <span className={styles.badgeOk}>Identificado · {all.filter((item) => item.coincideAhora !== false).length}</span>
+          <span className={styles.badgeOk}>Identificado · {all.filter((item) => item.coincideAhora !== false).length + (camasPendientes ? 0 : 1)}</span>
         </div>
       )}
       <div className={styles.inventory}>
         <span>{inventoryText(inventarioStatus, casita, inventario !== null)}</span>
         {casita && !inventario && inventarioStatus === "error" && <button type="button" onClick={onRetryInventario}>Reintentar</button>}
       </div>
-      {(revisar.length > 0 || camasPendientes) && (
-        <section className={styles.group} aria-label="Artículos por revisar">
-          <h3 className={`${styles.groupTitle} ${styles.alert}`}><TriangleAlert size={14} aria-hidden="true" />Revisar</h3>
-          {camasPendientes && (
-            <div className={styles.row} data-tone="alert">
-              {renderCamas({
-                badge: <span className={`${styles.badge} ${styles.badgeAlert}`}><TriangleAlert size={12} aria-hidden="true" />Revisar</span>,
-                hint: "No se reconoce en fotos",
-              })}
-            </div>
-          )}
-          {revisar.map((item) => row(item, "alert"))}
-        </section>
-      )}
+      <section className={styles.group} aria-label="Artículos por revisar">
+        <h3 className={`${styles.groupTitle} ${styles.alert}`}><TriangleAlert size={14} aria-hidden="true" />Revisar</h3>
+        <div className={styles.row} data-tone={camasPendientes ? "alert" : undefined}>
+          {renderCamas({
+            badge: camasPendientes
+              ? <span className={`${styles.badge} ${styles.badgeAlert}`}><TriangleAlert size={12} aria-hidden="true" />Revisar</span>
+              : <span className={`${styles.badge} ${styles.badgeOk}`}><CircleCheck size={12} aria-hidden="true" />Identificado</span>,
+            hint: "No se reconoce en fotos",
+          })}
+        </div>
+        {revisar.map((item) => row(item, "alert"))}
+      </section>
       {coinciden.length > 0 && (
         <section className={styles.group} aria-label="Artículos identificados">
           <h3 className={`${styles.groupTitle} ${styles.ok}`}><CircleCheck size={14} aria-hidden="true" />Identificado</h3>

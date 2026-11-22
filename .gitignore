@@ -74,6 +74,8 @@ next-env.d.ts
 !/scripts/test-group-hoy-casitas.mjs
 !/scripts/test-hoy-casitas-expansion.mjs
 !/scripts/test-revision-evidence-edit.mjs
+!/scripts/test-session-status.mjs
+!/scripts/test-offline-session.mjs
 !/scripts/ts-alias-loader.mjs
 /CLAUDE.md
 /README.md

@@ -4,7 +4,7 @@ import { ArrowLeft, Camera, ChevronLeft, ImagePlus, Maximize2, Pencil, Trash2 } 
 import PhotoSwipe from "photoswipe";
 import type { SlideData } from "photoswipe";
 import "photoswipe/style.css";
-import { currentUsuario } from "@/app/actions/usuarios";
+import { checkCurrentUsuario, currentUsuario } from "@/app/actions/usuarios";
 import { LoginForm } from "@/components/auth/login-form";
 import { createPantalla } from "@/app/actions/pantallas";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -271,8 +271,14 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
     if (!online) { setError("Conéctate a internet para guardar. Puedes seguir completando el formulario."); return; }
     saving.current = true; setBusy(true); setError("");
     try {
-      const session = await currentUsuario();
-      if (!session) { setUser(null); throw new Error("Tu sesión venció. Inicia sesión para continuar; conservamos el formulario."); }
+      const session = await checkCurrentUsuario();
+      if (session.status === "transient_error") {
+        throw new Error("No se pudo comprobar tu sesión por un fallo temporal de red. Intenta guardar de nuevo.");
+      }
+      if (session.status === "inactive") {
+        setUser(null);
+        throw new Error("Tu sesión venció. Inicia sesión para continuar; conservamos el formulario.");
+      }
       const uploaded = [];
       if (tipo === "reporte") for (const [index, photo] of photos.entries()) {
         setProgress(`Subiendo foto ${index + 1} de ${photos.length}…`);

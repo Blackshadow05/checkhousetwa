@@ -497,6 +497,9 @@ export function RevisionesProvider({
         if (navigator.onLine && (!initialErrorRef.current || initialActivityRef.current !== null)) {
           await persist(revisionesRef.current, upsellsRef.current);
         }
+        if (navigator.onLine && initialErrorRef.current === "offline") {
+          void refreshRef.current?.({ force: true });
+        }
       } catch {
         if (!cancelled) setStorageError(true);
       }

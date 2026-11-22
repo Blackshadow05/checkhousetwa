@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { currentUsuario, logoutUsuario } from "@/app/actions/usuarios";
+import { checkCurrentUsuario, logoutUsuario } from "@/app/actions/usuarios";
 import type { RetornoGoogle } from "@/components/auth/login-form";
 import { InicioScreen, PublicInicioScreen, type InicioAccount } from "@/components/screens/inicio-screen";
 import { BottomNavigation } from "@/components/shell/bottom-navigation";
@@ -26,9 +26,23 @@ import type { InicioRevisionRow, MenuDelDia, UsuarioShell } from "@/types/databa
 import type { RevisionActivity } from "@/lib/casitas-sin-revision";
 import { newRevisionDraft, type RevisionMode } from "@/lib/revision-form";
 import { restoreRevisionDraft, takeSavedRevisionDraft } from "@/hooks/use-revision-draft";
+import { clearOfflineSession, loadOfflineSession, saveOfflineSession } from "@/lib/offline-session";
+import { todayKey } from "@/lib/revisiones-display";
+
+function subscribeToday(callback: () => void) {
+  const timer = window.setInterval(callback, 60_000);
+  window.addEventListener("focus", callback);
+  document.addEventListener("visibilitychange", callback);
+  return () => {
+    window.clearInterval(timer);
+    window.removeEventListener("focus", callback);
+    document.removeEventListener("visibilitychange", callback);
+  };
+}
 
 type AppShellProps = {
   initialUser?: UsuarioShell | null;
+  offlineFallback?: boolean;
   initialScreen: ScreenId;
   revisionesInicio: InicioRevisionRow[];
   revisionesError: string | null;
@@ -126,11 +140,41 @@ function AppShellFrame({
   const screenElements = useRef<
     Partial<Record<ScreenId, HTMLDivElement | null>>
   >({});
+  const savedScroll = useRef<Partial<Record<ScreenId, number>>>({});
   const [showTop, setShowTop] = useState<Partial<Record<ScreenId, boolean>>>(
     {},
   );
   const [fabAway, setFabAway] = useState(false);
+  const [visibleView, setVisibleView] = useState({ screen: navigation.screen, formVisible });
   const lastScroll = useRef(0);
+
+  if (visibleView.screen !== navigation.screen || visibleView.formVisible !== formVisible) {
+    setVisibleView({ screen: navigation.screen, formVisible });
+    if (fabAway) setFabAway(false);
+  }
+
+  useLayoutEffect(() => {
+    if (formVisible) return;
+    const id = navigation.screen;
+    const element = screenElements.current[id];
+    if (!element) return;
+    const targetTop = savedScroll.current[id] ?? 0;
+    if (element.scrollTop !== targetTop) {
+      element.scrollTop = targetTop;
+    }
+    const actualTop = element.scrollTop;
+    savedScroll.current[id] = actualTop;
+    if (id === "revisiones") {
+      lastScroll.current = actualTop;
+    }
+    const visible = actualTop > 500;
+    const frame = requestAnimationFrame(() => {
+      setShowTop((previous) =>
+        previous[id] === visible ? previous : { ...previous, [id]: visible },
+      );
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [formVisible, navigation.screen]);
   const screens = {
     otros: <OtrosScreen active={navigation.screen === "otros"} session={session} />,
     inicio: (
@@ -177,8 +221,9 @@ function AppShellFrame({
               }}
               onScroll={(event) => {
                 const element = event.currentTarget;
+                const top = element.scrollTop;
+                savedScroll.current[id] = top;
                 if (id === "revisiones") {
-                  const top = element.scrollTop;
                   const delta = top - lastScroll.current;
                   const atEdge = top < 80 || top + element.clientHeight >= element.scrollHeight - 24;
                   if (atEdge || Math.abs(delta) > 8) {
@@ -187,7 +232,7 @@ function AppShellFrame({
                     lastScroll.current = top;
                   }
                 }
-                const visible = element.scrollTop > 500;
+                const visible = top > 500;
                 setShowTop((previous) =>
                   previous[id] === visible
                     ? previous
@@ -204,6 +249,7 @@ function AppShellFrame({
             </div>
           ))}
           <RevisionFormScreen open={formVisible} mode={formMode} reviewer={session.nombre} onExitGuard={registerExitGuard} onClose={closeForm} onQueued={(draft, reconocimiento, files) => {
+            savedScroll.current.revisiones = 0;
             enviarRevision(draft, reconocimiento);
             closeForm();
             if (files.length) setShareEvidence({ id: draft.id, casita: String(Number(draft.values.casita)), files });
@@ -240,6 +286,7 @@ function AppShellFrame({
 
 export function AppShell({
   initialUser = null,
+  offlineFallback = false,
   initialScreen,
   revisionesInicio,
   revisionesError,
@@ -253,8 +300,11 @@ export function AppShell({
 }: AppShellProps) {
   const navigation = useAppNavigation(initialScreen);
   const router = useRouter();
+  const liveDay = useSyncExternalStore(subscribeToday, todayKey, () => initialDay);
   const [user, setUser] = useState(initialUser);
   const [previousInitialUser, setPreviousInitialUser] = useState(initialUser);
+  const [restoringOffline, setRestoringOffline] = useState(Boolean(offlineFallback && !initialUser));
+  const [restoredFromOffline, setRestoredFromOffline] = useState(false);
   const [sessionError, setSessionError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const [entering, setEntering] = useState(false);
@@ -263,22 +313,68 @@ export function AppShell({
   if (previousInitialUser !== initialUser) {
     setPreviousInitialUser(initialUser);
     setUser(initialUser);
+    setRestoredFromOffline(false);
+    if (initialUser) setRestoringOffline(false);
   }
+
+  useEffect(() => {
+    if (!offlineFallback || initialUser) return;
+    let cancelled = false;
+    void loadOfflineSession().then((cachedUser) => {
+      if (cancelled) return;
+      if (cachedUser) {
+        setRestoredFromOffline(true);
+        setUser(cachedUser);
+      }
+      setRestoringOffline(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialUser, offlineFallback]);
+
+  useEffect(() => {
+    if (restoringOffline) return;
+    if (user && !restoredFromOffline) {
+      void saveOfflineSession(user);
+      return;
+    }
+    if (!user && !offlineFallback) {
+      void clearOfflineSession();
+    }
+  }, [offlineFallback, restoredFromOffline, restoringOffline, user]);
+
   useEffect(() => {
     // The initial session was checked on the server. Anonymous polling competes
     // with login/MFA in Next's sequential Server Action queue.
     if (!user) return;
     let live = true;
     let checking = false;
-    let lastCheck = Date.now();
+    let lastCheck = restoredFromOffline ? 0 : Date.now();
     const check = async () => {
       if (checking || !navigator.onLine || document.visibilityState !== "visible" || Date.now() - lastCheck < 15_000) return;
       checking = true;
       lastCheck = Date.now();
       const generation = sessionGeneration.current;
       try {
-        const current = await currentUsuario();
-        if (live && navigator.onLine && generation === sessionGeneration.current && !current) setUser(null);
+        const result = await checkCurrentUsuario();
+        if (!live || !navigator.onLine || generation !== sessionGeneration.current) return;
+        if (result.status === "inactive") {
+          void clearOfflineSession();
+          setRestoredFromOffline(false);
+          setUser(null);
+        } else if (result.status === "active") {
+          setRestoredFromOffline(false);
+          void saveOfflineSession(result.user);
+          setUser((previous) =>
+            previous &&
+            previous.id === result.user.id &&
+            previous.nombre === result.user.nombre &&
+            previous.rol === result.user.rol
+              ? previous
+              : result.user,
+          );
+        }
       } catch {
         // Transport errors do not confirm a logout. Server actions continue to
         // enforce authorization; retry the check when connectivity returns.
@@ -287,7 +383,15 @@ export function AppShell({
       }
     };
     const onVisibility = () => { if (document.visibilityState === "visible") void check(); };
-    const onLogout = () => { setUser(null); router.refresh(); };
+    const onLogout = () => {
+      void clearOfflineSession();
+      setRestoredFromOffline(false);
+      setUser(null);
+      router.refresh();
+    };
+    if (restoredFromOffline && navigator.onLine && document.visibilityState === "visible") {
+      void check();
+    }
     const timer = window.setInterval(() => void check(), 60_000);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("casitas:logout", onLogout);
@@ -301,7 +405,29 @@ export function AppShell({
       window.removeEventListener("online", onVisibility);
       window.removeEventListener("pageshow", onVisibility);
     };
-  }, [router, user]);
+  }, [restoredFromOffline, router, user]);
+
+  if (restoringOffline) return (
+    <div className="app-shell">
+      <div className="app-shell-frame">
+        <header className="app-header">
+          <div className="header-inner">
+            <div className="app-brand">
+              <span className="brand-mark">
+                <Image src="/icons/icon-192.png" alt="" width={44} height={44} priority />
+              </span>
+              <p className="brand-name">Casitas</p>
+            </div>
+          </div>
+        </header>
+        <main className="app-main">
+          <div className="app-screen">
+            <p className="sr-only" role="status">Cargando tu sesión guardada…</p>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
 
   if (!user) return (
     <div className="app-shell">
@@ -316,10 +442,12 @@ export function AppShell({
             </div>
           </div>
         </header>
-        <PublicInicioScreen menus={menusInicio} menusError={menusError} today={initialDay} retornoGoogle={retornoGoogle} onSuccess={(authenticatedUser) => {
+        <PublicInicioScreen menus={menusInicio} menusError={menusError} today={liveDay} retornoGoogle={retornoGoogle} onSuccess={(authenticatedUser) => {
           sessionGeneration.current += 1;
+          setRestoredFromOffline(false);
           setEntering(true);
           setUser(authenticatedUser);
+          void saveOfflineSession(authenticatedUser);
           router.refresh();
         }} />
       </div>
@@ -334,7 +462,7 @@ export function AppShell({
         initialRevisionActivity={revisionActivityInicio}
         initialActivityError={activityError}
         initialError={revisionesError}
-        initialDay={initialDay}
+        initialDay={liveDay}
       >
         <AppShellFrame
           account={{
@@ -347,6 +475,8 @@ export function AppShell({
               setSessionError("");
               try {
                 await logoutUsuario();
+                void clearOfflineSession();
+                setRestoredFromOffline(false);
                 setUser(null);
                 router.refresh();
               } catch { setSessionError("No se pudo cerrar sesión. Vuelve a intentarlo."); }

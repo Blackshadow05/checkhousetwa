@@ -2,7 +2,8 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
-import { clearUsuarioSession, getUsuarioSession } from "@/lib/usuarios-session";
+import { checkUsuarioSession, clearUsuarioSession } from "@/lib/usuarios-session";
+import { isDefinitiveAuthSessionFailure, type SessionCheckResult } from "@/lib/auth/session-status";
 import {
   fetchAuthorizedProfile,
   fetchLinkedProfileByAuthId,
@@ -89,31 +90,51 @@ function sessionSubject(accessToken: string | undefined) {
   }
 }
 
-export async function getSupabaseUsuario() {
+export async function checkSupabaseUsuario(): Promise<SessionCheckResult> {
   try {
     const client = await createClient();
-    const { data: current } = await client.auth.getSession();
+    const { data: current, error: sessionError } = await client.auth.getSession();
+    if (sessionError) {
+      return isDefinitiveAuthSessionFailure(sessionError)
+        ? { status: "inactive" }
+        : { status: "transient_error" };
+    }
     const subject = sessionSubject(current.session?.access_token);
-    if (!subject) return null;
+    if (!subject) return { status: "inactive" };
     const linked = fetchLinkedProfileByAuthId(subject).catch(() => null);
     const { data, error } = await client.auth.getUser();
-    if (error || !data.user) return null;
+    if (error) {
+      return isDefinitiveAuthSessionFailure(error)
+        ? { status: "inactive" }
+        : { status: "transient_error" };
+    }
+    if (!data.user) return { status: "inactive" };
 
-    const assurance = await getAssuranceLevel(client);
-    if (!assurance) return null;
+    const { data: assurance, error: assuranceError } = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assuranceError) {
+      return isDefinitiveAuthSessionFailure(assuranceError)
+        ? { status: "inactive" }
+        : { status: "transient_error" };
+    }
+    if (!assurance) return { status: "inactive" };
     if (isSessionExpired(assurance)) {
       await signOutLocal(client);
-      return null;
+      return { status: "inactive" };
     }
 
     const prefetched = data.user.id === subject ? await linked : null;
     const profile = prefetched ?? await fetchAuthorizedProfile(client, data.user);
-    if (!profile || profile.Rol === "inactivo") return null;
-    if (!hasCompletedAuthentication(assurance, profile, data.user)) return null;
-    return { id: profile.id, nombre: profile.Usuario, rol: profile.Rol };
+    if (!profile || profile.Rol === "inactivo") return { status: "inactive" };
+    if (!hasCompletedAuthentication(assurance, profile, data.user)) return { status: "inactive" };
+    return { status: "active", user: { id: profile.id, nombre: profile.Usuario, rol: profile.Rol } };
   } catch {
-    return null;
+    return { status: "transient_error" };
   }
+}
+
+export async function getSupabaseUsuario() {
+  const result = await checkSupabaseUsuario();
+  return result.status === "active" ? result.user : null;
 }
 
 // Only pass the user returned by a successful Auth server operation in this
@@ -140,6 +161,13 @@ export async function createPrivateSession() {
   return usuario ? { usuario, client: createAdminClient() } : null;
 }
 
+export async function checkSesionUsuario(): Promise<SessionCheckResult> {
+  const local = await checkUsuarioSession();
+  if (local.status !== "inactive") return local;
+  return checkSupabaseUsuario();
+}
+
 export async function getSesionUsuario() {
-  return (await getUsuarioSession()) ?? getSupabaseUsuario();
+  const result = await checkSesionUsuario();
+  return result.status === "active" ? result.user : null;
 }

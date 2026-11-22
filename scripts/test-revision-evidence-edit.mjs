@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { REVISION_EDIT_FIELDS } from "../src/lib/revision-edit.ts";
 import { puedeEditarRevision } from "../src/lib/revision-edit.ts";
+import { evidencePathMark, evidenceStoragePath, isEvidenceCloudinaryPath, nextEvidenceStamp } from "../src/lib/revision-evidence.ts";
 import {
   addEvidenceDraftItems,
   canAddEvidenceDraft,
@@ -183,6 +184,22 @@ const tests = [
       });
       assert.deepEqual(evidencePathsFromSlots(slots), [PATH_A, PATH_C]);
       assert.deepEqual(compactEvidenceSlots([PATH_A, " ", PATH_C]).evidencia_02, PATH_C);
+    },
+  },
+  {
+    name: "subidas simultáneas en el mismo milisegundo generan rutas únicas válidas",
+    run() {
+      const sameMs = 1795300000000;
+      const now = new Date(sameMs);
+      const paths = new Set();
+      for (let i = 0; i < 20; i += 1) {
+        const stamp = nextEvidenceStamp(sameMs);
+        const generated = evidenceStoragePath("evidencia_01", stamp, now);
+        assert.equal(isEvidenceCloudinaryPath(generated.path), true, `ruta válida: ${generated.path}`);
+        assert.match(evidencePathMark(generated.path), /^\d{4}-\d{2}-\d{2}-\d{6}$/);
+        paths.add(generated.path);
+      }
+      assert.equal(paths.size, 20, "ninguna ruta colisionó en el mismo milisegundo");
     },
   },
 ];

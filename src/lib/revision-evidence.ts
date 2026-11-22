@@ -19,7 +19,20 @@ export function getMonthFolder(now = new Date()) {
   return `${EVIDENCE_MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 }
 
-export function evidenceStoragePath(field: EvidenceField, timestamp = Date.now(), now = new Date()) {
+let lastEvidenceStamp = 0;
+
+export function nextEvidenceStamp(nowMs = Date.now()): number {
+  const randomOffset =
+    typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function"
+      ? crypto.getRandomValues(new Uint16Array(1))[0] % 1000
+      : Math.floor(Math.random() * 1000);
+  const candidate = nowMs * 1000 + randomOffset;
+  const next = candidate > lastEvidenceStamp ? candidate : lastEvidenceStamp + 1;
+  lastEvidenceStamp = next;
+  return next;
+}
+
+export function evidenceStoragePath(field: EvidenceField, timestamp = nextEvidenceStamp(), now = new Date()) {
   const folderPath = `Evidencias/${getMonthFolder(now)}`;
   const publicId = `evidencia_${field.slice(-2)}_${timestamp}`;
   return { folderPath, publicId, path: `${folderPath}/${publicId}` };
