@@ -8,7 +8,7 @@ import { isEvidenceCloudinaryPath } from "@/lib/revision-evidence";
 import { isRevisionEditField, persistRevisionFieldValue, puedeEditarRevision, validateRevisionField, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
 import { mapNotaRevision, noteRevisionPage, NOTAS_REVISION_PAGE_SIZE, persistNotaRevision, persistNotaRevisionImage, validateNotaRevision, validateNotaRevisionImage, type RevisionNoteItem } from "@/lib/revision-notes";
 import { parseEvidenceEditPayload, puedeEditarEvidencias } from "@/lib/revision-evidence-edit";
-import { saveRevision, saveNotaRevision, editRevisionCampo, editRevisionEvidencias, type SaveNoteResult } from "@/lib/save-revision";
+import { saveRevision, saveNotaRevision, editRevisionCajaFuerte, editRevisionCampo, editRevisionEvidencias, type SaveNoteResult } from "@/lib/save-revision";
 import { getSesionUsuario } from "@/lib/auth/session";
 import { mapInicioRevision } from "@/lib/revisiones-map";
 import type { InicioRevisionRow, RevisionCasitaInicio } from "@/types/database";
@@ -218,11 +218,20 @@ export async function editRevisionField(input: {
   campo: string;
   esperado: string | null;
   nuevo: string | null;
+  roomMove?: { esperado: string | null; nuevo: string | null } | null;
+  limpiarEvidencias?: boolean;
 }): Promise<{ row: InicioRevisionRow | null; error: string | null; needsLogin?: boolean }> {
   try {
+    const invalidRoomMove =
+      input?.roomMove != null &&
+      (typeof input.roomMove !== "object" ||
+        (input.roomMove.esperado !== null && typeof input.roomMove.esperado !== "string") ||
+        (input.roomMove.nuevo !== null && typeof input.roomMove.nuevo !== "string"));
     if (!input || !REVISION_ID.test(input.id) || !isRevisionEditField(input.campo) ||
       (input.esperado !== null && typeof input.esperado !== "string") ||
-      (input.nuevo !== null && typeof input.nuevo !== "string")) {
+      (input.nuevo !== null && typeof input.nuevo !== "string") ||
+      invalidRoomMove ||
+      (input.limpiarEvidencias !== undefined && typeof input.limpiarEvidencias !== "boolean")) {
       return { row: null, error: "Revisa los datos e inténtalo de nuevo." };
     }
     const session = await createPrivateSession();
@@ -234,6 +243,16 @@ export async function editRevisionField(input: {
     if (actual.error) return { row: null, error: "No pudimos comprobar la revisión. Vuelve a intentarlo." };
     if (!actual.data) return { row: null, error: "No encontramos esta revisión." };
     if (!puedeEditarRevision(session.usuario, actual.data.quien_revisa)) return { row: null, error: SOLO_AUTOR };
+    if (campo === "caja_fuerte") {
+      return await editRevisionCajaFuerte(session.client, {
+        id: input.id,
+        esperado: input.esperado,
+        nuevo: persistRevisionFieldValue(campo, input.nuevo),
+        editor: session.usuario.nombre,
+        roomMove: input.roomMove ?? undefined,
+        limpiarEvidencias: input.limpiarEvidencias === true,
+      });
+    }
     return await editRevisionCampo(session.client, {
       id: input.id,
       campo,

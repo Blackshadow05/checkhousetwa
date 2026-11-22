@@ -248,6 +248,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
     });
   };
 
+  const cerrarBusquedaSiActiva = () => {
+    if (busqueda) inteligente.cerrar();
+  };
+
   useEffect(() => {
     const node = sentinelRef.current;
     if (!node || !archiveHasMore) return;
@@ -339,7 +343,11 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
           role="search"
           onSubmit={(event) => {
             event.preventDefault();
-            if (esPreguntaNatural(archive.searchInput) && archive.online) void inteligente.preguntar(archive.searchInput);
+            if (esPreguntaNatural(archive.searchInput) && archive.online) {
+              void inteligente.preguntar(archive.searchInput);
+            } else {
+              cerrarBusquedaSiActiva();
+            }
             if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
             irAlInicio();
           }}
@@ -351,7 +359,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
               name="buscar-revision"
               {...cursorAlFinal}
               value={archive.searchInput}
-              onChange={(event) => archive.setSearchInput(event.target.value)}
+              onChange={(event) => {
+                cerrarBusquedaSiActiva();
+                archive.setSearchInput(event.target.value);
+              }}
               placeholder="Buscar o preguntar"
               aria-label="Buscar casita o quien revisa, o hacer una pregunta"
               autoComplete="off"
@@ -416,7 +427,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
               key={item.id}
               type="button"
               aria-pressed={!archive.date && archive.period === item.id}
-              onClick={() => archive.setPeriod(item.id)}
+              onClick={() => {
+                cerrarBusquedaSiActiva();
+                archive.setPeriod(item.id);
+              }}
             >
               {item.label}
             </button>
@@ -427,21 +441,24 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             aria-label={archive.date ? `Fecha elegida ${fechaTexto(archive.date)}. Cambiar fecha` : "Elegir una fecha"}
             value={archive.date}
             max={archive.today}
-            onValueChange={archive.setDate}
+            onValueChange={(value) => {
+              cerrarBusquedaSiActiva();
+              archive.setDate(value);
+            }}
             display={<><CalendarDays size={15} aria-hidden="true" />{archive.date ? fechaAbreviada(archive.date) : "Fecha"}</>}
           />
         </div>
         {(archive.reportFilter || archive.status) && (
           <div className={styles.chips}>
             {archive.reportFilter && (
-              <button type="button" onClick={() => archive.setReportFilter(null)}>
+              <button type="button" onClick={() => { cerrarBusquedaSiActiva(); archive.setReportFilter(null); }}>
                 {REPORT_FILTERS.find((item) => item.id === archive.reportFilter)?.label}
                 <X size={14} aria-hidden="true" />
                 <span className="sr-only">Quitar filtro</span>
               </button>
             )}
             {archive.status && (
-              <button type="button" onClick={() => archive.setStatus(null)}>
+              <button type="button" onClick={() => { cerrarBusquedaSiActiva(); archive.setStatus(null); }}>
                 {statusAppearance(archive.status).label}
                 <X size={14} aria-hidden="true" />
                 <span className="sr-only">Quitar filtro</span>
@@ -837,7 +854,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
         <div className="filter-options">
           <button type="button" aria-pressed={archive.reportFilter === null}
             className={archive.reportFilter === null ? "is-selected" : ""}
-            onClick={() => archive.setReportFilter(null)}>
+            onClick={() => { cerrarBusquedaSiActiva(); archive.setReportFilter(null); }}>
             <span>Todos</span>
             <span className="option-check">{archive.reportFilter === null ? <Check size={15} /> : null}</span>
           </button>
@@ -850,7 +867,10 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                 aria-expanded={selected}
                 aria-controls={selected ? optionsId : undefined}
                 className={selected ? "is-selected" : ""}
-                onClick={() => { if (!selected) archive.setReportFilter(group.options[0].id); }}>
+                onClick={() => {
+                  cerrarBusquedaSiActiva();
+                  if (!selected) archive.setReportFilter(group.options[0].id);
+                }}>
                 <span>{group.label}</span>
                 <span className="option-check">{selected ? <Check size={15} /> : null}</span>
               </button>
@@ -861,7 +881,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                       key={option.id}
                       type="button"
                       aria-pressed={archive.reportFilter === option.id}
-                      onClick={() => archive.setReportFilter(option.id)}
+                      onClick={() => { cerrarBusquedaSiActiva(); archive.setReportFilter(option.id); }}
                     >
                       {option.label}
                     </button>
@@ -878,7 +898,7 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
                         type="button"
                         aria-pressed={archive.status === value}
                         className={archive.status === value ? "is-selected" : ""}
-                        onClick={() => archive.setStatus(value)}
+                        onClick={() => { cerrarBusquedaSiActiva(); archive.setStatus(value); }}
                       >
                         <span>
                           {value === null
@@ -902,14 +922,14 @@ export function RevisionesScreen({ onEditarPendiente, onCompletarPendiente, onCo
             type="button"
             className="secondary-button"
             disabled={!reportCount}
-            onClick={() => archive.setReportFilter(null)}
+            onClick={() => { cerrarBusquedaSiActiva(); archive.setReportFilter(null); }}
           >
             Quitar filtro
           </button>
           <button
             type="button"
             className="primary-button"
-            onClick={() => setFiltersOpen(false)}
+            onClick={() => { cerrarBusquedaSiActiva(); setFiltersOpen(false); }}
           >
             Ver {archive.total}
           </button>

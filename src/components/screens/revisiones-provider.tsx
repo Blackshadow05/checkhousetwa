@@ -67,6 +67,55 @@ const AUTO_REFRESH_MS = 5 * 60 * 1000;
 const LEFT_APP_MS = 2_000;
 const CHANGE_DEBOUNCE_MS = 250;
 const CHANNEL_RETRY_MS = 30_000;
+const SEND_REVISION_TIMEOUT_MS = 28_000;
+const UPLOAD_EVIDENCIA_TIMEOUT_MS = 60_000;
+
+type SendAbortReason = "offline" | "timeout";
+
+function raceWithTimeoutAndOffline<T>(
+  task: Promise<T>,
+  timeoutMs: number,
+): Promise<{ ok: true; value: T } | { ok: false; reason: SendAbortReason }> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.onLine) {
+      void task.catch(() => {});
+      resolve({ ok: false, reason: "offline" });
+      return;
+    }
+    let settled = false;
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("offline", onOffline);
+    };
+    const onOffline = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve({ ok: false, reason: "offline" });
+    };
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve({ ok: false, reason: "timeout" });
+    }, timeoutMs);
+    window.addEventListener("offline", onOffline);
+    task.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve({ ok: true, value });
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(err);
+      },
+    );
+  });
+}
 
 export function RevisionesProvider({
   children,
@@ -117,6 +166,11 @@ export function RevisionesProvider({
   const [pendientes, setPendientes] = useState<PendingRevision[]>([]);
   const pendientesRef = useRef<PendingRevision[]>([]);
   const sendingRef = useRef(new Set<string>());
+  const outboxQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const outboxVersionRef = useRef(0);
+  const outboxLoadFailedRef = useRef(false);
+  const removedOutboxIdsRef = useRef(new Set<string>());
+  const sendPendienteRef = useRef<((id: string) => Promise<void>) | null>(null);
   const [confirmadas, setConfirmadas] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
@@ -277,10 +331,46 @@ export function RevisionesProvider({
   }, [persist]);
 
   const writePendientes = useCallback((change: (items: PendingRevision[]) => PendingRevision[]) => {
-    const next = change(pendientesRef.current);
+    const previous = pendientesRef.current;
+    const next = change(previous);
+    const nextIds = new Set(next.map((item) => item.draft.id));
+    for (const item of previous) {
+      if (!nextIds.has(item.draft.id)) removedOutboxIdsRef.current.add(item.draft.id);
+    }
+    for (const id of nextIds) removedOutboxIdsRef.current.delete(id);
     pendientesRef.current = next;
     setPendientes(next);
-    void storeOutbox(next).catch(() => setStorageError(true));
+    const version = ++outboxVersionRef.current;
+    outboxQueueRef.current = outboxQueueRef.current.catch(() => {}).then(async () => {
+      if (version !== outboxVersionRef.current) return;
+      if (outboxLoadFailedRef.current) {
+        try {
+          const saved = await loadOutbox();
+          outboxLoadFailedRef.current = false;
+          const known = new Set(pendientesRef.current.map((item) => item.draft.id));
+          const recovered = saved
+            .filter((item) => !known.has(item.draft.id) && !removedOutboxIdsRef.current.has(item.draft.id))
+            .map((item) => ({ ...item, status: "waiting" as const, error: null }));
+          if (recovered.length) {
+            const merged = [...pendientesRef.current, ...recovered];
+            pendientesRef.current = merged;
+            setPendientes(merged);
+            if (navigator.onLine) {
+              for (const item of recovered) void sendPendienteRef.current?.(item.draft.id);
+            }
+          }
+        } catch {
+          setStorageError(true);
+          return;
+        }
+      }
+      if (version !== outboxVersionRef.current) return;
+      try {
+        await storeOutbox(pendientesRef.current);
+      } catch {
+        setStorageError(true);
+      }
+    });
   }, []);
 
   const marcarPendiente = useCallback((id: string, status: PendingRevision["status"], error: string | null = null) => {
@@ -301,16 +391,44 @@ export function RevisionesProvider({
       let paths: string[] = [];
       if (draft.photos.length) {
         try {
-          paths = await resolveEvidenciaUrls(draft.photos);
+          const uploaded = await raceWithTimeoutAndOffline(
+            resolveEvidenciaUrls(draft.photos),
+            UPLOAD_EVIDENCIA_TIMEOUT_MS,
+          );
+          if (!uploaded.ok) {
+            marcarPendiente(
+              id,
+              uploaded.reason === "offline" ? "waiting" : "error",
+              uploaded.reason === "offline"
+                ? null
+                : "La subida de evidencias tardó demasiado. Conservamos la revisión para reintentar.",
+            );
+            return;
+          }
+          paths = uploaded.value;
         } catch {
           marcarPendiente(id, navigator.onLine ? "error" : "waiting", "No pudimos subir una evidencia. Conservamos la revisión para reintentar.");
           return;
         }
       }
-      const result = await createRevision({
-        id, values: draft.values, photos: paths, reconocimiento: item.reconocimiento,
-        pendiente: draft.completarDespues === true, completa: draft.completa?.id ?? null,
-      });
+      const outcome = await raceWithTimeoutAndOffline(
+        createRevision({
+          id, values: draft.values, photos: paths, reconocimiento: item.reconocimiento,
+          pendiente: draft.completarDespues === true, completa: draft.completa?.id ?? null,
+        }),
+        SEND_REVISION_TIMEOUT_MS,
+      );
+      if (!outcome.ok) {
+        marcarPendiente(
+          id,
+          outcome.reason === "offline" ? "waiting" : "error",
+          outcome.reason === "offline"
+            ? null
+            : "El envío tardó demasiado. Conservamos la revisión para reintentar.",
+        );
+        return;
+      }
+      const result = outcome.value;
       if (!result.row) {
         marcarPendiente(id, "error", result.error ?? "No pudimos confirmar el guardado.");
         return;
@@ -326,6 +444,10 @@ export function RevisionesProvider({
       sendingRef.current.delete(id);
     }
   }, [acceptRevision, marcarPendiente, writePendientes]);
+
+  useEffect(() => {
+    sendPendienteRef.current = sendPendiente;
+  }, [sendPendiente]);
 
   const enviarRevision = useCallback((draft: RevisionDraft, reconocimiento: RevisionRecognitionInput | null) => {
     prepararSonidoGuardado();
@@ -353,15 +475,32 @@ export function RevisionesProvider({
 
   useEffect(() => {
     let cancelled = false;
-    void loadOutbox().then((saved) => {
-      if (cancelled || !saved.length) return;
-      const known = new Set(pendientesRef.current.map((item) => item.draft.id));
-      const restored = saved.filter((item) => !known.has(item.draft.id))
-        .map((item) => ({ ...item, status: navigator.onLine ? "saving" as const : "waiting" as const }));
-      if (!restored.length) return;
-      writePendientes((items) => [...items, ...restored]);
-      for (const item of restored) void sendPendiente(item.draft.id);
-    }).catch(() => {});
+    outboxQueueRef.current = outboxQueueRef.current.catch(() => {}).then(async () => {
+      try {
+        const saved = await loadOutbox();
+        outboxLoadFailedRef.current = false;
+        if (cancelled || !saved.length) return;
+        const known = new Set(pendientesRef.current.map((item) => item.draft.id));
+        const restored = saved
+          .filter((item) => !known.has(item.draft.id) && !removedOutboxIdsRef.current.has(item.draft.id))
+          .map((item) => ({ ...item, status: "waiting" as const, error: null }));
+        if (!restored.length) return;
+        const merged = [...pendientesRef.current, ...restored];
+        pendientesRef.current = merged;
+        setPendientes(merged);
+        try {
+          await storeOutbox(merged);
+        } catch {
+          setStorageError(true);
+        }
+        for (const item of restored) {
+          if (navigator.onLine) void sendPendiente(item.draft.id);
+        }
+      } catch {
+        outboxLoadFailedRef.current = true;
+        if (!cancelled) setStorageError(true);
+      }
+    });
     const onOnline = () => {
       for (const item of pendientesRef.current) {
         if (item.status !== "saving") void sendPendiente(item.draft.id);
@@ -372,7 +511,7 @@ export function RevisionesProvider({
       cancelled = true;
       window.removeEventListener("online", onOnline);
     };
-  }, [sendPendiente, writePendientes]);
+  }, [sendPendiente]);
 
   const visibles = useMemo(() => {
     if (!pendientes.length) return revisiones;

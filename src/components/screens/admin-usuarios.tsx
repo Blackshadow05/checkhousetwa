@@ -26,7 +26,7 @@ import {
 } from "@/lib/usuarios-admin";
 import type { UsuarioShell } from "@/types/database";
 
-type FactorEstado = "activo" | "pendiente" | "sin-auth" | "cargando" | null;
+type FactorEstado = "activo" | "pendiente" | "sin-auth" | "cargando" | "error" | null;
 
 function fechaCorta(value: string | null): string {
   if (!value) return "";
@@ -103,16 +103,21 @@ export function AdminUsuariosScreen({
   const [editando, setEditando] = useState<AdminUsuario | null>(null);
   const [confirmar, setConfirmar] = useState<"eliminar" | "resetear" | null>(null);
   const [factorEstado, setFactorEstado] = useState<FactorEstado>(null);
+  const [factorError, setFactorError] = useState("");
   const [nombre, setNombre] = useState("");
   const [rol, setRol] = useState("user");
   const [metodo, setMetodo] = useState<MetodoAdmin>("usuario");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState("");
+  const [formNotice, setFormNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const fetching = useRef(false);
   const saving = useRef(false);
   const wasVisible = useRef(false);
+  const needsLoad = useRef(true);
+  const editandoRef = useRef<AdminUsuario | null>(null);
+  const factorRequestRef = useRef(0);
 
   const cargar = useCallback(async () => {
     if (fetching.current || !navigator.onLine) return;
@@ -134,14 +139,24 @@ export function AdminUsuariosScreen({
   }, []);
 
   useEffect(() => {
+    if (!online) {
+      needsLoad.current = true;
+    }
     if (!visible) {
       wasVisible.current = false;
       return;
     }
-    if (wasVisible.current) return;
-    wasVisible.current = true;
-    void cargar();
-  }, [visible, cargar]);
+    if (!wasVisible.current) {
+      wasVisible.current = true;
+      needsLoad.current = true;
+    }
+    if (!online || !needsLoad.current) return;
+    const timer = window.setTimeout(() => {
+      needsLoad.current = false;
+      void cargar();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [visible, online, cargar]);
 
   const visibles = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
@@ -162,12 +177,17 @@ export function AdminUsuariosScreen({
     setEmail("");
     setPassword("");
     setFormError("");
+    setFormNotice("");
     setFactorEstado(null);
+    setFactorError("");
     setConfirmar(null);
   }
 
   function abrirNuevo() {
+    if (!online) return;
     limpiarForm();
+    factorRequestRef.current += 1;
+    editandoRef.current = null;
     setEditando(null);
     setCreando(true);
     setNotice("");
@@ -175,30 +195,58 @@ export function AdminUsuariosScreen({
   }
 
   function cargarFactor(usuario: AdminUsuario) {
+    const requestId = ++factorRequestRef.current;
+    const targetId = usuario.id;
+    if (!navigator.onLine) {
+      setFactorEstado("error");
+      setFactorError("Sin conexión para comprobar el Authenticator.");
+      return;
+    }
     setFactorEstado("cargando");
+    setFactorError("");
     void adminEstadoAuthenticator(usuario.id)
-      .then((result) => setFactorEstado(result.error ? null : result.estado))
-      .catch(() => setFactorEstado(null));
+      .then((result) => {
+        if (factorRequestRef.current !== requestId || editandoRef.current?.id !== targetId) return;
+        if (result.error) {
+          setFactorEstado("error");
+          setFactorError(result.error);
+        } else {
+          setFactorEstado(result.estado);
+          setFactorError("");
+        }
+      })
+      .catch(() => {
+        if (factorRequestRef.current !== requestId || editandoRef.current?.id !== targetId) return;
+        setFactorEstado("error");
+        setFactorError("No se pudo comprobar el estado del Authenticator.");
+      });
   }
 
   function abrirEditar(usuario: AdminUsuario) {
     limpiarForm();
     setCreando(false);
+    editandoRef.current = usuario;
     setEditando(usuario);
     setNombre(usuario.nombre);
     setRol(usuario.rol);
     setMetodo(usuario.metodo);
     setEmail(usuario.email ?? "");
     if (usuario.metodo !== "usuario") cargarFactor(usuario);
+    else factorRequestRef.current += 1;
     setNotice("");
     navigate("/admin-usuarios/editar");
   }
 
   function cerrarForm() {
+    if (busy || saving.current) return;
+    factorRequestRef.current += 1;
+    editandoRef.current = null;
     setCreando(false);
     setEditando(null);
     setConfirmar(null);
     setFormError("");
+    setFormNotice("");
+    setFactorError("");
     if (window.location.pathname.replace(/\/$/, "") !== "/admin-usuarios") navigate("/admin-usuarios");
   }
 
@@ -245,9 +293,12 @@ export function AdminUsuariosScreen({
       reemplazarEnLista(result.usuario);
       setNotice(editando ? "Usuario actualizado." : "Usuario creado.");
       setError("");
+      factorRequestRef.current += 1;
+      editandoRef.current = null;
       setCreando(false);
       setEditando(null);
       setConfirmar(null);
+      setFormNotice("");
       navigate("/admin-usuarios");
     } catch {
       setFormError("No se pudo guardar. Inténtalo de nuevo.");
@@ -267,6 +318,7 @@ export function AdminUsuariosScreen({
     saving.current = true;
     setBusy(true);
     setFormError("");
+    setFormNotice("");
     try {
       if (accion === "eliminar") {
         const result = await adminEliminarUsuario(editando.id);
@@ -277,6 +329,8 @@ export function AdminUsuariosScreen({
         }
         setUsuarios((prev) => prev?.filter((item) => item.id !== editando.id) ?? prev);
         setNotice("Usuario eliminado.");
+        factorRequestRef.current += 1;
+        editandoRef.current = null;
         setEditando(null);
         setConfirmar(null);
         navigate("/admin-usuarios");
@@ -287,8 +341,11 @@ export function AdminUsuariosScreen({
           setConfirmar(null);
           return;
         }
+        const message = "Token reseteado. Configurará uno nuevo al entrar.";
         setFactorEstado("pendiente");
-        setNotice("Token resetado. Configurará uno nuevo al entrar.");
+        setFactorError("");
+        setFormNotice(message);
+        setNotice(message);
         setConfirmar(null);
       }
       setError("");
@@ -301,7 +358,18 @@ export function AdminUsuariosScreen({
     }
   }
 
-  const estadoTexto = loading ? "Actualizando…" : !online ? "Sin conexión" : usuarios ? `${usuarios.length} usuarios` : "Cargando…";
+  const estadoTexto = loading
+    ? "Actualizando…"
+    : !online
+      ? usuarios
+        ? `Sin conexión · ${usuarios.length} ${usuarios.length === 1 ? "usuario" : "usuarios"}`
+        : "Sin conexión"
+      : usuarios
+        ? `${usuarios.length} ${usuarios.length === 1 ? "usuario" : "usuarios"}`
+        : error
+          ? "Sin datos disponibles"
+          : "Cargando…";
+  const puedeResetear = factorEstado === "activo" || factorEstado === "pendiente";
 
   return (
     <div>
@@ -316,7 +384,7 @@ export function AdminUsuariosScreen({
         Buscar
         <input type="search" name="buscar-usuario" placeholder="Nombre o correo" value={search} onChange={(event) => setSearch(event.target.value)} />
       </label>
-      <button type="button" className="pantalla-primary" onClick={abrirNuevo}>
+      <button type="button" className="pantalla-primary" disabled={!online} onClick={abrirNuevo}>
         <Plus size={20} aria-hidden /> Nuevo usuario
       </button>
       <p role="status" className="pantalla-status">
@@ -325,6 +393,12 @@ export function AdminUsuariosScreen({
       {notice && <p role="status" className="pantalla-notice">{notice}</p>}
       {error && <p role="alert" className="pantalla-error">{error}</p>}
       {loading && !usuarios && <div className="pantalla-skeleton" aria-label="Cargando usuarios" />}
+      {!loading && !usuarios && (
+        <div className="pantalla-card">
+          <h3>{!online ? "Sin conexión" : "No se pudieron cargar los usuarios"}</h3>
+          <p>{!online ? "Conéctate para consultar y administrar usuarios." : "Pulsa actualizar para intentarlo de nuevo."}</p>
+        </div>
+      )}
       {usuarios && !visibles.length && (
         <div className="pantalla-card">
           <h3>{search ? "Sin resultados" : "Todavía no hay usuarios"}</h3>
@@ -437,7 +511,7 @@ export function AdminUsuariosScreen({
             )}
             {metodo !== "google" && (
               <PasswordInput
-                label={metodo === "usuario" ? "Contraseña" : "Contraseña de Auth"}
+                label={metodo === "usuario" ? "Contraseña" : "Contraseña de acceso"}
                 value={password}
                 placeholder={editando ? "Dejar en blanco para mantener" : ""}
                 busy={busy}
@@ -462,6 +536,7 @@ export function AdminUsuariosScreen({
                 {busy ? "Guardando…" : "Guardar"}
               </button>
             </div>
+            {formNotice && <p className="pantalla-notice" role="status">{formNotice}</p>}
             {formError && <p className="pantalla-error" role="alert">{formError}</p>}
             {editando && (
               <div className="admin-actions">
@@ -478,15 +553,19 @@ export function AdminUsuariosScreen({
                               ? "Comprobando…"
                               : factorEstado === "sin-auth"
                                 ? "Aún no ha entrado"
-                                : ""}
+                                : factorEstado === "error"
+                                  ? "No disponible"
+                                  : ""}
                       </span>
                     </div>
+                    {factorError && <p className="pantalla-error" role="alert">{factorError}</p>}
                     <button
                       type="button"
                       className="secondary-button"
-                      disabled={busy || factorEstado === "sin-auth"}
+                      disabled={busy || !online || !puedeResetear}
                       onClick={() => {
                         setFormError("");
+                        setFormNotice("");
                         setConfirmar("resetear");
                       }}
                     >

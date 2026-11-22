@@ -13,6 +13,14 @@ export function useEscaneoArticulos(active: boolean, draft: RevisionDraft | null
   const entradas = useRef(new Map<string, EntradaDetector>());
   const draftRef = useRef(draft);
   const [fallidas, setFallidas] = useState<Record<string, string>>({});
+  const draftId = draft?.id ?? null;
+  const [scope, setScope] = useState(() => ({ active, draftId }));
+  if (scope.active !== active || scope.draftId !== draftId) {
+    setScope({ active, draftId });
+    if ((!active || scope.draftId !== draftId) && Object.keys(fallidas).length > 0) {
+      setFallidas({});
+    }
+  }
 
   useEffect(() => {
     draftRef.current = draft;

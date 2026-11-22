@@ -81,7 +81,11 @@ function AppShellFrame({
   const registerExitGuard = useCallback((guard: RevisionExitGuard | null) => { exitGuard.current = guard; }, []);
   const leaving = useRef(false);
   const formVisibleRef = useRef(formVisible);
-  useLayoutEffect(() => { formVisibleRef.current = formVisible; }, [formVisible]);
+  const formModeRef = useRef(formMode);
+  useLayoutEffect(() => {
+    formVisibleRef.current = formVisible;
+    formModeRef.current = formMode;
+  }, [formVisible, formMode]);
   useLayoutEffect(() => {
     const syncForm = (event?: Event) => {
       const url = new URL(window.location.href);
@@ -89,6 +93,8 @@ function AppShellFrame({
       if (event?.type === "popstate" && formVisibleRef.current && params.get("nueva") !== "1" && !leaving.current
         && exitGuard.current?.(() => closeFormRef.current())) {
         params.set("nueva", "1");
+        if (formModeRef.current === "reconocimiento") params.set("modo", "reconocimiento");
+        else params.delete("modo");
         window.history.pushState({ ...window.history.state, casitaForm: true }, "", url);
         return;
       }
@@ -132,7 +138,11 @@ function AppShellFrame({
   const guardedNavigation = useMemo(() => ({
     screen: navigation.screen,
     navigate: (next: ScreenId) => {
-      const leave = () => { leaving.current = true; navigation.navigate(next); };
+      const leave = () => {
+        const fromForm = formVisibleRef.current || new URLSearchParams(window.location.search).get("nueva") === "1";
+        leaving.current = true;
+        navigation.navigate(next, fromForm ? { replace: true } : undefined);
+      };
       if (formVisibleRef.current && exitGuard.current?.(leave)) return;
       leave();
     },

@@ -6,6 +6,8 @@ import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import type { LoginLogsSnapshot } from "@/lib/login-logs";
 import { useOnline } from "@/lib/use-online";
 
+const STALE_MS = 60_000;
+
 export function useLoginLogs(visible: boolean, ownerId: number) {
   const [snapshot, setSnapshot] = useState<LoginLogsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -16,6 +18,8 @@ export function useLoginLogs(visible: boolean, ownerId: number) {
   const fetching = useRef(false);
   const mounted = useRef(false);
   const needsRefresh = useRef(true);
+  const wasVisible = useRef(false);
+  const lastFetchedAt = useRef(0);
   const current = useRef<LoginLogsSnapshot | null>(null);
   const denied = useRef(false);
   const online = useOnline();
@@ -53,7 +57,7 @@ export function useLoginLogs(visible: boolean, ownerId: number) {
       const next = result.snapshot;
       const knownIds = new Set(previous?.rows.map(row => row.id));
       const updated = more && previous ? { ...next, rows: [...previous.rows, ...next.rows.filter(row => !knownIds.has(row.id))] } : next;
-      denied.current = false; needsRefresh.current = false; current.current = updated;
+      denied.current = false; needsRefresh.current = false; lastFetchedAt.current = Date.now(); current.current = updated;
       setSnapshot(updated); setCached(false); setError(""); setNotice("");
       await idbPut(IDB_STORES.snapshots, { id: cacheId, snapshot: updated }).catch(() => {
         if (mounted.current) setNotice("Actualizado. No se pudo guardar en este dispositivo.");
@@ -68,7 +72,16 @@ export function useLoginLogs(visible: boolean, ownerId: number) {
 
   useEffect(() => {
     if (!online) needsRefresh.current = true;
-    if (!visible || !online || !needsRefresh.current) return;
+    if (!visible) {
+      wasVisible.current = false;
+      return;
+    }
+    const reentered = !wasVisible.current;
+    wasVisible.current = true;
+    if (reentered && Date.now() - lastFetchedAt.current >= STALE_MS) {
+      needsRefresh.current = true;
+    }
+    if (!online || !needsRefresh.current) return;
     const timer = setTimeout(() => void load(), 0);
     return () => clearTimeout(timer);
   }, [visible, online, load]);

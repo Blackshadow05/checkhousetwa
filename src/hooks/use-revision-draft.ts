@@ -66,15 +66,12 @@ function isFormRoute() {
 export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
   const [draft, setDraft] = useState<RevisionDraft | null>(null);
   const [storage, setStorage] = useState<"loading" | "idle" | "saving" | "saved" | "error">("loading");
+  const [restored, setRestored] = useState(false);
   const current = useRef<RevisionDraft | null>(null);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const version = useRef(0);
   const generation = useRef(0);
-  const storageAvailable = useRef(true);
   const restoreOnOpen = useRef<boolean | null>(null);
-  if (restoreOnOpen.current === null && typeof window !== "undefined") {
-    restoreOnOpen.current = isFormRoute();
-  }
   const wasOpen = useRef(open);
   const modeRef = useRef(mode);
 
@@ -83,10 +80,6 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
   }, [mode]);
 
   const persist = useCallback((next: RevisionDraft | null) => {
-    if (!storageAvailable.current) {
-      setStorage("error");
-      return Promise.resolve();
-    }
     const revision = ++version.current;
     setStorage("saving");
     queue.current = queue.current.catch(() => {}).then(async () => {
@@ -108,17 +101,21 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
   const beginFresh = useCallback(() => {
     generation.current += 1;
     discardPhotos(current.current?.photos);
+    const wasRestored = draftToRestore !== null;
     const next = draftToRestore ?? newRevisionDraft(modeRef.current);
     draftToRestore = null;
     current.current = next;
+    setRestored(wasRestored);
     setDraft(next);
     void persist(next);
   }, [persist]);
 
   const abandon = useCallback(async () => {
-    generation.current += 1;
+    const gen = ++generation.current;
     discardPhotos(current.current?.photos);
     await persist(null);
+    if (gen !== generation.current) return;
+    setRestored(false);
     current.current = newRevisionDraft();
     setDraft(current.current);
   }, [persist]);
@@ -131,18 +128,20 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
       if (cancelled || gen !== generation.current) return;
       if (restore && saved?.draft) {
         current.current = saved.draft;
+        setRestored(true);
         setDraft(saved.draft);
         setStorage("saved");
         return;
       }
       current.current = newRevisionDraft(modeRef.current);
+      setRestored(false);
       setDraft(current.current);
       setStorage("idle");
       if (saved?.draft) void persist(null);
     }).catch(() => {
       if (cancelled || gen !== generation.current) return;
-      storageAvailable.current = false;
       current.current = newRevisionDraft(modeRef.current);
+      setRestored(false);
       setDraft(current.current);
       setStorage("error");
     });
@@ -150,6 +149,9 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
   }, [persist]);
 
   useLayoutEffect(() => {
+    if (restoreOnOpen.current === null) {
+      restoreOnOpen.current = isFormRoute();
+    }
     const previouslyOpen = wasOpen.current;
     wasOpen.current = open;
     if (open && !previouslyOpen) {
@@ -173,6 +175,7 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
 
   const detach = useCallback(() => {
     generation.current += 1;
+    setRestored(false);
     current.current = newRevisionDraft(modeRef.current);
     setDraft(current.current);
     void persist(null);
@@ -185,5 +188,5 @@ export function useRevisionDraft(open: boolean, mode: RevisionMode = "manual") {
     if (current.current === saved) detach();
   }, [detach]);
 
-  return { draft, storage, update, detach, keepForLater };
+  return { draft, storage, restored, update, detach, keepForLater };
 }

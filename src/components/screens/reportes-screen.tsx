@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, CalendarDays, Check, Download, FileSpreadsheet, LoaderCircle, WifiOff } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, Download, FileSpreadsheet, LoaderCircle, Share2, WifiOff } from "lucide-react";
 import { fetchReporteRevision } from "@/app/actions/reportes";
 import { idbGet, idbPut, IDB_STORES } from "@/lib/idb/database";
 import { nombreArchivoReporteRevision, reporteRevisionDateRange, todayReporteRevision } from "@/lib/reportes-revision";
@@ -20,10 +20,11 @@ type SavedReport = {
   count: number;
   generatedAt: string;
 };
-type ReadyReport = SavedReport & { url: string; cached: boolean };
+type ReadyReport = SavedReport & { file: File; cached: boolean };
 
 function readyReport(saved: SavedReport, cached: boolean): ReadyReport {
-  return { ...saved, cached, url: URL.createObjectURL(new Blob([saved.csv], { type: "text/csv;charset=utf-8" })) };
+  const file = new File([saved.csv], nombreArchivoReporteRevision(saved), { type: "text/csv;charset=utf-8" });
+  return { ...saved, cached, file };
 }
 
 export function ReportesScreen({ visible, usuarioId, onBack }: {
@@ -48,11 +49,14 @@ function RevisionReport({ usuarioId }: { usuarioId: number }) {
   const [hasta, setHasta] = useState(() => todayReporteRevision());
   const [report, setReport] = useState<ReadyReport | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [selectedPreset, setSelectedPreset] = useState<string | null>("Hoy");
   const touched = useRef(false);
   const preparing = useRef(false);
+  const shareInFlight = useRef(false);
+  const mounted = useRef(false);
   const online = useOnline();
   const storageKey = `reporte-revision-v1:${usuarioId}`;
   const rangeError = reporteRevisionDateRange({ desde, hasta }).error;
@@ -77,9 +81,53 @@ function RevisionReport({ usuarioId }: { usuarioId: number }) {
   }, [storageKey]);
 
   useEffect(() => {
-    if (!report) return;
-    return () => URL.revokeObjectURL(report.url);
-  }, [report]);
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  const rangeChanged = Boolean(report && (report.desde !== desde || report.hasta !== hasta));
+  const cardStale = loading || rangeChanged;
+  const canShare = Boolean(
+    report
+    && report.count > 0
+    && typeof navigator !== "undefined"
+    && typeof navigator.share === "function"
+    && typeof navigator.canShare === "function"
+    && navigator.canShare({ files: [report.file] }),
+  );
+
+  const shareCsv = async () => {
+    if (!report || !canShare || shareInFlight.current || cardStale) return;
+    shareInFlight.current = true;
+    setSharing(true);
+    setError("");
+    setNotice("");
+    try {
+      await navigator.share({ files: [report.file], title: report.file.name });
+    } catch (cause) {
+      if (mounted.current && !(cause instanceof Error && cause.name === "AbortError")) {
+        setError("No se pudieron abrir las opciones. Puedes descargar el CSV directamente.");
+      }
+    } finally {
+      shareInFlight.current = false;
+      if (mounted.current) setSharing(false);
+    }
+  };
+
+  const downloadCsv = () => {
+    if (!report || cardStale || sharing) return;
+    const url = URL.createObjectURL(report.file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = report.file.name;
+    document.body.append(link);
+    try {
+      link.click();
+    } finally {
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
+  };
 
   const changeDates = (start: string, end: string, preset: string | null = null) => {
     touched.current = true;
@@ -125,10 +173,12 @@ function RevisionReport({ usuarioId }: { usuarioId: number }) {
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {notice && <p role="status" className={styles.meta}>{notice}</p>}
     {loading && <div className={styles.progress} role="status">Consultando movimientos…<div className={styles.skeleton} /></div>}
-    {report && <section className={styles.result} aria-label="Resultado del reporte">
+    {report && <section className={styles.result} aria-label="Resultado del reporte" style={cardStale ? { opacity: 0.6 } : undefined}>
       <div className={styles.resultHeading}><span className={styles.resultIcon}>{report.count ? <Check size={22} aria-hidden /> : <CalendarDays size={22} aria-hidden />}</span><div><h2>{report.count ? report.cached ? "CSV guardado" : "CSV listo" : "Sin movimientos"}</h2><p role="status">{report.count ? `${report.count.toLocaleString("es-CR")} ${report.count === 1 ? "movimiento" : "movimientos"}` : "Prueba otro rango de fechas."}</p></div></div>
-      <p className={styles.range}>{fechaTexto(report.desde)} — {fechaTexto(report.hasta)}</p>
-      {report.count > 0 && <a className={styles.download} href={report.url} download={nombreArchivoReporteRevision(report)}><Download size={20} aria-hidden />Descargar CSV</a>}
+      <p className={styles.range}>Rango del reporte: {fechaTexto(report.desde)} — {fechaTexto(report.hasta)}</p>
+      {cardStale && <p role="status" className={styles.meta}>{loading ? "Generando nuevo reporte… Este archivo pertenece al rango anterior." : "Cambiaste las fechas. Este archivo pertenece al rango anterior; pulsa Crear CSV para actualizarlo."}</p>}
+      {report.count > 0 && canShare && <button type="button" className={styles.download} disabled={cardStale || sharing} onClick={() => void shareCsv()}><Share2 size={20} aria-hidden />{sharing ? "Abriendo opciones…" : "Guardar / compartir CSV"}</button>}
+      {report.count > 0 && <button type="button" className={styles.download} style={canShare ? { marginTop: 10, background: "var(--secondary)", color: "var(--foreground)" } : undefined} disabled={cardStale || sharing} onClick={downloadCsv}><Download size={20} aria-hidden />Descargar CSV</button>}
       {report.count > 0 && <p className={styles.meta}>{report.cached ? "Último reporte guardado" : online ? "Actualizado" : "Último reporte generado"} · {fechaHora(report.generatedAt)}</p>}
     </section>}
   </>;

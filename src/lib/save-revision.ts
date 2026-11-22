@@ -10,7 +10,16 @@ import {
   validateRevisionEvidencePhotos,
   type EvidenceSlots,
 } from "@/lib/revision-evidence-edit";
-import { formatRevisionAuditLine, isRevisionEditField, type RevisionEditField } from "@/lib/revision-edit";
+import {
+  formatRevisionAuditLine,
+  isRevisionEditField,
+  persistRevisionFieldValue,
+  revisionEditDecision,
+  validateRevisionField,
+  validateRevisionFieldDependencies,
+  type RevisionEditField,
+} from "@/lib/revision-edit";
+import { evidencePhotoLimit } from "@/lib/revision-form";
 import { mapNotaRevision, sameNotaRevisionPayload, type RevisionNoteItem } from "@/lib/revision-notes";
 import { INICIO_REVISION_COLUMNS } from "@/lib/revisiones-display";
 import { mapInicioRevision } from "@/lib/revisiones-map";
@@ -218,5 +227,136 @@ export async function editRevisionEvidencias(
   if (!result.data) return { row: null, error: "Las fotos cambiaron. Cierra y vuelve a editarlas." };
 
   await recordEvidenceEdits(client, input.editor, result.data, current, next);
+  return { row: mapInicioRevision(result.data), error: null };
+}
+
+export async function editRevisionCajaFuerte(
+  client: Client,
+  input: {
+    id: string;
+    esperado: string | null;
+    nuevo: string | null;
+    editor: string;
+    roomMove?: { esperado: string | null; nuevo: string | null } | null;
+    limpiarEvidencias?: boolean;
+  },
+): Promise<SaveResult> {
+  const cajaError = validateRevisionField("caja_fuerte", input.nuevo);
+  if (cajaError) return { row: null, error: cajaError };
+  if (input.roomMove) {
+    const roomError = validateRevisionField("room_move", input.roomMove.nuevo);
+    if (roomError) return { row: null, error: roomError };
+  }
+
+  const actual = await client
+    .from(REVISIONES_TABLE)
+    .select(INICIO_REVISION_COLUMNS)
+    .eq("id", input.id)
+    .maybeSingle();
+  if (actual.error) return { row: null, error: "No pudimos comprobar la revisión. Vuelve a intentarlo." };
+  if (!actual.data) return { row: null, error: "No encontramos esta revisión." };
+
+  const persistedCaja = persistRevisionFieldValue("caja_fuerte", input.nuevo);
+  const currentSlots = evidenceSlotsFromRow(actual.data);
+  const hasCurrentPhotos = evidencePathsFromSlots(currentSlots).length > 0;
+  const clearEvidence = Boolean(input.limpiarEvidencias) && evidencePhotoLimit(persistedCaja ?? "") === 0;
+
+  const depError = validateRevisionFieldDependencies("caja_fuerte", persistedCaja, actual.data, {
+    clearEvidence,
+    roomMove: input.roomMove ? input.roomMove.nuevo : undefined,
+  });
+  if (depError) return { row: null, error: depError };
+
+  const cajaDecision = revisionEditDecision(actual.data.caja_fuerte ?? null, input.esperado, persistedCaja, "caja_fuerte");
+  if (cajaDecision === "stale") {
+    return { row: null, error: "Este dato cambió. Cierra y vuelve a editarlo." };
+  }
+  const roomDecision = input.roomMove
+    ? revisionEditDecision(actual.data.room_move ?? null, input.roomMove.esperado, input.roomMove.nuevo, "room_move")
+    : "noop";
+  if (roomDecision === "stale") {
+    return { row: null, error: "Este dato cambió. Cierra y vuelve a editarlo." };
+  }
+
+  const shouldClearEvidence = clearEvidence && hasCurrentPhotos;
+  if (cajaDecision === "noop" && roomDecision === "noop" && !shouldClearEvidence) {
+    return { row: mapInicioRevision(actual.data), error: null };
+  }
+
+  const payload: Partial<Database["public"]["Tables"]["revisiones_casitas"]["Update"]> = {};
+  if (cajaDecision === "apply") payload.caja_fuerte = persistedCaja;
+  const persistedRoom = input.roomMove ? persistRevisionFieldValue("room_move", input.roomMove.nuevo) : null;
+  if (roomDecision === "apply") payload.room_move = persistedRoom;
+  if (shouldClearEvidence) {
+    payload.evidencia_01 = null;
+    payload.evidencia_02 = null;
+    payload.evidencia_03 = null;
+  }
+
+  let query = client.from(REVISIONES_TABLE).update(payload).eq("id", input.id);
+  if (cajaDecision === "apply") {
+    const rawCaja = actual.data.caja_fuerte;
+    query = rawCaja == null ? query.is("caja_fuerte", null) : query.eq("caja_fuerte", rawCaja);
+  }
+  if (roomDecision === "apply") {
+    const rawRoom = actual.data.room_move;
+    query = rawRoom == null ? query.is("room_move", null) : query.eq("room_move", rawRoom);
+  }
+  if (shouldClearEvidence) {
+    for (const field of EVIDENCE_FIELDS) {
+      const raw = actual.data[field];
+      query = raw == null ? query.is(field, null) : query.eq(field, raw);
+    }
+  }
+
+  const result = await query.select(INICIO_REVISION_COLUMNS).maybeSingle();
+  if (result.error) {
+    return { row: null, error: "No pudimos confirmar el cambio. Conservamos el valor anterior." };
+  }
+  if (!result.data) {
+    return { row: null, error: "Este dato cambió. Cierra y vuelve a editarlo." };
+  }
+
+  const auditAt = costaRicaAuditTimestamp();
+  const entries: {
+    created_at: string;
+    "Usuario que Edito": string;
+    Dato_anterior: string;
+    Dato_nuevo: string;
+  }[] = [];
+  if (cajaDecision === "apply") {
+    entries.push({
+      created_at: auditAt,
+      "Usuario que Edito": input.editor,
+      Dato_anterior: formatRevisionAuditLine(result.data.id, result.data.casita, "caja_fuerte", actual.data.caja_fuerte),
+      Dato_nuevo: formatRevisionAuditLine(result.data.id, result.data.casita, "caja_fuerte", persistedCaja),
+    });
+  }
+  if (roomDecision === "apply") {
+    entries.push({
+      created_at: auditAt,
+      "Usuario que Edito": input.editor,
+      Dato_anterior: formatRevisionAuditLine(result.data.id, result.data.casita, "room_move", actual.data.room_move),
+      Dato_nuevo: formatRevisionAuditLine(result.data.id, result.data.casita, "room_move", persistedRoom),
+    });
+  }
+  if (shouldClearEvidence) {
+    for (const field of EVIDENCE_FIELDS) {
+      if (currentSlots[field] === null) continue;
+      entries.push({
+        created_at: auditAt,
+        "Usuario que Edito": input.editor,
+        Dato_anterior: formatRevisionAuditLine(result.data.id, result.data.casita, field, currentSlots[field]),
+        Dato_nuevo: formatRevisionAuditLine(result.data.id, result.data.casita, field, null),
+      });
+    }
+  }
+  if (entries.length) {
+    const auditResult = await client.from(REGISTRO_EDICIONES_TABLE).insert(entries);
+    if (auditResult.error) {
+      console.warn("[revisiones] No se pudo registrar el historial de edición:", auditResult.error.message);
+    }
+  }
+
   return { row: mapInicioRevision(result.data), error: null };
 }

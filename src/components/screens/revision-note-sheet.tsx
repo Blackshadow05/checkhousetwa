@@ -26,15 +26,19 @@ import { createUuid } from "@/lib/uuid";
 import { useOnline } from "@/lib/use-online";
 
 export function RevisionNoteSheet({
+  open = true,
   revisionId,
   onClose,
   onCreated,
 }: {
+  open?: boolean;
   revisionId: string;
   onClose: () => void;
   onCreated: (note: RevisionNoteItem) => void;
 }) {
   const online = useOnline();
+  const sessionKey = open ? revisionId : null;
+  const [activeSessionKey, setActiveSessionKey] = useState<string | null>(sessionKey);
   const [nota, setNota] = useState("");
   const [photo, setPhoto] = useState<RevisionPhoto | null>(null);
   const [error, setError] = useState("");
@@ -52,10 +56,38 @@ export function RevisionNoteSheet({
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
+  if (activeSessionKey !== sessionKey) {
+    setActiveSessionKey(sessionKey);
+    if (sessionKey) {
+      setNota("");
+      setPhoto(null);
+      setError("");
+      setProgress("");
+    }
+  }
+
   const updatePhoto = (next: RevisionPhoto | null) => {
     photoRef.current = next;
     setPhoto(next);
   };
+
+  useEffect(() => {
+    if (open) {
+      saved.current = false;
+      photoProtected.current = false;
+      photoRef.current = null;
+      attemptIds.current.clear();
+      return;
+    }
+    const current = photoRef.current;
+    photoRef.current = null;
+    if (!current || saved.current || saving.current) {
+      saved.current = false;
+      return;
+    }
+    if (photoProtected.current) releaseUploads([current.id]);
+    else void discardUpload(current.id);
+  }, [open, revisionId]);
 
   useEffect(
     () => () => {
@@ -232,7 +264,7 @@ export function RevisionNoteSheet({
   });
 
   return (
-    <BottomSheet open onClose={requestClose} title="Agregar nota">
+    <BottomSheet open={open} onClose={requestClose} title="Agregar nota">
       <form
         className="revision-edit-form"
         onSubmit={(event) => {

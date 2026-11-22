@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { ImageOff } from "lucide-react";
 import PhotoSwipeLightbox from "photoswipe/lightbox";
 import type { SlideData } from "photoswipe";
 import "photoswipe/style.css";
@@ -24,13 +25,16 @@ type ImageSize = {
 
 const FALLBACK_SIZE: ImageSize = { width: 1600, height: 1200 };
 const sizeCache = new Map<string, ImageSize>();
+const sizePromises = new Map<string, Promise<{ src: string } & ImageSize>>();
 
 const SHARE_ICON = `<svg class="pswp__icn pswp__icn--custom" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>`;
 
 const DOWNLOAD_ICON = '<svg class="pswp__icn pswp__icn--custom" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5v15m-6-6 6 6 6-6M7 22v5h18v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const EXTENSIONS: Record<string, string> = { "image/png": "png", "image/webp": "webp", "image/avif": "avif", "image/heic": "heic", "image/heif": "heif" };
 let downloading = false;
+let sharing = false;
 const originalCache = new Map<string, Promise<Blob>>();
+const originalBlobCache = new Map<string, Blob>();
 
 function isAppleMobile() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent)
@@ -47,15 +51,32 @@ function fetchOriginal(path: string) {
       if (!response.ok) throw new Error("download");
       return response.blob();
     })
+    .then((blob) => {
+      originalBlobCache.set(path, blob);
+      if (originalBlobCache.size > 12) {
+        const oldest = originalBlobCache.keys().next().value;
+        if (oldest !== undefined) originalBlobCache.delete(oldest);
+      }
+      return blob;
+    })
     .finally(() => window.clearTimeout(timeout));
   originalCache.set(path, request);
-  request.catch(() => originalCache.delete(path));
-  if (originalCache.size > 12) originalCache.delete(originalCache.keys().next().value!);
+  request.catch(() => {
+    originalCache.delete(path);
+    originalBlobCache.delete(path);
+  });
+  if (originalCache.size > 12) {
+    const oldest = originalCache.keys().next().value;
+    if (oldest !== undefined) {
+      originalCache.delete(oldest);
+      originalBlobCache.delete(oldest);
+    }
+  }
   return request;
 }
 
 function prefetchOriginal(path: string | undefined) {
-  if (!path || !isAppleMobile()) return;
+  if (!path || (!isAppleMobile() && typeof navigator.share !== "function")) return;
   fetchOriginal(path).catch(() => undefined);
 }
 
@@ -70,9 +91,10 @@ async function downloadSlide(
     if (statusEl) statusEl.textContent = message;
   };
   downloading = true;
-  setStatus("Preparando descarga…");
+  const cachedBlob = originalBlobCache.get(path);
+  if (!cachedBlob) setStatus("Preparando descarga…");
   try {
-    const blob = await fetchOriginal(path);
+    const blob = cachedBlob ?? (await fetchOriginal(path));
     const name = evidenceFileName(casita, index, EXTENSIONS[blob.type] ?? "jpg", evidencePathMark(path));
     if (isAppleMobile() && typeof navigator.share === "function") {
       const file = new File([blob], name, { type: blob.type || "image/jpeg" });
@@ -106,7 +128,9 @@ async function downloadSlide(
 function loadImageSize(src: string) {
   const cached = sizeCache.get(src);
   if (cached) return Promise.resolve({ src, ...cached });
-  return new Promise<{ src: string } & ImageSize>((resolve) => {
+  const pending = sizePromises.get(src);
+  if (pending) return pending;
+  const promise = new Promise<{ src: string } & ImageSize>((resolve) => {
     const image = new Image();
     image.onload = () => {
       const size: ImageSize = {
@@ -114,10 +138,35 @@ function loadImageSize(src: string) {
         height: image.naturalHeight || FALLBACK_SIZE.height,
       };
       sizeCache.set(src, size);
+      sizePromises.delete(src);
       resolve({ src, ...size });
     };
-    image.onerror = () => resolve({ src, ...FALLBACK_SIZE });
+    image.onerror = () => {
+      sizePromises.delete(src);
+      resolve({ src, ...FALLBACK_SIZE });
+    };
     image.src = src;
+  });
+  sizePromises.set(src, promise);
+  return promise;
+}
+
+function loadImageSizeFast(src: string, timeoutMs = 180) {
+  const cached = sizeCache.get(src);
+  if (cached) return Promise.resolve({ src, ...cached });
+  return new Promise<{ src: string } & ImageSize>((resolve) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve({ src, ...FALLBACK_SIZE });
+    }, timeoutMs);
+    void loadImageSize(src).then((sized) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve(sized);
+    });
   });
 }
 
@@ -145,7 +194,7 @@ async function shareSlide(
   casita: string,
   statusEl: HTMLElement | null,
 ) {
-  if (!path) return;
+  if (!path || sharing) return;
   const setStatus = (message: string) => {
     if (statusEl) statusEl.textContent = message;
   };
@@ -153,17 +202,21 @@ async function shareSlide(
     setStatus("Compartir no está disponible en este dispositivo.");
     return;
   }
+  sharing = true;
   const url = cloudinaryViewerUrl(path);
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("share");
-    const blob = await response.blob();
+    let blob = originalBlobCache.get(path);
+    if (!blob) {
+      setStatus("Preparando para compartir…");
+      blob = await fetchOriginal(path);
+    }
     const file = new File(
       [blob],
       evidenceFileName(casita, index, EXTENSIONS[blob.type] ?? "jpg", evidencePathMark(path)),
       { type: blob.type || "image/jpeg" },
     );
     if (navigator.canShare?.({ files: [file] })) {
+      setStatus("");
       await navigator.share({
         files: [file],
         title: `Evidencia ${index + 1} · Casita ${casita}`,
@@ -171,14 +224,20 @@ async function shareSlide(
       setStatus("");
       return;
     }
+    setStatus("");
     await navigator.share({
       title: `Evidencia ${index + 1} · Casita ${casita}`,
       url,
     });
     setStatus("");
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") return;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      setStatus("");
+      return;
+    }
     setStatus("No se pudo compartir ahora.");
+  } finally {
+    sharing = false;
   }
 }
 
@@ -226,6 +285,7 @@ function useActiveSlide(length: number) {
 
 export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
   const { trackRef, index, goTo } = useActiveSlide(paths.length);
+  const [failedPaths, setFailedPaths] = useState<Record<string, boolean>>({});
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const lightboxRef = useRef<PhotoSwipeLightbox | null>(null);
   const pathsRef = useRef(paths);
@@ -242,10 +302,10 @@ export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
   const pathsKey = paths.join("|");
 
   useEffect(() => {
-    for (const path of paths) {
+    for (const path of pathsRef.current) {
       void loadImageSize(cloudinaryViewerUrl(path));
     }
-  }, [paths, pathsKey]);
+  }, [pathsKey]);
 
   useEffect(() => {
     const lightbox = new PhotoSwipeLightbox({
@@ -395,19 +455,28 @@ export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
     if (!lightbox || openingRef.current || lightbox.pswp) return;
     openingRef.current = true;
     try {
-      const dataSource: SlideData[] = await Promise.all(
-        pathsRef.current.map(async (path, slideIndex) => {
-          const src = cloudinaryViewerUrl(path);
-          const sized = await loadImageSize(src);
-          return {
-            src: sized.src,
-            width: sized.width,
-            height: sized.height,
-            alt: `Evidencia ${slideIndex + 1} de casita ${casitaRef.current}`,
-            msrc: cloudinaryPreviewUrl(path),
-          };
-        }),
-      );
+      const currentPaths = pathsRef.current;
+      const activePath = currentPaths[next];
+      const activeSized = activePath
+        ? await loadImageSizeFast(cloudinaryViewerUrl(activePath))
+        : null;
+      const dataSource: SlideData[] = currentPaths.map((path, slideIndex) => {
+        const src = cloudinaryViewerUrl(path);
+        const sized =
+          slideIndex === next && activeSized
+            ? activeSized
+            : { src, ...(sizeCache.get(src) ?? FALLBACK_SIZE) };
+        if (slideIndex !== next && !sizeCache.has(src)) {
+          void loadImageSize(src);
+        }
+        return {
+          src: sized.src,
+          width: sized.width,
+          height: sized.height,
+          alt: `Evidencia ${slideIndex + 1} de casita ${casitaRef.current}`,
+          msrc: cloudinaryPreviewUrl(path),
+        };
+      });
       lightbox.loadAndOpen(next, dataSource, point);
     } finally {
       openingRef.current = false;
@@ -450,13 +519,37 @@ export function EvidenceGallery({ paths, casita }: EvidenceGalleryProps) {
             onClick={(event) => onSlideClick(event, slideIndex)}
             aria-label={`Ver evidencia ${slideIndex + 1} de ${paths.length}`}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={cloudinaryPreviewUrl(path)}
-              alt=""
-              decoding="async"
-              fetchPriority={slideIndex === 0 ? "high" : "low"}
-            />
+            {failedPaths[path] ? (
+              <span
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  alignContent: "center",
+                  gap: 8,
+                  width: "100%",
+                  height: "100%",
+                  background: "var(--muted)",
+                  color: "var(--muted-foreground)",
+                  fontSize: "0.875rem",
+                }}
+              >
+                <ImageOff size={28} strokeWidth={1.6} aria-hidden="true" />
+                <span>No se pudo cargar la foto</span>
+              </span>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={cloudinaryPreviewUrl(path)}
+                alt=""
+                decoding="async"
+                fetchPriority={slideIndex === 0 ? "high" : "low"}
+                onError={() =>
+                  setFailedPaths((current) =>
+                    current[path] ? current : { ...current, [path]: true },
+                  )
+                }
+              />
+            )}
           </button>
         ))}
       </div>

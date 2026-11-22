@@ -8,12 +8,14 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { dedupeRequest } from "@/lib/dedupe-request";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { CAJA_FUERTE_FILTERS } from "@/lib/revisiones-archive";
-import { BOOLEAN_FIELDS, QUANTITY_LIMITS, type InventoryKey } from "@/lib/revision-form";
+import { BOOLEAN_FIELDS, evidencePhotoLimit, QUANTITY_LIMITS, type InventoryKey } from "@/lib/revision-form";
 import {
   editorValueFromRaw,
+  normalizeRevisionEditValue,
   persistRevisionFieldValue,
   REVISION_EDIT_LABELS,
   revisionEditDecision,
+  revisionEvidenceCount,
   validateRevisionField,
   validateRevisionFieldDependencies,
   type RevisionEditField,
@@ -22,47 +24,77 @@ import { useOnline } from "@/lib/use-online";
 import type { RevisionCasitaInicio } from "@/types/database";
 
 function editorText(field: RevisionEditField, value: string | null | undefined) {
-  const text = editorValueFromRaw(value);
-  if (
-    (field === "casita" || QUANTITY_LIMITS[field as keyof typeof QUANTITY_LIMITS] !== undefined) &&
-    /^\d+$/.test(text)
-  ) {
-    return String(Number(text));
-  }
-  return text;
+  return normalizeRevisionEditValue(field, value);
 }
 
 export function RevisionEditSheet({
+  open = true,
   revisionId,
   field,
   onClose,
   onSaved,
 }: {
+  open?: boolean;
   revisionId: string;
-  field: RevisionEditField;
+  field: RevisionEditField | null;
   onClose: () => void;
-  onSaved?: () => void;
+  onSaved?: (result?: { openEvidence?: boolean }) => void;
 }) {
   const online = useOnline();
   const { replaceRevision, selectedRevision } = useRevisiones();
-  const [initialText] = useState(() => {
-    if (selectedRevision?.id !== revisionId) return null;
-    const local = selectedRevision[field];
-    return editorText(field, field === "caja_fuerte" && local === "—" ? null : local);
-  });
+  const sessionKey = open && field ? `${revisionId}:${field}` : null;
+  const computeInitialText = (targetField: RevisionEditField | null) => {
+    if (!targetField || selectedRevision?.id !== revisionId) return null;
+    const local = selectedRevision[targetField];
+    return editorText(targetField, targetField === "caja_fuerte" && local === "—" ? null : local);
+  };
+  const computeInitialRoomMove = () =>
+    selectedRevision?.id === revisionId ? editorValueFromRaw(selectedRevision.room_move) : "";
+
+  const [activeSessionKey, setActiveSessionKey] = useState<string | null>(sessionKey);
+  const [lastField, setLastField] = useState<RevisionEditField | null>(field);
+  const [initialText, setInitialText] = useState<string | null>(() => computeInitialText(field));
   const [user, setUser] = useState<{ id: number; nombre: string } | null | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
-  const [checking, setChecking] = useState(true);
+  const [checking, setChecking] = useState(Boolean(sessionKey));
   const [raw, setRaw] = useState<RevisionCasitaInicio | null>(null);
-  const [value, setValue] = useState(initialText ?? "");
+  const [value, setValue] = useState(() => computeInitialText(field) ?? "");
+  const [roomMove, setRoomMove] = useState(() => computeInitialRoomMove());
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   const touched = useRef(false);
-  const label = REVISION_EDIT_LABELS[field];
+  const roomMoveTouched = useRef(false);
+  const lastFetchedSession = useRef<string | null>(null);
+
+  if (activeSessionKey !== sessionKey) {
+    setActiveSessionKey(sessionKey);
+    if (sessionKey && field) {
+      const nextInitial = computeInitialText(field);
+      setLastField(field);
+      setInitialText(nextInitial);
+      setValue(nextInitial ?? "");
+      setRoomMove(computeInitialRoomMove());
+      setUser(undefined);
+      setRaw(null);
+      setChecking(true);
+      setError("");
+      setNotice("");
+      setAttempt(0);
+    }
+  }
+
+  const activeField = field ?? lastField;
+  const label = activeField ? REVISION_EDIT_LABELS[activeField] : "Dato";
 
   useEffect(() => {
+    if (!open || !field || !sessionKey) return;
+    if (lastFetchedSession.current !== sessionKey) {
+      lastFetchedSession.current = sessionKey;
+      touched.current = false;
+      roomMoveTouched.current = false;
+    }
     let live = true;
     void dedupeRequest(`editor:${revisionId}`, () => fetchRevisionEditor(revisionId))
       .then((result) => {
@@ -83,6 +115,9 @@ export function RevisionEditSheet({
             setNotice("Este dato cambió hace un momento. Revisa el valor actual antes de guardar.");
           }
         }
+        if (field === "caja_fuerte" && !roomMoveTouched.current) {
+          setRoomMove(editorValueFromRaw(result.row.room_move));
+        }
         setRaw(result.row);
       })
       .catch(() => {
@@ -94,24 +129,42 @@ export function RevisionEditSheet({
     return () => {
       live = false;
     };
-  }, [attempt, field, initialText, revisionId]);
+  }, [attempt, field, initialText, open, revisionId, sessionKey]);
 
-  const expected = raw ? raw[field] ?? null : null;
+  const requestClose = () => {
+    if (saving.current || busy) return;
+    onClose();
+  };
+
+  const expected = raw && activeField ? raw[activeField] ?? null : null;
+  const currentPhotoCount = raw ? revisionEvidenceCount(raw) : 0;
+  const nextPhotoLimit = activeField === "caja_fuerte" ? evidencePhotoLimit(value) : 0;
+  const willClearEvidence = activeField === "caja_fuerte" && nextPhotoLimit === 0 && currentPhotoCount > 0;
+  const needsPhotosAfterSave = activeField === "caja_fuerte" && nextPhotoLimit > 0 && currentPhotoCount === 0;
+  const showRoomMoveInput = activeField === "caja_fuerte" && value === "Room Move";
 
   const save = async () => {
-    if (saving.current || busy || !raw) return;
+    if (saving.current || busy || !raw || !activeField) return;
     if (!online) {
       setError("Conéctate para guardar. Conservamos el valor anterior.");
       return;
     }
     const fieldError =
-      validateRevisionField(field, value) ||
-      validateRevisionFieldDependencies(field, value, raw);
+      validateRevisionField(activeField, value) ||
+      (showRoomMoveInput ? validateRevisionField("room_move", roomMove) : undefined) ||
+      validateRevisionFieldDependencies(activeField, value, raw, {
+        clearEvidence: willClearEvidence,
+        roomMove: showRoomMoveInput ? roomMove : undefined,
+      });
     if (fieldError) {
       setError(fieldError);
       return;
     }
-    if (revisionEditDecision(expected, expected, value, field) === "noop") {
+    const fieldNoop = revisionEditDecision(expected, expected, value, activeField) === "noop";
+    const roomNoop =
+      !showRoomMoveInput ||
+      revisionEditDecision(raw.room_move ?? null, raw.room_move ?? null, roomMove, "room_move") === "noop";
+    if (fieldNoop && roomNoop && !willClearEvidence) {
       onClose();
       return;
     }
@@ -122,9 +175,16 @@ export function RevisionEditSheet({
     try {
       const result = await editRevisionField({
         id: revisionId,
-        campo: field,
+        campo: activeField,
         esperado: expected,
-        nuevo: persistRevisionFieldValue(field, value),
+        nuevo: persistRevisionFieldValue(activeField, value),
+        roomMove: showRoomMoveInput
+          ? {
+              esperado: raw.room_move ?? null,
+              nuevo: persistRevisionFieldValue("room_move", roomMove),
+            }
+          : undefined,
+        limpiarEvidencias: willClearEvidence || undefined,
       });
       if (result.needsLogin) {
         setUser(null);
@@ -136,7 +196,7 @@ export function RevisionEditSheet({
         return;
       }
       replaceRevision(result.row);
-      onSaved?.();
+      onSaved?.({ openEvidence: needsPhotosAfterSave });
       onClose();
     } catch {
       setError("No pudimos conectar para guardar el cambio.");
@@ -147,8 +207,8 @@ export function RevisionEditSheet({
   };
 
   return (
-    <BottomSheet open onClose={onClose} title={`Editar ${label.toLowerCase()}`}>
-      {user === null ? (
+    <BottomSheet open={open && Boolean(field)} onClose={requestClose} title={`Editar ${label.toLowerCase()}`}>
+      {!activeField ? null : user === null ? (
         <LoginForm
           online={online}
           variant="sheet"
@@ -161,6 +221,29 @@ export function RevisionEditSheet({
         />
       ) : initialText === null && checking ? (
         <p role="status">Cargando el valor guardado…</p>
+      ) : !checking && !raw ? (
+        <div className="revision-edit-form">
+          <p className="revision-field-error" role="alert">
+            {error || "No pudimos cargar el dato guardado."}
+          </p>
+          <div className="sheet-actions">
+            <button type="button" className="secondary-button" onClick={requestClose}>
+              Cerrar
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={!online || checking}
+              onClick={() => {
+                setError("");
+                setChecking(true);
+                setAttempt((current) => current + 1);
+              }}
+            >
+              Reintentar
+            </button>
+          </div>
+        </div>
       ) : (
         <form
           className="revision-edit-form"
@@ -175,19 +258,48 @@ export function RevisionEditSheet({
               : "Sin conexión. El guardado estará disponible cuando vuelvas a conectarte."}
           </p>
           <FieldControl
-            field={field}
+            field={activeField}
             label={label}
             value={value}
             onChange={(next) => {
               touched.current = true;
               setNotice("");
+              setError("");
               setValue(next);
             }}
             disabled={busy}
           />
+          {showRoomMoveInput ? (
+            <label className="revision-text-field">
+              {REVISION_EDIT_LABELS.room_move}
+              <textarea
+                name="room_move"
+                aria-label={REVISION_EDIT_LABELS.room_move}
+                disabled={busy}
+                rows={3}
+                maxLength={120}
+                value={roomMove}
+                onChange={(event) => {
+                  roomMoveTouched.current = true;
+                  setNotice("");
+                  setError("");
+                  setRoomMove(event.target.value);
+                }}
+              />
+            </label>
+          ) : null}
+          {willClearEvidence ? (
+            <p className="auth-notice" role="status">
+              Al guardar, se quitarán {currentPhotoCount === 1 ? "la evidencia actual" : `las ${currentPhotoCount} evidencias actuales`} de esta revisión.
+            </p>
+          ) : needsPhotosAfterSave ? (
+            <p className="auth-notice" role="status">
+              Al guardar, se abrirá el editor para añadir la foto de evidencia requerida.
+            </p>
+          ) : null}
           {notice ? <p className="auth-notice" role="status">{notice}</p> : null}
           <div className="sheet-actions">
-            <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>
+            <button type="button" className="secondary-button" disabled={busy} onClick={requestClose}>
               Cancelar
             </button>
             <button className="primary-button" disabled={busy || !online || !raw} aria-busy={checking || busy}>
@@ -216,7 +328,7 @@ function FieldControl({
   disabled: boolean;
 }) {
   if (field === "casita") {
-    const selected = /^\d+$/.test(value) ? String(Number(value)) : value;
+    const selected = normalizeRevisionEditValue(field, value);
     return (
       <label className="revision-text-field">
         {label}
@@ -234,10 +346,11 @@ function FieldControl({
     );
   }
   if (field === "caja_fuerte") {
+    const selected = normalizeRevisionEditValue(field, value);
     return (
       <label className="revision-text-field">
         {label}
-        <select name={field} aria-label={label} disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
+        <select name={field} aria-label={label} disabled={disabled} value={selected} onChange={(event) => onChange(event.target.value)}>
           <option value="" disabled>
             Selecciona el estado
           </option>
@@ -251,10 +364,11 @@ function FieldControl({
     );
   }
   if (BOOLEAN_FIELDS.has(field as InventoryKey)) {
+    const selected = normalizeRevisionEditValue(field, value);
     return (
       <label className="revision-text-field">
         {label}
-        <select name={field} aria-label={label} disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
+        <select name={field} aria-label={label} disabled={disabled} value={selected} onChange={(event) => onChange(event.target.value)}>
           <option value="">Sin registro</option>
           <option value="Si">Sí</option>
           <option value="No">No</option>
@@ -264,7 +378,7 @@ function FieldControl({
   }
   const max = QUANTITY_LIMITS[field as keyof typeof QUANTITY_LIMITS];
   if (max !== undefined) {
-    const selected = /^\d+$/.test(value) ? String(Number(value)) : value;
+    const selected = normalizeRevisionEditValue(field, value);
     return (
       <label className="revision-text-field">
         {label}

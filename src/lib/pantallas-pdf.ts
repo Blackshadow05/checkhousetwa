@@ -1,6 +1,6 @@
 import { PDFDocument, PageSizes, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { latestPantallaReports, type PantallaReport } from "@/lib/pantallas";
+import { ESTADO_PANTALLA_LABELS, latestPantallaReports, type PantallaEstado, type PantallaReport } from "@/lib/pantallas";
 
 type PdfOptions = { signal?: AbortSignal; onProgress?: (message: string) => void };
 const MARGIN = 28;
@@ -59,7 +59,7 @@ function needsOrientation(bytes: Uint8Array) {
   return false;
 }
 
-async function losslessPng(bytes: Uint8Array, signal?: AbortSignal) {
+async function convertToJpeg(bytes: Uint8Array, signal?: AbortSignal) {
   const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
   const image = new Image();
   const canvas = document.createElement("canvas");
@@ -67,14 +67,15 @@ async function losslessPng(bytes: Uint8Array, signal?: AbortSignal) {
     image.src = url;
     await image.decode();
     checkAbort(signal);
-    // Change only the physical size on the page, never the source resolution.
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     const context = canvas.getContext("2d");
     if (!context || !canvas.width || !canvas.height) throw new Error("No se pudo leer la foto.");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0);
     const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(value => value ? resolve(value) : reject(new Error("No se pudo convertir la foto.")), "image/png");
+      canvas.toBlob(value => value ? resolve(value) : reject(new Error("No se pudo convertir la foto.")), "image/jpeg", 0.85);
     });
     checkAbort(signal);
     return new Uint8Array(await blob.arrayBuffer());
@@ -90,8 +91,8 @@ async function embedPhoto(pdf: PDFDocument, url: string, signal?: AbortSignal): 
   checkAbort(signal);
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && !needsOrientation(bytes)) return pdf.embedJpg(bytes);
   if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return pdf.embedPng(bytes);
-  // WebP (including Android uploads) is decoded at full size and stored as PNG.
-  return pdf.embedPng(await losslessPng(bytes, signal));
+  // WebP (including Android uploads) and rotated JPEGs are re-encoded as compressed JPEG to avoid oversized PDFs / iOS OOM.
+  return pdf.embedJpg(await convertToJpeg(bytes, signal));
 }
 
 function safeText(text: string, font: PDFFont) {
@@ -189,14 +190,16 @@ export async function createPantallasPdf(reports: PantallaReport[], { signal, on
         throw new Error(`No se pudo cargar la foto de Casita ${report.numero_casita}, ${photo.ubicacion}. Revisa la conexión y vuelve a crear el PDF.`);
       }
       const px = photoStart + photoNumber * (photoWidth + GAP);
-      const state = wrap(photo.estado, regular, 8, photoWidth);
-      const imageHeight = ROW_HEIGHT - 24 - state.length * 10;
+      const estadoTexto = ESTADO_PANTALLA_LABELS[photo.estado as PantallaEstado] || photo.estado;
+      const captionText = photo.ubicacion ? `${photo.ubicacion} · ${estadoTexto}` : estadoTexto;
+      const state = wrap(captionText, regular, 7.5, photoWidth);
+      const imageHeight = Math.max(24, ROW_HEIGHT - 22 - state.length * 9.5);
       const imageTop = top - 8;
       page!.drawRectangle({ x: px, y: imageTop - imageHeight, width: photoWidth, height: imageHeight, color: rgb(0.96, 0.97, 0.96) });
       const fit = embedded.scaleToFit(photoWidth, imageHeight);
       page!.drawImage(embedded, { x: px + (photoWidth - fit.width) / 2, y: imageTop - imageHeight + (imageHeight - fit.height) / 2, width: fit.width, height: fit.height });
-      const captionY = imageTop - imageHeight - 12;
-      drawLines(page!, state, px, captionY, regular, 8, 10, MUTED);
+      const captionY = imageTop - imageHeight - 11;
+      drawLines(page!, state, px, captionY, regular, 7.5, 9.5, MUTED);
       // Release this photo's decoded pixels without finalizing font subsets.
       // Flushing the entire document here embeds fonts while text is still being added.
       await embedded.embed();

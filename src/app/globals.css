@@ -2602,9 +2602,9 @@ button.detail-tile:active {
   position: fixed;
   left: max(14px, env(safe-area-inset-left));
   right: max(14px, env(safe-area-inset-right));
-  bottom: calc(83px + env(safe-area-inset-bottom));
+  top: calc(12px + env(safe-area-inset-top));
   max-width: 490px;
-  margin: auto;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2654,7 +2654,7 @@ button.detail-tile:active {
   color: inherit;
 }
 @keyframes update-toast-in {
-  from { opacity: 0; transform: translateY(24px) scale(.96); }
+  from { opacity: 0; transform: translateY(-24px) scale(.96); }
   to { opacity: 1; transform: none; }
 }
 @keyframes update-toast-spin {
@@ -2842,11 +2842,11 @@ button.detail-tile:active {
     border-inline: 1px solid var(--border);
   }
   .header-inner {
-    padding-inline: 32px;
+    padding-inline: max(32px, env(safe-area-inset-left)) max(32px, env(safe-area-inset-right));
   }
   .app-screen {
     --screen-padding-top: 24px;
-    padding: var(--screen-padding-top) 32px calc(36px + var(--keyboard-inset, 0px));
+    padding: var(--screen-padding-top) max(32px, env(safe-area-inset-right)) calc(36px + var(--keyboard-inset, 0px)) max(32px, env(safe-area-inset-left));
   }
   /* Mismo ancho de contenido que las pantallas de la app (borde de .app-shell + 32px). */
   .detail-screen {
@@ -2882,10 +2882,10 @@ button.detail-tile:active {
 }
 @media (max-width: 359px) {
   .header-inner {
-    padding-inline: max(16px, env(safe-area-inset-left));
+    padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
   }
   .app-screen {
-    padding-inline: 16px;
+    padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
   }
   .brand-caption {
     font-size: 0.5625rem;

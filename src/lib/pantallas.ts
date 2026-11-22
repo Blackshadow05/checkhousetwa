@@ -18,9 +18,18 @@ export function estadoPorPuntos(puntos: number): PantallaEstado {
 type FotoConPuntos = Pick<PantallaFoto, "ubicacion" | "estado" | "puntos">;
 export function notasDePantallas(fotos: FotoConPuntos[]): string {
   return fotos.filter(f => f.ubicacion && f.estado && f.estado !== "en buen estado" && f.estado !== "no hay pantalla")
-    .map(f => typeof f.puntos === "number" && f.puntos > 0
-      ? `Pantalla ${f.ubicacion} tiene ${f.puntos} ${f.puntos === 1 ? "punto" : "puntos"}`
-      : `Pantalla ${f.ubicacion} tiene daño (${ESTADO_PANTALLA_LABELS[f.estado as PantallaEstado] || f.estado})`)
+    .map(f => {
+      const puntos = typeof f.puntos === "number" && f.puntos > 0 ? f.puntos : null;
+      if (f.estado === "defectuosa") {
+        const label = ESTADO_PANTALLA_LABELS.defectuosa;
+        return puntos !== null
+          ? `Pantalla ${f.ubicacion} tiene daño (${label}) y ${puntos} ${puntos === 1 ? "punto" : "puntos"}`
+          : `Pantalla ${f.ubicacion} tiene daño (${label})`;
+      }
+      return puntos !== null
+        ? `Pantalla ${f.ubicacion} tiene ${puntos} ${puntos === 1 ? "punto" : "puntos"}`
+        : `Pantalla ${f.ubicacion} tiene daño (${ESTADO_PANTALLA_LABELS[f.estado as PantallaEstado] || f.estado})`;
+    })
     .join(". ");
 }
 

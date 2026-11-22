@@ -65,7 +65,7 @@ function PasswordField({ label, name, value, busy, onChange }: {
           required readOnly={busy} value={value} onChange={(event) => onChange(event.target.value)} />
         <button type="button" className="auth-password-toggle" aria-controls={id}
           aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
-          aria-pressed={visible} disabled={busy} onClick={() => setVisible(!visible)}>
+          aria-pressed={visible} disabled={busy} data-preserve-keyboard onClick={() => setVisible(!visible)}>
           {visible ? <EyeOff size={20} aria-hidden="true" /> : <Eye size={20} aria-hidden="true" />}
         </button>
       </div>
@@ -209,6 +209,7 @@ export function LoginForm({
   const codigoFallido = useRef("");
   const reenfocarCodigo = useRef(false);
   const googleContinuado = useRef(false);
+  const googleRedirecting = useRef(false);
   const messageId = useId();
 
   function beginRequest(message: string) {
@@ -409,13 +410,36 @@ export function LoginForm({
   }, [busy, variant]);
 
   useEffect(() => {
-    if (retornoGoogle !== "continuar" || googleContinuado.current) return;
+    const resetGoogleRedirect = () => {
+      if (!googleRedirecting.current) return;
+      googleRedirecting.current = false;
+      pending.current = false;
+      setBusy(false);
+      setBusyMessage("");
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted || googleRedirecting.current) resetGoogleRedirect();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") resetGoogleRedirect();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (retornoGoogle !== "continuar" || googleContinuado.current || !online || pending.current) return;
     googleContinuado.current = true;
     void prepararAuthenticator("Preparando Google Authenticator…");
   });
 
   function entrarGoogle() {
     if (busy || done || !online) return;
+    googleRedirecting.current = true;
     setBusy(true);
     setBusyMessage("Abriendo Google…");
     setError("");

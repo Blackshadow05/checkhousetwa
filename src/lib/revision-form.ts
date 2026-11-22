@@ -24,9 +24,9 @@ export function evidencePhotoLimit(cajaFuerte: string): 0 | 1 | typeof MAX_PHOTO
 }
 
 // En reconocimiento las fotos van primero, antes de elegir la caja fuerte.
-// Mientras no haya elección se permite el máximo; al elegir se recorta al límite real.
-export function revisionPhotoLimit(mode: RevisionMode | undefined, cajaFuerte: string): number {
-  if (mode === "reconocimiento" && !cajaFuerte) return MAX_PHOTOS;
+// Mientras no haya elección (o sin fotos todavía) se permite el máximo; al elegir se recorta al límite real.
+export function revisionPhotoLimit(mode: RevisionMode | undefined, cajaFuerte: string, photoCount?: number): number {
+  if (mode === "reconocimiento" && (!cajaFuerte || photoCount === 0)) return MAX_PHOTOS;
   return evidencePhotoLimit(cajaFuerte);
 }
 

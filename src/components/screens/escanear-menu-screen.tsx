@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Camera, Check, Images, LoaderCircle, Replace, ScanText, TriangleAlert, X } from "lucide-react";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useEscanearMenu } from "@/hooks/use-escanear-menu";
 import { fechaTexto } from "@/lib/fechas";
 import styles from "./escanear-menu-screen.module.css";
@@ -29,20 +30,27 @@ export function EscanearMenuScreen({ onBack }: { onBack: () => void }) {
 export function EscanearMenuView({ menu, onBack }: { menu: ReturnType<typeof useEscanearMenu>; onBack: () => void }) {
   const camera = useRef<HTMLInputElement>(null);
   const library = useRef<HTMLInputElement>(null);
+  const [confirmarDescarte, setConfirmarDescarte] = useState(false);
   const reading = menu.fase === "leyendo";
   const saving = menu.fase === "guardando";
   const picked = menu.fase === "leyendo" || menu.fase === "error";
   const reviewing = menu.fase === "revisando" || saving;
+  if (confirmarDescarte && menu.fase !== "revisando") setConfirmarDescarte(false);
   const chosen = new Set(menu.elegidos);
   const existing = new Set(menu.existentes);
   const count = menu.elegidos.length;
   const replaced = menu.resultado?.reemplazados ?? 0;
 
+  const salir = () => {
+    if (menu.fase === "guardado") menu.descartar();
+    onBack();
+  };
+
   return <section className={styles.screen} aria-label="Escanear menú">
-    <button type="button" className={styles.back} disabled={saving} onClick={onBack}><ArrowLeft size={18} aria-hidden />Otros</button>
+    <button type="button" className={styles.back} disabled={saving} onClick={salir}><ArrowLeft size={18} aria-hidden />Otros</button>
     <div className={styles.header}>
       <h1>Escanear menú</h1>
-      {(picked || reviewing) && <button type="button" className={styles.close} aria-label="Descartar y empezar de nuevo" disabled={saving} onClick={menu.descartar}><X size={20} aria-hidden /></button>}
+      {(picked || reviewing) && <button type="button" className={styles.close} aria-label="Descartar y empezar de nuevo" disabled={saving} onClick={() => { if (menu.fase === "revisando") setConfirmarDescarte(true); else menu.descartar(); }}><X size={20} aria-hidden /></button>}
     </div>
     <input name="menu-camara" ref={camera} type="file" accept="image/*" capture="environment" hidden aria-label="Tomar foto del menú" onChange={event => { menu.elegir(event.target.files?.[0]); event.target.value = ""; }} />
     <input name="menu-galeria" ref={library} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden aria-label="Elegir foto del menú" onChange={event => { menu.elegir(event.target.files?.[0]); event.target.value = ""; }} />
@@ -90,9 +98,15 @@ export function EscanearMenuView({ menu, onBack }: { menu: ReturnType<typeof use
         })}
       </ul>
       <div className={styles.bar}>
+        {menu.verificandoExistentes && <p className="pantalla-status" role="status">Comprobando si ya existen menús para estas fechas…</p>}
+        {menu.errorExistentes && <>
+          <p className={styles.error} role="alert"><TriangleAlert size={18} aria-hidden /><span>{menu.errorExistentes}</span></p>
+          {menu.online && <button type="button" className={styles.secondary} disabled={saving} onClick={menu.recomprobarExistentes}>Volver a comprobar fechas</button>}
+        </>}
         {menu.error && <p className={styles.error} role="alert"><TriangleAlert size={18} aria-hidden /><span>{menu.error}</span></p>}
-        <button type="button" className={styles.primary} disabled={saving || !count || !menu.online} onClick={() => void menu.guardar()}>
+        <button type="button" className={styles.primary} disabled={saving || menu.verificandoExistentes || !count || !menu.online} onClick={() => void menu.guardar()}>
           {saving ? <><LoaderCircle size={20} className={styles.spin} aria-hidden />Guardando…</>
+            : menu.verificandoExistentes ? <><LoaderCircle size={20} className={styles.spin} aria-hidden />Comprobando fechas…</>
             : !menu.online ? "Sin conexión"
             : count ? `Guardar ${dayCount(count)}` : "Elige un día"}
         </button>
@@ -104,9 +118,20 @@ export function EscanearMenuView({ menu, onBack }: { menu: ReturnType<typeof use
       <h2>Menú guardado</h2>
       <p>{dayCount(menu.resultado?.guardados ?? 0)}{replaced ? ` · ${replaced} ${replaced === 1 ? "reemplazado" : "reemplazados"}` : ""}</p>
       <div className={styles.actions}>
-        <button type="button" className={styles.primary} onClick={onBack}>Listo</button>
+        <button type="button" className={styles.primary} onClick={salir}>Listo</button>
         <button type="button" className={styles.secondary} onClick={menu.descartar}>Escanear otro</button>
       </div>
     </div>}
+
+    <BottomSheet open={confirmarDescarte} onClose={() => setConfirmarDescarte(false)} title="Descartar escaneo">
+      <div className="admin-confirm">
+        <h3>¿Descartar los {dayCount(menu.dias.length)} detectados?</h3>
+        <p className="pantalla-status">Tendrás que volver a escanear la foto si descartas sin guardar.</p>
+        <div className="auth-actions">
+          <button type="button" className="secondary-button" onClick={() => setConfirmarDescarte(false)}>Seguir revisando</button>
+          <button type="button" className="admin-danger-solid" onClick={() => { setConfirmarDescarte(false); menu.descartar(); }}>Descartar</button>
+        </div>
+      </div>
+    </BottomSheet>
   </section>;
 }

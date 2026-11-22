@@ -193,6 +193,7 @@ function copyText(row: InicioRevisionRow) {
   if (row.puertas_ventanas) lines.push(`Puertas y ventanas: ${row.puertas_ventanas}`);
   if (row.room_move) lines.push(`Movimiento: ${row.room_move}`);
   if (row.notas) lines.push(`Notas: ${row.notas}`);
+  if (row.nota_extra?.trim()) lines.push(`Nota extra: ${row.nota_extra.trim()}`);
   return lines.join("\n");
 }
 
@@ -261,13 +262,26 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
     () => document.documentElement.dataset.detailTransition === "open",
   );
   const loadingMoreRef = useRef(false);
+  const currentRevisionId = selectedRevision?.id ?? "";
+  const editable = selectedRevision ? puedeEditarRevision(usuario, selectedRevision.quien_revisa) : false;
+  const [trackedRevisionId, setTrackedRevisionId] = useState(currentRevisionId);
   const [copyMessage, setCopyMessage] = useState("");
   const [editingField, setEditingField] = useState<RevisionEditField | null>(null);
   const [editingEvidence, setEditingEvidence] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [history, setHistory] = useState<RevisionEditHistoryItem[]>([]);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyState, setHistoryState] = useState<{
+    revisionId: string;
+    rows: RevisionEditHistoryItem[];
+    error: string | null;
+    loadedRevision: string | null;
+    loadedTick: number;
+  }>({
+    revisionId: currentRevisionId,
+    rows: [],
+    error: null,
+    loadedRevision: null,
+    loadedTick: -1,
+  });
   const [historyTick, setHistoryTick] = useState(0);
   const [notesState, setNotesState] = useState<{
     revisionId: string;
@@ -276,14 +290,16 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
     hasMore: boolean;
     loadedCount: number;
     loadedRevision: string | null;
+    loadedTick: number;
     loadingMore: boolean;
   }>({
-    revisionId: "",
+    revisionId: currentRevisionId,
     rows: [],
     error: null,
     hasMore: false,
     loadedCount: 0,
     loadedRevision: null,
+    loadedTick: -1,
     loadingMore: false,
   });
   const [notesTick, setNotesTick] = useState(0);
@@ -292,32 +308,59 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
     text: string;
   } | null>(null);
   const [noteSheetOpen, setNoteSheetOpen] = useState(false);
-  const notes = notesState.rows;
-  const notesError = notesState.error;
-  const notesLoading =
-    online && notesState.loadedRevision !== notesState.revisionId;
 
-  useEffect(() => {
-    backRef.current?.focus();
-  }, [selectedRevision?.id]);
-
-  useEffect(() => {
-    const id = selectedRevision?.id ?? "";
-    setHistory([]);
-    setHistoryError(null);
+  if (trackedRevisionId !== currentRevisionId) {
+    setTrackedRevisionId(currentRevisionId);
+    setHistoryState({
+      revisionId: currentRevisionId,
+      rows: [],
+      error: null,
+      loadedRevision: null,
+      loadedTick: -1,
+    });
+    setHistoryTick(0);
     setNotesState({
-      revisionId: id,
+      revisionId: currentRevisionId,
       rows: [],
       error: null,
       hasMore: false,
       loadedCount: 0,
       loadedRevision: null,
+      loadedTick: -1,
       loadingMore: false,
     });
+    setNotesTick(0);
     setNoteMessage(null);
     setNoteSheetOpen(false);
     setEditing(false);
+    setEditingField(null);
     setEditingEvidence(false);
+  }
+
+  if (editing && !editable) {
+    setEditing(false);
+    setEditingField(null);
+    setEditingEvidence(false);
+  }
+
+  const history = historyState.rows;
+  const historyError = historyState.error;
+  const historyLoading =
+    online &&
+    Boolean(currentRevisionId) &&
+    (historyState.loadedRevision !== currentRevisionId ||
+      historyState.loadedTick !== historyTick);
+
+  const notes = notesState.rows;
+  const notesError = notesState.error;
+  const notesLoading =
+    online &&
+    Boolean(currentRevisionId) &&
+    (notesState.loadedRevision !== notesState.revisionId ||
+      notesState.loadedTick !== notesTick);
+
+  useEffect(() => {
+    backRef.current?.focus();
   }, [selectedRevision?.id]);
 
   useEffect(() => {
@@ -336,7 +379,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
     const id = selectedRevision?.id;
     if (!id || !online) return;
     let live = true;
-    void dedupeRequest(`notes:${id}`, () => fetchRevisionNotes(id))
+    void dedupeRequest(`notes:${id}:${notesTick}`, () => fetchRevisionNotes(id))
       .then((result) => {
         if (!live) return;
         setNotesState((current) => {
@@ -346,6 +389,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
               ...current,
               error: result.error,
               loadedRevision: id,
+              loadedTick: notesTick,
               rows: result.rows.length
                 ? mergeNotaRevision(current.rows, result.rows)
                 : current.rows,
@@ -355,6 +399,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
             ...current,
             error: null,
             loadedRevision: id,
+            loadedTick: notesTick,
             rows: mergeNotaRevision(current.rows, result.rows),
             hasMore: result.hasMore,
             loadedCount: result.rows.length,
@@ -369,6 +414,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
                 ...current,
                 error: "No pudimos conectar para cargar las notas.",
                 loadedRevision: id,
+                loadedTick: notesTick,
               }
             : current,
         );
@@ -380,30 +426,48 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
   useEffect(() => {
     const id = selectedRevision?.id;
-    if (!id) return;
+    if (!id || !online) return;
     let live = true;
-    setHistoryLoading(true);
-    void dedupeRequest(`edits:${id}`, () => fetchRevisionEdits(id))
+    void dedupeRequest(`edits:${id}:${historyTick}`, () => fetchRevisionEdits(id))
       .then((result) => {
         if (!live) return;
-        if (result.error) {
-          setHistoryError(result.error);
-          if (result.rows.length) setHistory(result.rows);
-          return;
-        }
-        setHistoryError(null);
-        setHistory(result.rows);
+        setHistoryState((current) => {
+          if (current.revisionId !== id) return current;
+          if (result.error) {
+            return {
+              ...current,
+              error: result.error,
+              loadedRevision: id,
+              loadedTick: historyTick,
+              rows: result.rows.length ? result.rows : current.rows,
+            };
+          }
+          return {
+            ...current,
+            error: null,
+            loadedRevision: id,
+            loadedTick: historyTick,
+            rows: result.rows,
+          };
+        });
       })
       .catch(() => {
-        if (live) setHistoryError("No pudimos conectar para cargar el historial.");
-      })
-      .finally(() => {
-        if (live) setHistoryLoading(false);
+        if (!live) return;
+        setHistoryState((current) =>
+          current.revisionId === id
+            ? {
+                ...current,
+                error: "No pudimos conectar para cargar el historial.",
+                loadedRevision: id,
+                loadedTick: historyTick,
+              }
+            : current,
+        );
       });
     return () => {
       live = false;
     };
-  }, [historyTick, selectedRevision?.id]);
+  }, [historyTick, online, selectedRevision?.id]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -447,13 +511,13 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
   const faltantes = inventarioPendiente ? null : faltantesRevision(row, casitaInventario);
   const noLleva = faltantes && resumenNoLleva(faltantes.noLleva);
 
-  const editable = puedeEditarRevision(usuario, row.quien_revisa);
-  const onEdit = editing && editable ? setEditingField : null;
+  const activeEditing = editing && editable;
+  const onEdit = activeEditing ? setEditingField : null;
   const photoLimit = evidencePhotoLimit(row.caja_fuerte === "—" ? "" : row.caja_fuerte);
-  const canEditPhotos = editing && editable && (photoLimit > 0 || images.length > 0);
+  const canEditPhotos = activeEditing && (photoLimit > 0 || images.length > 0);
   const actions = (
     <DetailActions
-      editing={editing}
+      editing={activeEditing}
       onToggleEdit={editable ? () => setEditing((value) => !value) : null}
       onCopy={() => void copyRevision()}
     />
@@ -527,7 +591,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
   return (
     <section
-      className={`detail-screen${editing ? " is-editing" : ""}`}
+      className={`detail-screen${activeEditing ? " is-editing" : ""}`}
       data-shared-entry={sharedEntry || undefined}
       role="dialog"
       aria-modal="true"
@@ -562,7 +626,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
             </div>
           )}
 
-          {editing && editable ? (
+          {activeEditing ? (
             <p className="detail-edit-hint" role="status">
               {canEditPhotos
                 ? "Toca el dato que quieras cambiar. También puedes añadir o quitar fotos de evidencia."
@@ -708,6 +772,12 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
             <p className={`detail-notes${row.notas ? "" : " is-empty"}`}>
               {row.notas || "Sin notas"}
             </p>
+            {row.nota_extra?.trim() ? (
+              <div style={{ marginTop: 12, display: "grid", gap: 6 }}>
+                <h3 className="detail-row-label">Nota extra</h3>
+                <p className="detail-notes">{row.nota_extra.trim()}</p>
+              </div>
+            ) : null}
           </section>
 
           <section className="detail-card" aria-label="Historial de ediciones">
@@ -715,12 +785,16 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
               <h2>Historial de ediciones</h2>
               {history.length > 0 && <span className="detail-card-count">{history.length}</span>}
             </div>
-            {historyLoading && history.length === 0 ? (
-              <p className="detail-history-status" role="status">Cargando historial…</p>
-            ) : historyError && history.length === 0 ? (
-              <p className="detail-history-status" role="status">{historyError}</p>
-            ) : history.length === 0 ? (
-              <p className="detail-history-status">Aún no hay ediciones en esta revisión.</p>
+            {history.length === 0 ? (
+              historyError ? null : !online ? (
+                <p className="detail-history-status" role="status">
+                  Sin conexión. El historial se cargará al reconectar.
+                </p>
+              ) : historyLoading ? (
+                <p className="detail-history-status" role="status">Cargando historial…</p>
+              ) : (
+                <p className="detail-history-status">Aún no hay ediciones en esta revisión.</p>
+              )
             ) : (
               <ol className="detail-history">
                 {history.map((item) => (
@@ -747,8 +821,18 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
                 ))}
               </ol>
             )}
-            {historyError && history.length > 0 ? (
+            {historyError ? (
               <p className="detail-history-status" role="status">{historyError}</p>
+            ) : null}
+            {historyError && online ? (
+              <button
+                type="button"
+                className="secondary-button detail-note-retry"
+                disabled={historyLoading}
+                onClick={() => setHistoryTick((tick) => tick + 1)}
+              >
+                Reintentar
+              </button>
             ) : null}
           </section>
 
@@ -848,29 +932,28 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
           {copyMessage}
         </p>
       ) : null}
-      {editingField ? (
-        <RevisionEditSheet
-          key={editingField}
-          revisionId={row.id}
-          field={editingField}
-          onClose={() => setEditingField(null)}
-          onSaved={() => setHistoryTick((tick) => tick + 1)}
-        />
-      ) : null}
-      {editingEvidence ? (
-        <RevisionEvidenceEditSheet
-          revisionId={row.id}
-          onClose={() => setEditingEvidence(false)}
-          onSaved={() => setHistoryTick((tick) => tick + 1)}
-        />
-      ) : null}
-      {noteSheetOpen ? (
-        <RevisionNoteSheet
-          revisionId={row.id}
-          onClose={() => setNoteSheetOpen(false)}
-          onCreated={handleNoteCreated}
-        />
-      ) : null}
+      <RevisionEditSheet
+        open={editingField !== null}
+        revisionId={row.id}
+        field={editingField}
+        onClose={() => setEditingField(null)}
+        onSaved={(result) => {
+          setHistoryTick((tick) => tick + 1);
+          if (result?.openEvidence) setEditingEvidence(true);
+        }}
+      />
+      <RevisionEvidenceEditSheet
+        open={editingEvidence}
+        revisionId={row.id}
+        onClose={() => setEditingEvidence(false)}
+        onSaved={() => setHistoryTick((tick) => tick + 1)}
+      />
+      <RevisionNoteSheet
+        open={noteSheetOpen}
+        revisionId={row.id}
+        onClose={() => setNoteSheetOpen(false)}
+        onCreated={handleNoteCreated}
+      />
     </section>
   );
 }

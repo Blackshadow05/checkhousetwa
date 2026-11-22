@@ -16,6 +16,7 @@ import styles from "./pantalla-form.module.css";
 import { prepareRevisionPhoto } from "@/lib/revision-photos";
 import { uploadPantalla } from "@/lib/pantallas-upload";
 import { useOnline } from "@/lib/use-online";
+import type { UsuarioShell } from "@/types/database";
 
 type Photo = { id: string; blob: Blob; preview: string; ubicacion: string; estado: PantallaEstado | ""; puntos: number | null; detection?: PantallaDetection; analysisError?: string; aiNotice?: string; url?: string };
 type ClassificationFlow = {
@@ -73,10 +74,10 @@ function closePhotoViewer(viewer: PhotoSwipe | null) {
   else viewer.on("openingAnimationEnd", () => viewer.close());
 }
 
-export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) => void; onClose: () => void }) {
+export function PantallaForm({ active = true, session, onSaved, onClose }: { active?: boolean; session?: Pick<UsuarioShell, "id" | "nombre"> | null; onSaved: (message: string) => void; onClose: () => void }) {
   const online = useOnline();
-  const [user, setUser] = useState<{ id: number; nombre: string } | null>(null);
-  const [checking, setChecking] = useState(true);
+  const [user, setUser] = useState<{ id: number; nombre: string } | null>(() => session ? { id: session.id, nombre: session.nombre } : null);
+  const [checking, setChecking] = useState(() => !session && online);
   const [tipo, setTipo] = useState<"reporte" | "movimiento">("reporte");
   const [casita, setCasita] = useState(""); const [notas, setNotas] = useState("");
   const [movementNotes, setMovementNotes] = useState("");
@@ -87,9 +88,13 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
   const [busy, setBusy] = useState(false); const saving = useRef(false);
   const [error, setError] = useState(""); const [progress, setProgress] = useState("");
   const [classification, setClassification] = useState<ClassificationFlow | null>(null);
+  const [photoToDelete, setPhotoToDelete] = useState<Photo | null>(null);
   const draftPreview = useRef<string | null>(null);
   const analysisController = useRef<AbortController | null>(null);
   const preparing = useRef(false);
+  const mountedRef = useRef(false);
+  const activeRef = useRef(active);
+  useEffect(() => { activeRef.current = active; }, [active]);
   const viewerTriggerRef = useRef<HTMLButtonElement>(null);
   const viewerRef = useRef<PhotoSwipe | null>(null);
   const openingViewerRef = useRef(false);
@@ -97,8 +102,33 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const replacePhotoInputRef = useRef<HTMLInputElement>(null);
   const replacingPhotoId = useRef<string | null>(null);
-  useEffect(() => () => closePhotoViewer(viewerRef.current), []);
-  useEffect(() => { let live = true; void currentUsuario().then(value => { if (live) setUser(value); }).catch(() => { if (live) setError("No se pudo comprobar la sesión."); }).finally(() => { if (live) setChecking(false); }); return () => { live = false; }; }, []);
+  if (!active && photoToDelete) setPhotoToDelete(null);
+  if (!online && checking) setChecking(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      closePhotoViewer(viewerRef.current);
+    };
+  }, []);
+  useEffect(() => {
+    if (!active) {
+      closePhotoViewer(viewerRef.current);
+      analysisController.current?.abort();
+    }
+  }, [active]);
+  useEffect(() => {
+    if (session || user || !online) return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      setChecking(true);
+      void currentUsuario()
+        .then(value => { if (live && value) { setUser(value); setError(""); } })
+        .catch(() => { if (live) setError("No se pudo comprobar la sesión."); })
+        .finally(() => { if (live) setChecking(false); });
+    }, 0);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [session, user, online]);
   useEffect(() => () => { for (const photo of photosRef.current) URL.revokeObjectURL(photo.preview); }, []);
   useEffect(() => () => {
     analysisController.current?.abort();
@@ -168,7 +198,8 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
       if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "No se pudo preparar la foto.");
     } finally {
       preparing.current = false;
-      if (!controller.signal.aborted) { setBusy(false); setProgress(""); }
+      if (analysisController.current === controller) analysisController.current = null;
+      if (mountedRef.current) { setBusy(false); setProgress(""); }
     }
   }
   function replacePhoto(file?: File) {
@@ -200,7 +231,7 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
   function confirmClassification() {
     if (!classification?.estado || !classification.ubicacion) return;
     const { photo, estado, ubicacion, puntos, replaceId, isDraft } = classification;
-    const count = puntos === "" ? null : Number(puntos);
+    const count = estado === "en buen estado" || estado === "no hay pantalla" || puntos === "" ? null : Number(puntos);
     if (count !== null && (!Number.isSafeInteger(count) || count < 0 || count > 999)) return;
     const updated = { ...photo, estado, ubicacion, puntos: count };
     const previousId = isDraft ? replaceId : photo.id;
@@ -225,6 +256,7 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
           alt: `Foto ${photoIndex + 1} de ${photo.ubicacion}`,
         };
       }));
+      if (!activeRef.current || !mountedRef.current) return;
       const viewer = new PhotoSwipe({
         dataSource,
         index,
@@ -324,12 +356,12 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
             <div className="pantalla-photo-copy">
               <strong>{photo.ubicacion}</strong>
               <span>{photo.estado ? ESTADO_PANTALLA_LABELS[photo.estado] : "Sin clasificar"}</span>
-              {photo.puntos !== null && photo.estado !== "no hay pantalla" && <span>{photo.puntos} {photo.puntos === 1 ? "punto" : "puntos"}</span>}
+              {photo.puntos !== null && photo.estado !== "no hay pantalla" && photo.estado !== "en buen estado" && <span>{photo.puntos} {photo.puntos === 1 ? "punto" : "puntos"}</span>}
             </div>
             <div className="pantalla-photo-item-actions" aria-label={`Acciones de la foto ${index + 1}`}>
               <button type="button" title="Corregir información" aria-label={`Corregir estado o habitación de la foto ${index + 1}`} onClick={() => editClassification(photo)}><Pencil size={17} aria-hidden /></button>
               <button type="button" title="Cambiar foto" aria-label={`Cambiar foto ${index + 1}`} onClick={() => { replacingPhotoId.current = photo.id; replacePhotoInputRef.current?.click(); }}><Camera size={18} aria-hidden /></button>
-              <button className="pantalla-remove-photo" type="button" title="Quitar foto" aria-label={`Quitar foto ${index + 1}`} onClick={() => removePhoto(photo)}><Trash2 size={18} aria-hidden /></button>
+              <button className="pantalla-remove-photo" type="button" title="Quitar foto" aria-label={`Quitar foto ${index + 1}`} onClick={() => setPhotoToDelete(photo)}><Trash2 size={18} aria-hidden /></button>
             </div>
           </article>)}</div>}
           <input name="foto-camara" ref={addPhotoInputRef} aria-label="Tomar foto de pantalla" type="file" accept={PHOTO_ACCEPT} capture="environment" hidden onChange={e => { void readPhoto(e.target.files?.[0]); e.target.value = ""; }} />
@@ -370,12 +402,20 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
           {classificationPhoto.aiNotice ? <p className="pantalla-notice" role="status">{classificationPhoto.aiNotice}</p> : null}
           <label>Puntos blancos<input name="puntos-blancos" aria-label="Puntos blancos" type="number" inputMode="numeric" min={0} max={999} step={1} value={classification.puntos} placeholder="Sin contar" onChange={e => {
             const value = e.target.value;
-            setClassification(current => current ? { ...current, puntos: value, estado: /^\d{1,3}$/.test(value) ? estadoPorPuntos(Number(value)) : "" } : current);
+            setClassification(current => current ? {
+              ...current,
+              puntos: value,
+              estado: /^\d{1,3}$/.test(value) ? estadoPorPuntos(Number(value)) : current.estado,
+            } : current);
           }} /></label>
           {!validCount && <p role="alert">Escribe un número entero entre 0 y 999.</p>}
           <p className="pantalla-status">0: buen estado · 1–8: moderado · 9 o más: grave. Puedes cambiar el estado sugerido.</p>
           <div className={`pantalla-modal-options ${styles.statusOptions}`} role="group" aria-label="Estado de la pantalla">
-            {ESTADOS_PANTALLA.map(estado => <button className={classification.estado === estado ? "is-selected" : ""} aria-pressed={classification.estado === estado} type="button" key={estado} onClick={() => setClassification(current => current ? { ...current, estado } : current)}>{ESTADO_PANTALLA_LABELS[estado]}</button>)}
+            {ESTADOS_PANTALLA.map(estado => <button className={classification.estado === estado ? "is-selected" : ""} aria-pressed={classification.estado === estado} type="button" key={estado} onClick={() => setClassification(current => current ? {
+              ...current,
+              estado,
+              puntos: estado === "en buen estado" || estado === "no hay pantalla" ? "" : current.puntos,
+            } : current)}>{ESTADO_PANTALLA_LABELS[estado]}</button>)}
           </div>
           <button className="pantalla-modal-back" type="button" onClick={() => setClassification(current => current ? { ...current, step: "habitacion" } : current)}><ChevronLeft size={18} aria-hidden /> Cambiar habitación</button>
           <button className="pantalla-primary" type="button" disabled={!classification.estado || !validCount} onClick={confirmClassification}>Usar resultado</button>
@@ -388,6 +428,20 @@ export function PantallaForm({ onSaved, onClose }: { onSaved: (message: string) 
             })}
           </div>
         </>}
+      </div>}
+    </BottomSheet>
+    <BottomSheet
+      open={Boolean(photoToDelete)}
+      onClose={() => setPhotoToDelete(null)}
+      title="Quitar foto"
+    >
+      {photoToDelete && <div className="admin-confirm">
+        <h3>¿Quitar la foto de {photoToDelete.ubicacion}?</h3>
+        <p className="pantalla-status">Se eliminará del reporte actual y se actualizarán las notas automáticas.</p>
+        <div className="auth-actions">
+          <button type="button" className="secondary-button" onClick={() => setPhotoToDelete(null)}>Cancelar</button>
+          <button type="button" className="admin-danger-solid" onClick={() => { removePhoto(photoToDelete); setPhotoToDelete(null); }}>Quitar foto</button>
+        </div>
       </div>}
     </BottomSheet>
   </div>;

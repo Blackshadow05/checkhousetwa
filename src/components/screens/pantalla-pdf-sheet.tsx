@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { Download, FileCheck2, FileDown, Share2 } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { pantallaTime, type PantallaReport } from "@/lib/pantallas";
+import { useOnline } from "@/lib/use-online";
 import styles from "./pantalla-pdf-sheet.module.css";
 
 export function PantallaPdfSheet({ reports, onClose }: {
   reports: PantallaReport[];
   onClose: () => void;
 }) {
+  const online = useOnline();
   const [selected, setSelected] = useState(() => new Set(reports.map(report => report.id)));
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,7 +46,7 @@ export function PantallaPdfSheet({ reports, onClose }: {
   }
 
   async function generate() {
-    if (controller.current || !selectedReports.length) return;
+    if (controller.current || !selectedReports.length || !online) return;
     const task = new AbortController();
     controller.current = task;
     setBusy(true);
@@ -146,7 +148,8 @@ export function PantallaPdfSheet({ reports, onClose }: {
           </label>)}
         </fieldset>
         <div className={styles.actions}>
-          <button type="button" className={styles.primary} disabled={busy || !selectedReports.length} onClick={() => void generate()}><FileDown size={19} aria-hidden="true" />{busy ? "Creando PDF…" : `Crear PDF (${selectedReports.length})`}</button>
+          {!online && <p role="status" className={styles.status}>Sin conexión. Conéctate para descargar las fotos y crear el PDF.</p>}
+          <button type="button" className={styles.primary} disabled={busy || !online || !selectedReports.length} onClick={() => void generate()}><FileDown size={19} aria-hidden="true" />{busy ? "Creando PDF…" : !online ? "Sin conexión" : `Crear PDF (${selectedReports.length})`}</button>
           {busy && <button type="button" className={styles.secondary} onClick={close}>Cancelar</button>}
         </div>
       </>}

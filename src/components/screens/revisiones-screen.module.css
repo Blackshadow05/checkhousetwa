@@ -344,7 +344,7 @@
   .searchBar::after,
   .dayHeading::before,
   .dayHeading::after {
-    inset-inline: -16px;
+    inset: 0 calc(-1 * max(16px, env(safe-area-inset-right))) 0 calc(-1 * max(16px, env(safe-area-inset-left)));
   }
 }
 
@@ -353,7 +353,7 @@
   .searchBar::after,
   .dayHeading::before,
   .dayHeading::after {
-    inset-inline: -32px;
+    inset: 0 calc(-1 * max(32px, env(safe-area-inset-right))) 0 calc(-1 * max(32px, env(safe-area-inset-left)));
   }
 }
 

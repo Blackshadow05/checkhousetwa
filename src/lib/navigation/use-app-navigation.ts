@@ -21,11 +21,15 @@ export function useAppNavigation(initialScreen: ScreenId) {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  const navigate = useCallback((next: ScreenId) => {
+  const navigate = useCallback((next: ScreenId, options?: { replace?: boolean }) => {
     const path = pathFromScreen(next);
 
     if (window.location.pathname !== path || window.location.search || window.location.hash) {
-      window.history.pushState({ screen: next }, "", path);
+      if (options?.replace) {
+        window.history.replaceState({ screen: next }, "", path);
+      } else {
+        window.history.pushState({ screen: next }, "", path);
+      }
     }
 
     setScreen(next);

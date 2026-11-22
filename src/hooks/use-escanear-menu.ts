@@ -14,11 +14,23 @@ type Estado = {
   dias: MenuEscaneado[];
   elegidos: string[];
   existentes: string[];
+  verificandoExistentes: boolean;
+  errorExistentes: string;
   error: string;
   resultado: { guardados: number; reemplazados: number } | null;
 };
 
-const INICIAL: Estado = { fase: "vacio", fotoUrl: null, dias: [], elegidos: [], existentes: [], error: "", resultado: null };
+const INICIAL: Estado = {
+  fase: "vacio",
+  fotoUrl: null,
+  dias: [],
+  elegidos: [],
+  existentes: [],
+  verificandoExistentes: false,
+  errorExistentes: "",
+  error: "",
+  resultado: null,
+};
 const LECTURA_MAX_MS = 60_000;
 
 export function useEscanearMenu() {
@@ -31,6 +43,36 @@ export function useEscanearMenu() {
   const controlador = useRef<AbortController | null>(null);
   const guardandoAhora = useRef(false);
   const reanudarAlConectar = useRef(false);
+
+  const comprobarExistentes = useCallback(async (fechas: string[], id: number) => {
+    if (!fechas.length) return;
+    setEstado((previo) => ({ ...previo, verificandoExistentes: true, errorExistentes: "" }));
+    try {
+      const result = await fetchFechasConMenu(fechas);
+      if (ticket.current !== id) return;
+      if (result.error) {
+        setEstado((previo) => ({
+          ...previo,
+          verificandoExistentes: false,
+          errorExistentes: "No pudimos comprobar si ya hay menús guardados para estas fechas. Si guardas, podrías sobrescribir menús existentes.",
+        }));
+        return;
+      }
+      setEstado((previo) => ({
+        ...previo,
+        existentes: result.fechas,
+        verificandoExistentes: false,
+        errorExistentes: "",
+      }));
+    } catch {
+      if (ticket.current !== id) return;
+      setEstado((previo) => ({
+        ...previo,
+        verificandoExistentes: false,
+        errorExistentes: "No pudimos comprobar si ya hay menús guardados para estas fechas. Si guardas, podrías sobrescribir menús existentes.",
+      }));
+    }
+  }, []);
 
   const leer = useCallback(async (id: number) => {
     const fallo = (texto: string, sinConexion = false) => {
@@ -79,12 +121,18 @@ export function useEscanearMenu() {
         fallo("No encontramos un menú en la imagen. Prueba con otra foto.");
         return;
       }
-      setEstado((previo) => ({ ...previo, fase: "revisando", dias: menus, elegidos: menus.map((menu) => menu.fecha), existentes: [], error: "" }));
-      void fetchFechasConMenu(menus.map((menu) => menu.fecha))
-        .then((result) => {
-          if (ticket.current === id && !result.error) setEstado((previo) => ({ ...previo, existentes: result.fechas }));
-        })
-        .catch(() => undefined);
+      const fechas = menus.map((menu) => menu.fecha);
+      setEstado((previo) => ({
+        ...previo,
+        fase: "revisando",
+        dias: menus,
+        elegidos: fechas,
+        existentes: [],
+        verificandoExistentes: true,
+        errorExistentes: "",
+        error: "",
+      }));
+      void comprobarExistentes(fechas, id);
     } catch {
       if (controller.signal.aborted && !agotado) return;
       if (agotado) fallo("La lectura tardó demasiado. Inténtalo de nuevo.");
@@ -93,7 +141,7 @@ export function useEscanearMenu() {
     } finally {
       window.clearTimeout(timer);
     }
-  }, []);
+  }, [comprobarExistentes]);
 
   const elegir = useCallback((file: File | null | undefined) => {
     if (!file) return;
@@ -138,7 +186,7 @@ export function useEscanearMenu() {
   }, []);
 
   const guardar = useCallback(async () => {
-    if (estado.fase !== "revisando" || guardandoAhora.current) return;
+    if (estado.fase !== "revisando" || estado.verificandoExistentes || guardandoAhora.current) return;
     const dias = estado.dias.filter((dia) => estado.elegidos.includes(dia.fecha));
     if (!dias.length) return;
     if (!navigator.onLine) {
@@ -165,7 +213,12 @@ export function useEscanearMenu() {
     } finally {
       guardandoAhora.current = false;
     }
-  }, [estado.fase, estado.dias, estado.elegidos]);
+  }, [estado.fase, estado.verificandoExistentes, estado.dias, estado.elegidos]);
+
+  const recomprobarExistentes = useCallback(() => {
+    if (estado.fase !== "revisando" || estado.verificandoExistentes || !navigator.onLine) return;
+    void comprobarExistentes(estado.dias.map((dia) => dia.fecha), ticket.current);
+  }, [estado.fase, estado.verificandoExistentes, estado.dias, comprobarExistentes]);
 
   useEffect(() => {
     const reanudar = () => {
@@ -181,5 +234,5 @@ export function useEscanearMenu() {
     if (urlFoto.current) URL.revokeObjectURL(urlFoto.current);
   }, []);
 
-  return { ...estado, online, elegir, reintentar, descartar, alternar, guardar };
+  return { ...estado, online, elegir, reintentar, descartar, alternar, guardar, recomprobarExistentes };
 }

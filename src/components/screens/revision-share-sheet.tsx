@@ -39,7 +39,8 @@ function EvidenceDownload({ file, index, disabled }: { file: File; index: number
   ><Download size={16} aria-hidden="true" />Guardar evidencia {index + 1}</a>;
 }
 
-export function RevisionShareSheet({ casita, files, status, onClose }: {
+export function RevisionShareSheet({ open = true, casita, files, status, onClose }: {
+  open?: boolean;
   casita: string;
   files: File[];
   status: "saving" | "waiting" | "error" | "saved";
@@ -69,7 +70,7 @@ export function RevisionShareSheet({ casita, files, status, onClose }: {
   };
 
   return (
-    <BottomSheet open onClose={onClose} title="Compartir evidencias">
+    <BottomSheet open={open} onClose={onClose} title="Compartir evidencias">
       <div className="revision-share-content">
         <div className="revision-share-saved" data-status={status}>
           <span className="revision-share-success-icon">

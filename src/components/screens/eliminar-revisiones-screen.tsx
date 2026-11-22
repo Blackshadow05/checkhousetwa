@@ -41,6 +41,13 @@ export function EliminarRevisionesScreen({ visible, onBack }: { visible: boolean
     const term = search.trim().toLocaleLowerCase("es");
     return rows.filter(row => !term || `${row.casita} ${row.quien_revisa} ${row.id} ${row.caja_fuerte || ""}`.toLocaleLowerCase("es").includes(term));
   }, [rows, search]);
+  const visibleIds = useMemo(() => new Set(filtered.map(row => row.id)), [filtered]);
+  const hiddenSelectedCount = useMemo(
+    () => (confirmation ? confirmation.ids : selected).filter(id => !visibleIds.has(id)).length,
+    [confirmation, selected, visibleIds],
+  );
+  const loadedRef = useRef(false);
+  const logsLoadedRef = useRef(false);
 
   const rejectAccess = useCallback(() => {
     setDenied(true); setRows([]); setLogs([]); setSelected([]); setBatchIds([]); setConfirmation(null); setCode("");
@@ -53,13 +60,13 @@ export function EliminarRevisionesScreen({ visible, onBack }: { visible: boolean
       if (result.denied) { rejectAccess(); setError(result.error || "Acceso restringido."); return; }
       if (result.error) { setError(result.error); return; }
       setRows(previous => mode === "more" ? [...previous, ...result.rows.filter(row => !previous.some(item => item.id === row.id))] : result.rows);
-      setNext(result.nextCursor); setLoaded(true);
+      setNext(result.nextCursor); setLoaded(true); loadedRef.current = true;
       if (mode !== "more") {
         setSelected(mode === "batch" ? result.rows.map(row => row.id) : []);
         setBatchIds(mode === "batch" ? result.rows.map(row => row.id) : []);
         if (mode === "batch") { setSearch(""); setNotice(`Seleccionadas las ${result.rows.length} revisiones más recientes. Puedes desmarcar las que quieras conservar.`); }
       }
-    } catch { setError("No se pudo actualizar la lista. Conservamos lo ya cargado."); }
+    } catch { setError(loadedRef.current ? "No se pudo actualizar la lista. Se muestran los datos cargados en esta sesión." : "No se pudo cargar la lista. Inténtalo de nuevo."); }
     finally { requestBusy.current = false; setLoading(false); }
   }, [rejectAccess]);
   const loadLogs = useCallback(async (cursor: DeleteHistoryCursor | null = null) => {
@@ -70,8 +77,8 @@ export function EliminarRevisionesScreen({ visible, onBack }: { visible: boolean
       if (result.denied) { rejectAccess(); setError(result.error || "Acceso restringido."); return; }
       if (result.error) { setError(result.error); return; }
       setLogs(previous => cursor ? [...previous, ...result.rows.filter(row => !previous.some(item => item.id === row.id))] : result.rows);
-      setNextLog(result.nextCursor); setLogsLoaded(true);
-    } catch { setError("No se pudo actualizar el historial. Conservamos lo ya cargado."); }
+      setNextLog(result.nextCursor); setLogsLoaded(true); logsLoadedRef.current = true;
+    } catch { setError(logsLoadedRef.current ? "No se pudo actualizar el historial. Se muestran los datos cargados en esta sesión." : "No se pudo cargar el historial. Inténtalo de nuevo."); }
     finally { requestBusy.current = false; setLoading(false); }
   }, [rejectAccess]);
 
@@ -112,24 +119,29 @@ export function EliminarRevisionesScreen({ visible, onBack }: { visible: boolean
   };
 
   const blocked = loading || deleting || !online || denied;
+  const hasLoadedTabData = tab === "revisiones" ? loaded && rows.length > 0 : logsLoaded && logs.length > 0;
   return <section className={styles.screen} aria-label="Eliminar revisiones">
     <button type="button" className={styles.back} disabled={deleting} onClick={onBack}><ArrowLeft size={18} aria-hidden />Otros</button>
     <div className={styles.header}><div><h1>Eliminar revisiones</h1><p className={styles.muted}><ShieldCheck size={14} aria-hidden />Solo SuperAdmin</p></div>
       <button type="button" className={styles.icon} aria-label={tab === "revisiones" ? "Actualizar revisiones y limpiar selección" : "Actualizar historial"} disabled={blocked} onClick={() => tab === "revisiones" ? void loadRows("refresh") : void loadLogs()}><RefreshCw size={20} aria-hidden /></button>
     </div>
     <div className={styles.tabs} aria-label="Vista de eliminaciones"><button type="button" disabled={loading || deleting} aria-pressed={tab === "revisiones"} onClick={() => { setTab("revisiones"); setError(""); }}>Revisiones</button><button type="button" disabled={loading || deleting} aria-pressed={tab === "historial"} onClick={() => { setTab("historial"); setError(""); }}><History size={17} aria-hidden />Historial</button></div>
-    {!online && <p className={styles.notice} role="status">Sin conexión. Conservamos los datos de esta pantalla; conéctate para actualizar o eliminar.</p>}
+    {!online && <p className={styles.notice} role="status">{hasLoadedTabData ? "Sin conexión. Se muestran los datos cargados en esta sesión; conéctate para actualizar o eliminar." : "Sin conexión. Esta pantalla requiere conexión para cargar y eliminar revisiones."}</p>}
     {error && <p className={styles.notice} role="alert">{error}</p>}
     {notice && <p className={styles.muted} role="status">{notice}</p>}
     {!denied && tab === "revisiones" && <>
       <p className={styles.muted}>Selecciona registros individuales o las 200 revisiones más recientes por fecha. Máximo 200 por operación.</p>
-      <div className={styles.actions}><button type="button" className={styles.batch} aria-pressed={batchSelected} disabled={loading || deleting || denied || (!online && !batchSelected)} onClick={() => {
-        if (batchSelected) { setSelected(previous => previous.filter(id => !batchIds.includes(id))); setBatchIds([]); setNotice(""); }
-        else void loadRows("batch");
-      }}>{batchSelected ? "Deseleccionar últimos 200" : "Seleccionar últimos 200"}</button></div>
+      <div className={styles.actions}>
+        <button type="button" className={styles.batch} aria-pressed={batchSelected} disabled={loading || deleting || denied || (!online && !batchSelected)} onClick={() => {
+          if (batchSelected) { setSelected(previous => previous.filter(id => !batchIds.includes(id))); setBatchIds([]); setNotice(""); }
+          else void loadRows("batch");
+        }}>{batchSelected ? "Deseleccionar últimos 200" : "Seleccionar últimos 200"}</button>
+        {selected.length > 0 && <button type="button" className={styles.batch} disabled={deleting || denied} onClick={() => { setSelected([]); setBatchIds([]); setNotice(""); }}>Deseleccionar todo</button>}
+      </div>
       <label className={styles.search}>Filtrar registros cargados<input name="buscar-revision" type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Casita, usuario, estado o ID" /></label>
       <div className={styles.selection}><span role="status">{selected.length} {selected.length === 1 ? "seleccionada" : "seleccionadas"}</span><button type="button" className={styles.danger} disabled={blocked || !selected.length} onClick={() => { setConfirmation({ ids: [...selected], stage: "warning" }); setCode(""); setCodeError(""); }}><Trash2 size={17} aria-hidden />Eliminar</button></div>
       {loading && !loaded && <div className={styles.skeleton} aria-label="Cargando revisiones" aria-busy="true" />}
+      {!loading && !loaded && <div className={styles.empty}><h2>{!online ? "Sin conexión" : "No se pudieron cargar las revisiones"}</h2><p>{!online ? "Conéctate para consultar y seleccionar revisiones." : "Pulsa actualizar para intentarlo de nuevo."}</p></div>}
       {loaded && !filtered.length && <div className={styles.empty}><h2>{rows.length ? "No hay coincidencias" : "No hay revisiones"}</h2><p>{rows.length ? "Prueba otro filtro. La selección se conserva." : "Las nuevas revisiones aparecerán aquí."}</p></div>}
       <ul className={styles.list}>{filtered.map(row => <li key={row.id}><label className={`${styles.card} ${selectedSet.has(row.id) ? styles.checked : ""}`}>
         <input name="revisiones-seleccionadas" type="checkbox" checked={selectedSet.has(row.id)} disabled={deleting || denied || !online || (!selectedSet.has(row.id) && selected.length >= DELETE_BATCH_SIZE)} onChange={e => { setNotice(""); setSelected(previous => e.target.checked ? previous.includes(row.id) || previous.length >= DELETE_BATCH_SIZE ? previous : [...previous, row.id] : previous.filter(id => id !== row.id)); }} aria-label={`Seleccionar casita ${row.casita}, ${deletionRevisionDate(row.created_at)}, ${row.quien_revisa}, registro ${row.id}`} />
@@ -140,6 +152,7 @@ export function EliminarRevisionesScreen({ visible, onBack }: { visible: boolean
     {!denied && tab === "historial" && <>
       <p className={styles.muted}>Fecha y hora de Costa Rica. Cada operación muestra quién eliminó, su IP y la cantidad de revisiones.</p>
       {loading && !logsLoaded && <div className={styles.skeleton} aria-label="Cargando historial" aria-busy="true" />}
+      {!loading && !logsLoaded && <div className={styles.empty}><History size={28} aria-hidden /><h2>{!online ? "Sin conexión" : "No se pudo cargar el historial"}</h2><p>{!online ? "Conéctate para consultar el historial de eliminaciones." : "Pulsa actualizar para intentarlo de nuevo."}</p></div>}
       {logsLoaded && !logs.length && <div className={styles.empty}><History size={28} aria-hidden /><h2>Aún no hay eliminaciones</h2><p>Las operaciones confirmadas aparecerán aquí.</p></div>}
       <ul className={styles.list}>{logs.map(log => <li key={log.id} className={styles.log}><div><strong>{log.usuario}</strong><span className={styles.count}>{log.cantidad} {log.cantidad === 1 ? "revisión" : "revisiones"}</span></div><time dateTime={log.fecha}>{deletionHistoryDate(log.fecha)}</time><p>IP: {log.ip || "No disponible"}</p></li>)}</ul>
       {nextLog && <button type="button" className={styles.more} disabled={blocked} onClick={() => void loadLogs(nextLog)}>Ver eliminaciones anteriores</button>}
@@ -147,10 +160,12 @@ export function EliminarRevisionesScreen({ visible, onBack }: { visible: boolean
     <BottomSheet open={visible && !!confirmation} title={confirmation?.stage === "code" ? "Verifica tu identidad" : "Confirmar eliminación"} onClose={close}>
       {confirmation?.stage === "warning" ? <div className={styles.confirm}>
         <p role="alert">Vas a eliminar permanentemente {confirmation.ids.length} {confirmation.ids.length === 1 ? "revisión" : "revisiones"} y sus notas asociadas. Esta acción no se puede deshacer.</p>
+        {hiddenSelectedCount > 0 && <p className={styles.notice} role="status">Incluye {hiddenSelectedCount} {hiddenSelectedCount === 1 ? "revisión seleccionada" : "revisiones seleccionadas"} que no {hiddenSelectedCount === 1 ? "aparece" : "aparecen"} en el filtro actual.</p>}
         <p>Si continúas, pediremos un código nuevo de tu Authenticator.</p>
         <button type="button" className={styles.danger} disabled={!online} onClick={() => setConfirmation({ ...confirmation, stage: "code" })}>Continuar</button><button type="button" onClick={close}>Cancelar</button>
       </div> : <form className={styles.confirm} onSubmit={e => { e.preventDefault(); void submit(); }}>
         <p>Confirma la eliminación de {confirmation?.ids.length} {confirmation?.ids.length === 1 ? "revisión" : "revisiones"} con el código de tu cuenta.</p>
+        {hiddenSelectedCount > 0 && <p className={styles.notice} role="status">Incluye {hiddenSelectedCount} {hiddenSelectedCount === 1 ? "revisión seleccionada" : "revisiones seleccionadas"} fuera del filtro actual.</p>}
         <label>Código de Authenticator<input name="codigo" ref={codeRef} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} disabled={deleting} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} aria-describedby={codeError ? "delete-code-error" : undefined} aria-invalid={!!codeError} required /></label>
         {codeError && <p id="delete-code-error" role="alert">{codeError}</p>}
         {!online && <p role="status">Conéctate para verificar el código y eliminar.</p>}

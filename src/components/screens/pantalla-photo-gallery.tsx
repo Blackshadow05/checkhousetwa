@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { Maximize2 } from "lucide-react";
 import PhotoSwipe from "photoswipe";
 import "photoswipe/style.css";
-import type { PantallaFoto } from "@/lib/pantallas";
+import { ESTADO_PANTALLA_LABELS, type PantallaEstado, type PantallaFoto } from "@/lib/pantallas";
 import styles from "./pantalla-photo-gallery.module.css";
 
 const DOWNLOAD_ICON = '<svg class="pswp__icn pswp__icn--custom" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5v15m-6-6 6 6 6-6M7 22v5h18v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -64,7 +64,27 @@ export function PantallaPhotoGallery({ photos, casita, reportId, active }: {
     });
     viewerRef.current = viewer;
     let downloadController: AbortController | null = null;
+    let prefetchController: AbortController | null = null;
     let status: HTMLElement | null = null;
+    const blobCache = new Map<string, File>();
+
+    const fileForPhoto = async (photo: PantallaFoto, photoIndex: number, signal: AbortSignal) => {
+      const cached = blobCache.get(photo.url);
+      if (cached) return cached;
+      const response = await fetch(photo.url, { signal });
+      if (!response.ok) throw new Error("download");
+      const blob = await response.blob();
+      const extension = ({ "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/avif": "avif", "image/heic": "heic", "image/heif": "heif" } as Record<string, string>)[blob.type] || "jpg";
+      const file = new File([blob], `casita-${casita}-pantalla-${reportId}-${photoIndex + 1}.${extension}`, { type: blob.type || "image/jpeg" });
+      blobCache.set(photo.url, file);
+      return file;
+    };
+
+    const canShareFile = (file: File) =>
+      typeof navigator !== "undefined"
+      && typeof navigator.share === "function"
+      && typeof navigator.canShare === "function"
+      && navigator.canShare({ files: [file] });
 
     viewer.on("loadComplete", ({ content }) => {
       const image = content.element;
@@ -85,8 +105,18 @@ export function PantallaPhotoGallery({ photos, casita, reportId, active }: {
           status.setAttribute("role", "status");
           element.append(caption, status);
           const update = () => {
-            const photo = photos[viewer.currIndex];
-            caption.textContent = `Casita ${casita} · ${photo.ubicacion} · ${photo.estado}`;
+            const photoIndex = viewer.currIndex;
+            const photo = photos[photoIndex];
+            if (!photo) return;
+            const estadoTexto = ESTADO_PANTALLA_LABELS[photo.estado as PantallaEstado] || photo.estado;
+            caption.textContent = `Casita ${casita} · ${photo.ubicacion} · ${estadoTexto}`;
+            if (status) status.textContent = "";
+            prefetchController?.abort();
+            if (!blobCache.has(photo.url) && navigator.onLine && typeof navigator.share === "function") {
+              const controller = new AbortController();
+              prefetchController = controller;
+              void fileForPhoto(photo, photoIndex, controller.signal).catch(() => undefined);
+            }
           };
           viewer.on("change", update);
           update();
@@ -96,33 +126,48 @@ export function PantallaPhotoGallery({ photos, casita, reportId, active }: {
         name: "download-photo",
         order: 9,
         isButton: true,
-        title: "Descargar foto",
+        title: "Guardar o descargar foto",
         html: DOWNLOAD_ICON,
         onClick: async (_event, element) => {
           if (downloadController) return;
           const photoIndex = viewer.currIndex;
           const photo = photos[photoIndex];
+          if (!photo) return;
+          const cachedFile = blobCache.get(photo.url);
           const controller = new AbortController();
           downloadController = controller;
           const timeout = window.setTimeout(() => controller.abort(), 30000);
           element.setAttribute("disabled", "");
-          if (status) status.textContent = "Preparando descarga…";
+          if (status) status.textContent = cachedFile ? "Abriendo opciones…" : "Preparando foto…";
           try {
-            const response = await fetch(photo.url, { signal: controller.signal });
-            if (!response.ok) throw new Error("download");
-            const blob = await response.blob();
-            const extension = ({ "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/avif": "avif", "image/heic": "heic", "image/heif": "heif" } as Record<string, string>)[blob.type] || "jpg";
-            const url = URL.createObjectURL(blob);
+            const file = cachedFile ?? await fileForPhoto(photo, photoIndex, controller.signal);
+            if (canShareFile(file)) {
+              try {
+                await navigator.share({ files: [file] });
+                if (status && viewer.currIndex === photoIndex) status.textContent = "";
+                return;
+              } catch (shareError) {
+                if (shareError instanceof Error && shareError.name === "AbortError") {
+                  if (status && viewer.currIndex === photoIndex) status.textContent = "";
+                  return;
+                }
+                if (shareError instanceof Error && shareError.name === "NotAllowedError") {
+                  if (status && viewer.currIndex === photoIndex) status.textContent = "Foto lista. Pulsa de nuevo para guardar o compartir.";
+                  return;
+                }
+              }
+            }
+            const url = URL.createObjectURL(file);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `casita-${casita}-pantalla-${reportId}-${photoIndex + 1}.${extension}`;
+            link.download = file.name;
             document.body.append(link);
             link.click();
             link.remove();
             window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-            if (status) status.textContent = "Descarga iniciada.";
+            if (status && viewer.currIndex === photoIndex) status.textContent = "Descarga iniciada.";
           } catch {
-            if (status) status.textContent = "No se pudo descargar la foto. Revisa la conexión y vuelve a intentarlo.";
+            if (status && viewer.currIndex === photoIndex) status.textContent = "No se pudo descargar la foto. Revisa la conexión y vuelve a intentarlo.";
           } finally {
             clearTimeout(timeout);
             downloadController = null;
@@ -132,7 +177,9 @@ export function PantallaPhotoGallery({ photos, casita, reportId, active }: {
       });
     });
     viewer.on("destroy", () => {
+      prefetchController?.abort();
       downloadController?.abort();
+      blobCache.clear();
       viewerRef.current = null;
     });
     viewer.init();
@@ -147,7 +194,7 @@ export function PantallaPhotoGallery({ photos, casita, reportId, active }: {
         <img ref={(image) => { thumbnails.current[index] = image; }} src={photo.url} alt={`${photo.ubicacion}: ${photo.estado}`} loading="lazy" crossOrigin="anonymous" />
         <span className={styles.expand} aria-hidden="true"><Maximize2 size={16} /></span>
       </button>
-      <figcaption><strong>{photo.ubicacion}</strong><span className={["defectuosa", "moderada", "grave"].includes(photo.estado) ? "pantalla-bad" : ""}>{photo.estado}{photo.puntos != null && photo.estado !== "no hay pantalla" ? ` · ${photo.puntos} ${photo.puntos === 1 ? "punto" : "puntos"}` : ""}</span></figcaption>
+      <figcaption><strong>{photo.ubicacion}</strong><span className={["defectuosa", "moderada", "grave"].includes(photo.estado) ? "pantalla-bad" : ""}>{ESTADO_PANTALLA_LABELS[photo.estado as PantallaEstado] || photo.estado}{photo.puntos != null && photo.estado !== "no hay pantalla" && photo.estado !== "en buen estado" ? ` · ${photo.puntos} ${photo.puntos === 1 ? "punto" : "puntos"}` : ""}</span></figcaption>
     </figure>)}
   </div>;
 }

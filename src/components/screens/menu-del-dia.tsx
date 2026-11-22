@@ -40,12 +40,15 @@ export function MenuDelDia({
   const [error, setError] = useState(initialError);
   const [previousInitial, setPreviousInitial] = useState({ menus: initialMenus, error: initialError });
   const [open, setOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedFecha, setSelectedFecha] = useState(
     initialMenus.find((menu) => menu.fecha === today)?.fecha ??
       initialMenus[0]?.fecha ??
       today,
   );
   const persisted = useRef(false);
+  const fromCache = useRef(false);
+  const previousToday = useRef(today);
   const titleId = useId();
 
   if (previousInitial.menus !== initialMenus || previousInitial.error !== initialError) {
@@ -66,9 +69,28 @@ export function MenuDelDia({
     }
   }, []);
 
+  const refreshMenus = useCallback(async () => {
+    if (!navigator.onLine) return;
+    setRefreshing(true);
+    try {
+      const result = await fetchInicioMenus();
+      if (result.error) return;
+      fromCache.current = false;
+      previousToday.current = today;
+      setMenus(result.menus);
+      setError(null);
+      await persist(result.menus);
+    } catch {
+      return;
+    } finally {
+      setRefreshing(false);
+    }
+  }, [persist, today]);
+
   useEffect(() => {
     if (!persisted.current && initialMenus.length > 0 && !initialError) {
       persisted.current = true;
+      fromCache.current = false;
       void persist(initialMenus);
     }
   }, [initialError, initialMenus, persist]);
@@ -80,6 +102,7 @@ export function MenuDelDia({
       try {
         const cached = await idbGet<Snapshot>(IDB_STORES.snapshots, "menus");
         if (cancelled || !cached?.rows.length) return;
+        fromCache.current = true;
         setMenus(cached.rows);
         setError(null);
       } catch {
@@ -97,6 +120,8 @@ export function MenuDelDia({
       try {
         const result = await fetchInicioMenus();
         if (result.error) return;
+        fromCache.current = false;
+        previousToday.current = today;
         setMenus(result.menus);
         setError(null);
         await persist(result.menus);
@@ -106,23 +131,30 @@ export function MenuDelDia({
     };
     window.addEventListener("casitas:menus-actualizados", reload);
     return () => window.removeEventListener("casitas:menus-actualizados", reload);
-  }, [persist]);
+  }, [persist, today]);
 
   useEffect(() => {
-    if (!online || !error) return;
+    const todayChanged = previousToday.current !== today;
+    if (!online || (!error && !fromCache.current && !todayChanged)) return;
     let cancelled = false;
     const refresh = async () => {
-      const result = await fetchInicioMenus();
-      if (cancelled || result.error) return;
-      setMenus(result.menus);
-      setError(null);
-      await persist(result.menus);
+      try {
+        const result = await fetchInicioMenus();
+        if (cancelled || result.error) return;
+        fromCache.current = false;
+        previousToday.current = today;
+        setMenus(result.menus);
+        setError(null);
+        await persist(result.menus);
+      } catch {
+        return;
+      }
     };
     void refresh();
     return () => {
       cancelled = true;
     };
-  }, [error, online, persist]);
+  }, [error, online, persist, today]);
 
   const todayMenu = useMemo(
     () => menus.find((menu) => menu.fecha === today) ?? null,
@@ -132,17 +164,25 @@ export function MenuDelDia({
     () => menus.filter((menu) => menu.fecha > today),
     [menus, today],
   );
+  const latestMenu = useMemo(
+    () =>
+      menus.length > 0
+        ? menus.reduce((latest, menu) => (menu.fecha > latest.fecha ? menu : latest), menus[0])
+        : null,
+    [menus],
+  );
   const selectedMenu = useMemo(
     () =>
       menus.find((menu) => menu.fecha === selectedFecha) ??
       todayMenu ??
-      menus[0] ??
+      upcoming[0] ??
+      latestMenu ??
       null,
-    [menus, selectedFecha, todayMenu],
+    [latestMenu, menus, selectedFecha, todayMenu, upcoming],
   );
 
   const openMenus = () => {
-    setSelectedFecha(todayMenu?.fecha ?? menus[0]?.fecha ?? today);
+    setSelectedFecha(todayMenu?.fecha ?? upcoming[0]?.fecha ?? latestMenu?.fecha ?? today);
     setOpen(true);
   };
 
@@ -165,46 +205,74 @@ export function MenuDelDia({
   }
 
   const featured = todayMenu ?? upcoming[0] ?? null;
-  if (!featured) return null;
-  const dishCount = featured.comidas.length;
+  const dishCount = featured?.comidas.length ?? 0;
 
   return (
     <section className={styles.board} aria-labelledby={titleId}>
       <div className={styles.sectionHeading}>
-        <h2 id={titleId}>{todayMenu ? "Menú del día" : "Próximo menú"}</h2>
+        <h2 id={titleId}>{featured && !todayMenu ? "Próximo menú" : "Menú del día"}</h2>
       </div>
-      <button
-        type="button"
-        className={`${styles.card} ${styles.menuCard}`}
-        onClick={openMenus}
-        aria-haspopup="dialog"
-        aria-label={
-          todayMenu
-            ? `Menú de hoy, ${todayMenu.comidas.join(", ") || "sin platos"}. Ver menús de los siguientes días`
-            : `Menú del ${menuDateHeading(featured.fecha)}. Ver menús`
-        }
-      >
-        <span className={styles.menuTop}>
-          <span className={styles.iconTile}>
-            <UtensilsCrossed size={20} aria-hidden="true" />
-          </span>
-          <span className={styles.menuTitle}>
-            <strong>{todayMenu ? "Hoy" : menuDateHeading(featured.fecha)}</strong>
-            <span>
-              {dishCount === 0 ? "Sin platos" : dishCount === 1 ? "1 plato" : `${dishCount} platos`}
-              {menus.length > 1 ? " · Ver otros días" : ""}
+      {featured ? (
+        <button
+          type="button"
+          className={`${styles.card} ${styles.menuCard}`}
+          onClick={openMenus}
+          aria-haspopup="dialog"
+          aria-label={
+            todayMenu
+              ? `Menú de hoy, ${todayMenu.comidas.join(", ") || "sin platos"}. Ver menús de los siguientes días`
+              : `Menú del ${menuDateHeading(featured.fecha)}. Ver menús`
+          }
+        >
+          <span className={styles.menuTop}>
+            <span className={styles.iconTile}>
+              <UtensilsCrossed size={20} aria-hidden="true" />
             </span>
+            <span className={styles.menuTitle}>
+              <strong>{todayMenu ? "Hoy" : menuDateHeading(featured.fecha)}</strong>
+              <span>
+                {dishCount === 0 ? "Sin platos" : dishCount === 1 ? "1 plato" : `${dishCount} platos`}
+                {menus.length > 1 ? " · Ver otros días" : ""}
+              </span>
+            </span>
+            <ChevronRight size={20} className={styles.chevron} aria-hidden="true" />
           </span>
-          <ChevronRight size={20} className={styles.chevron} aria-hidden="true" />
-        </span>
-        {dishCount > 0 && (
-          <span className={styles.dishes}>
-            {featured.comidas.map((dish) => (
-              <span key={dish}>{dish}</span>
-            ))}
-          </span>
-        )}
-      </button>
+          {dishCount > 0 && (
+            <span className={styles.dishes}>
+              {featured.comidas.map((dish) => (
+                <span key={dish}>{dish}</span>
+              ))}
+            </span>
+          )}
+        </button>
+      ) : (
+        <div className={styles.card}>
+          <div className={styles.empty}>
+            <span className={styles.emptyIcon}>
+              <UtensilsCrossed size={20} aria-hidden="true" />
+            </span>
+            <p>No hay menú publicado para hoy</p>
+            <button
+              type="button"
+              className={styles.textButton}
+              onClick={openMenus}
+              aria-haspopup="dialog"
+            >
+              Ver último
+            </button>
+            {online && (
+              <button
+                type="button"
+                className={styles.textButton}
+                disabled={refreshing}
+                onClick={() => void refreshMenus()}
+              >
+                {refreshing ? "Actualizando…" : "Actualizar"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <BottomSheet
         open={open}

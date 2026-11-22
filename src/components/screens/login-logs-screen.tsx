@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { ArrowLeft, ArrowRight, Clock3, Globe2, KeyRound, LogIn, RefreshCw, ShieldCheck } from "lucide-react";
 import { GoogleIcon } from "@/components/ui/google-icon";
 import { useLoginLogs } from "@/hooks/use-login-logs";
+import { fechaHora } from "@/lib/fechas";
 import { loginLogDay, loginLogDayLabel, loginLogMethod, loginLogTime, type LoginLog } from "@/lib/login-logs";
 import styles from "./login-logs-screen.module.css";
 
@@ -36,7 +37,7 @@ export function LoginLogsScreen({ visible, ownerId, onBack }: { visible: boolean
         <RefreshCw size={20} className={loading ? styles.spinning : undefined} aria-hidden />
       </button>
     </div>
-    <p className={styles.status} role="status">{status}{snapshot && ` · ${snapshot.rows.length} ${snapshot.rows.length === 1 ? "acceso" : "accesos"}`}</p>
+    <p className={styles.status} role="status">{status}{snapshot && ` · ${snapshot.rows.length} ${snapshot.rows.length === 1 ? "acceso" : "accesos"}`}{snapshot?.updatedAt && ` · ${fechaHora(snapshot.updatedAt)}`}</p>
     {error && <div className={styles.notice} role="alert"><p>{error}</p>{online && <button type="button" disabled={loading || loadingMore} onClick={() => void refresh()}>Reintentar</button>}</div>}
     {notice && <p className={styles.status} role="status">{notice}</p>}
     {!snapshot && !error && online && <div className={styles.skeletons} aria-label="Cargando accesos" aria-busy="true">{[0, 1, 2].map(i => <div key={i} />)}</div>}

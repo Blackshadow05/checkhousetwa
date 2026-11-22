@@ -49,6 +49,8 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
   const [scanVisited, setScanVisited] = useState(false);
   const [imageVisited, setImageVisited] = useState(false);
   if (pdfReports && (!active || path !== "/reporte-pantallas")) setPdfReports(null);
+  if (!active && message) setMessage("");
+  const keepMessageRef = useRef(false);
   const tabIndex = tab === "historial" ? 0 : 1;
   const tabDirection = useSlideDirection(tabIndex);
   const online = useOnline();
@@ -74,6 +76,10 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
       }
       lastPath.current = next;
       setPath(next);
+      if (previous !== next) {
+        if (keepMessageRef.current && next === "/reporte-pantallas") keepMessageRef.current = false;
+        else setMessage("");
+      }
       if (next !== "/reporte-pantallas") setPdfReports(null);
       if (next === "/reporte-pantallas/nuevo") setFormVisited(true);
       if (next.startsWith("/admin-usuarios")) setAdminVisited(true);
@@ -107,11 +113,12 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
     window.dispatchEvent(new Event("casitas:navigate"));
   };
   const backToOtros = () => navigate("/otros");
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (keepMessage = false) => {
     if (fetching.current || !navigator.onLine) return;
     await Promise.resolve();
     if (fetching.current) return;
     fetching.current = true; setLoading(true);
+    if (!keepMessage) setMessage("");
     try {
       const result = await fetchPantallas();
       if (result.snapshot) { setSnapshot(result.snapshot); setCached(false); setError(""); await idbPut(IDB_STORES.snapshots, { id: "pantallas-v1", ...result.snapshot }).catch(() => setMessage("Datos actualizados. Este dispositivo no pudo guardar una copia sin conexión.")); }
@@ -167,7 +174,7 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
         </article>)}
       </> : <>{snapshot ? <><p className="pantalla-status">{snapshot.reports.length ? "Calculado desde reportes y movimientos en orden de fecha." : "Inventario guardado; todavía no hay historial."}</p><div className="pantalla-inventory">{UBICACIONES.filter(v => !location || v === location).map(v => { const rooms = inventory.filter(item => item.ubicacion === v); const total = rooms.reduce((sum, r) => sum + r.cantidad, 0); return <article className="pantalla-card" key={v}><div className="pantalla-toolbar"><h3>{ubicacionLabel(v)}</h3><strong>{total === 0 && rooms.length && rooms.every(r => r.sinPantalla) ? "No tiene" : total}</strong></div>{rooms.map(r => <div className="pantalla-stock-row" key={r.habitacion}><span>{r.habitacion || "General"}</span><strong>{r.cantidad === 0 && r.sinPantalla ? "No tiene" : r.cantidad}</strong></div>)}</article>; })}</div></> : <p>Carga los datos para consultar el inventario.</p>}</>}</div>
     </div>
-    {formVisited && <div hidden={path !== "/reporte-pantallas/nuevo"}><PantallaForm key={formKey} onClose={() => navigate("/reporte-pantallas")} onSaved={text => { setMessage(text); setFormKey(k => k + 1); navigate("/reporte-pantallas"); void refresh(); }} /></div>}
+    {formVisited && <div hidden={path !== "/reporte-pantallas/nuevo"}><PantallaForm key={formKey} active={active && path === "/reporte-pantallas/nuevo"} session={session} onClose={() => navigate("/reporte-pantallas")} onSaved={text => { keepMessageRef.current = true; setMessage(text); setFormKey(k => k + 1); navigate("/reporte-pantallas"); void refresh(true); }} /></div>}
     {pdfReports && active && path === "/reporte-pantallas" && <PantallaPdfSheet reports={pdfReports} onClose={() => setPdfReports(null)} />}
     {horariosVisited && <div hidden={path !== "/horarios"}><HorariosScreen key={session.id} visible={active && path === "/horarios"} session={session} onBack={backToOtros} /></div>}
     {scanVisited && <div hidden={path !== "/escanear-menu"}><EscanearMenuScreen key={session.id} onBack={backToOtros} /></div>}
@@ -175,6 +182,8 @@ export function OtrosScreen({ active, session }: { active: boolean; session: Usu
     {esAdmin && loginLogsVisited && <div hidden={path !== "/historial-accesos"}><LoginLogsScreen key={session.id} visible={active && path === "/historial-accesos"} ownerId={session.id} onBack={backToOtros} /></div>}
     {esSuperAdmin && deleteVisited && <div hidden={path !== "/eliminar-revisiones"}><EliminarRevisionesScreen key={session.id} visible={active && path === "/eliminar-revisiones"} onBack={backToOtros} /></div>}
     {!editaImagen && path === "/editar-imagen" && <section><button type="button" className="pantalla-back" onClick={backToOtros}><ArrowLeft size={18} aria-hidden />Otros</button><p role="alert">No tienes acceso a esta opción.</p></section>}
+    {!esAdmin && path === "/historial-accesos" && <section><button type="button" className="pantalla-back" onClick={backToOtros}><ArrowLeft size={18} aria-hidden />Otros</button><p role="alert">Solo los administradores pueden acceder a esta opción.</p></section>}
+    {!esAdmin && path.startsWith("/admin-usuarios") && <section><button type="button" className="pantalla-back" onClick={backToOtros}><ArrowLeft size={18} aria-hidden />Otros</button><p role="alert">Solo los administradores pueden acceder a esta opción.</p></section>}
     {!esSuperAdmin && path === "/eliminar-revisiones" && <section><button type="button" className="pantalla-back" onClick={backToOtros}><ArrowLeft size={18} aria-hidden />Otros</button><p role="alert">Solo los usuarios SuperAdmin pueden acceder a esta opción.</p></section>}
     {reportesVisited && <div hidden={!path.startsWith("/reportes")}><ReportesScreen key={session.id} visible={active && path.startsWith("/reportes")} usuarioId={session.id} onBack={backToOtros} /></div>}
     {esAdmin && adminVisited && <div hidden={!path.startsWith("/admin-usuarios")}><AdminUsuariosScreen visible={active && path.startsWith("/admin-usuarios")} path={path} navigate={navigate} session={session} /></div>}

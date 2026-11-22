@@ -234,7 +234,7 @@ export async function adminActualizarUsuario(input: AdminUsuarioInput): Promise<
       const actualSirve = Boolean(actual && actual.email && normalizeEmail(actual.email) === emailObjetivo && actual.provider === "email");
       if (metodoCambia || emailCambia || !authUserId || !actualSirve) {
         if (!actualSirve) {
-          if (!input.password) return { error: "Escribe la contraseña de Auth para este usuario.", usuario: null };
+          if (!input.password) return { error: "Escribe la contraseña de acceso para este usuario.", usuario: null };
           if (actual) {
             await detachAuth(admin, target.id);
             authUserId = null;

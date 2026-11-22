@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus, LoaderCircle, X } from "lucide-react";
+import { Camera, ImageOff, ImagePlus, LoaderCircle, X } from "lucide-react";
 import { editRevisionEvidence, fetchRevisionEditor } from "@/app/actions/revisiones";
 import { LoginForm } from "@/components/auth/login-form";
 import { RevisionPhotoPreview } from "@/components/screens/revision-photo-preview";
@@ -46,13 +46,26 @@ function ExistingEvidencePreview({
   disabled: boolean;
   onRemove: () => void;
 }) {
+  const [failed, setFailed] = useState(false);
   const label = `Evidencia ${index + 1}`;
   return (
-    <figure className="revision-photo">
-      <div className="revision-photo-open">
-        {/* Remote Cloudinary previews stay out of the image optimizer. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={cloudinaryPreviewUrl(path)} alt={label} decoding="async" />
+    <figure className="revision-photo" data-state={failed ? "error" : undefined}>
+      <div
+        className="revision-photo-open"
+        style={failed ? { display: "grid", placeItems: "center", color: "var(--muted-foreground)" } : undefined}
+      >
+        {failed ? (
+          <ImageOff size={22} strokeWidth={1.6} aria-hidden="true" />
+        ) : (
+          /* Remote Cloudinary previews stay out of the image optimizer. */
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={cloudinaryPreviewUrl(path)}
+            alt={label}
+            decoding="async"
+            onError={() => setFailed(true)}
+          />
+        )}
       </div>
       <button
         type="button"
@@ -65,30 +78,35 @@ function ExistingEvidencePreview({
       </button>
       <figcaption>
         <strong>{label}</strong>
-        <span>Foto actual</span>
+        <span>{failed ? "No se pudo cargar" : "Foto actual"}</span>
       </figcaption>
     </figure>
   );
 }
 
 export function RevisionEvidenceEditSheet({
+  open = true,
   revisionId,
   onClose,
   onSaved,
 }: {
+  open?: boolean;
   revisionId: string;
   onClose: () => void;
   onSaved?: () => void;
 }) {
   const online = useOnline();
   const { replaceRevision, selectedRevision } = useRevisiones();
+  const sessionKey = open ? revisionId : null;
+  const computeInitialItems = () =>
+    selectedRevision?.id === revisionId ? evidenceDraftFromRow(selectedRevision) : [];
+
+  const [activeSessionKey, setActiveSessionKey] = useState<string | null>(sessionKey);
   const [user, setUser] = useState<{ id: number; nombre: string } | null | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
-  const [checking, setChecking] = useState(true);
+  const [checking, setChecking] = useState(Boolean(sessionKey));
   const [raw, setRaw] = useState<RevisionCasitaInicio | null>(null);
-  const [items, setItems] = useState<EvidenceDraftItem[]>(() =>
-    selectedRevision?.id === revisionId ? evidenceDraftFromRow(selectedRevision) : [],
-  );
+  const [items, setItems] = useState<EvidenceDraftItem[]>(() => computeInitialItems());
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [progress, setProgress] = useState("");
@@ -103,8 +121,23 @@ export function RevisionEvidenceEditSheet({
   const busyRef = useRef(false);
   const itemsRef = useRef(items);
   const snapshotRef = useRef<EvidenceDraftItem[]>(snapshotEvidenceDraft(items));
+  const lastFetchedSession = useRef<string | null>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+
+  if (activeSessionKey !== sessionKey) {
+    setActiveSessionKey(sessionKey);
+    if (sessionKey) {
+      setUser(undefined);
+      setAttempt(0);
+      setChecking(true);
+      setRaw(null);
+      setItems(computeInitialItems());
+      setError("");
+      setNotice("");
+      setProgress("");
+    }
+  }
 
   const updateItems = (next: EvidenceDraftItem[]) => {
     itemsRef.current = next;
@@ -114,6 +147,20 @@ export function RevisionEvidenceEditSheet({
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  useEffect(() => {
+    if (open) return;
+    if (saved.current || saving.current) {
+      saved.current = false;
+      return;
+    }
+    const { discard } = evidenceDraftCancelPlan(snapshotRef.current, itemsRef.current);
+    for (const item of discard) {
+      if (photoProtected.current) releaseUploads([item.id]);
+      else void discardUpload(item.id);
+    }
+    lastFetchedSession.current = null;
+  }, [open]);
 
   useEffect(
     () => () => {
@@ -129,6 +176,14 @@ export function RevisionEvidenceEditSheet({
   );
 
   useEffect(() => {
+    if (!open || !sessionKey) return;
+    if (lastFetchedSession.current !== sessionKey) {
+      lastFetchedSession.current = sessionKey;
+      saved.current = false;
+      touched.current = false;
+      photoProtected.current = false;
+      snapshotRef.current = snapshotEvidenceDraft(itemsRef.current);
+    }
     let live = true;
     void dedupeRequest(`editor:${revisionId}`, () => fetchRevisionEditor(revisionId))
       .then((result) => {
@@ -158,7 +213,7 @@ export function RevisionEvidenceEditSheet({
     return () => {
       live = false;
     };
-  }, [attempt, revisionId]);
+  }, [attempt, open, revisionId, sessionKey]);
 
   const cajaFuerte = raw?.caja_fuerte ?? (selectedRevision?.id === revisionId ? selectedRevision.caja_fuerte : "");
   const limit = evidencePhotoLimit(cajaFuerte === "—" ? "" : cajaFuerte ?? "");
@@ -300,7 +355,7 @@ export function RevisionEvidenceEditSheet({
   };
 
   return (
-    <BottomSheet open onClose={requestClose} title="Editar fotos de evidencia">
+    <BottomSheet open={open} onClose={requestClose} title="Editar fotos de evidencia">
       {user === null ? (
         <LoginForm
           online={online}
@@ -314,6 +369,29 @@ export function RevisionEvidenceEditSheet({
         />
       ) : checking && !raw ? (
         <p role="status">Cargando las fotos guardadas…</p>
+      ) : !raw ? (
+        <div className="revision-edit-form">
+          <p className="revision-field-error" role="alert">
+            {error || "No pudimos cargar las fotos guardadas."}
+          </p>
+          <div className="sheet-actions">
+            <button type="button" className="secondary-button" onClick={requestClose}>
+              Cerrar
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={!online || checking}
+              onClick={() => {
+                setError("");
+                setChecking(true);
+                setAttempt((current) => current + 1);
+              }}
+            >
+              Reintentar
+            </button>
+          </div>
+        </div>
       ) : (
         <form
           className="revision-edit-form"

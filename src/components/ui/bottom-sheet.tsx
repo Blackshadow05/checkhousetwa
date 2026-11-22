@@ -260,6 +260,7 @@ export function BottomSheet({
         const bounds = event.currentTarget.getBoundingClientRect();
         if (
           event.clientY < bounds.top ||
+          event.clientY > bounds.bottom ||
           event.clientX < bounds.left ||
           event.clientX > bounds.right
         ) {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Camera, Download, Eraser, Images, LoaderCircle, Share2, Sparkles, TriangleAlert, X } from "lucide-react";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { SegmentIndicator } from "@/components/ui/segment-indicator";
 import { quitarFondoLocal, TOLERANCIA_INICIAL, TOLERANCIA_MAX, TOLERANCIA_MIN } from "@/lib/quitar-fondo";
 import { revisionPhotoDimensions } from "@/lib/revision-photo-format";
@@ -59,15 +60,20 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
   const camera = useRef<HTMLInputElement>(null);
   const library = useRef<HTMLInputElement>(null);
   const ticket = useRef(0);
+  const renderTicket = useRef(0);
   const imagen = useRef<HTMLImageElement | null>(null);
   const fuente = useRef<ImageData | null>(null);
   const salida = useRef<HTMLCanvasElement | null>(null);
   const controlador = useRef<AbortController | null>(null);
   const urls = useRef(new Set<string>());
+  const revokeTimers = useRef(new Set<number>());
   const ultimoLocal = useRef<string | undefined>(undefined);
+  const compartiendoRef = useRef(false);
+  const mounted = useRef(false);
   const [cargando, setCargando] = useState(false);
   const [listo, setListo] = useState(false);
   const [error, setError] = useState("");
+  const [errorLocal, setErrorLocal] = useState("");
   const [tolerancia, setTolerancia] = useState(TOLERANCIA_INICIAL);
   const [local, setLocal] = useState<Resultado | null>(null);
   const [vista, setVista] = useState<Vista>("local");
@@ -75,50 +81,76 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
   const [ia, setIa] = useState<Resultado | null>(null);
   const [errorIa, setErrorIa] = useState("");
   const [puedeCompartir, setPuedeCompartir] = useState(false);
+  const [compartiendo, setCompartiendo] = useState(false);
+  const [confirmarDescarte, setConfirmarDescarte] = useState(false);
 
-  const crearUrl = (blob: Blob) => {
+  const crearUrl = useCallback((blob: Blob) => {
     const url = URL.createObjectURL(blob);
     urls.current.add(url);
     return url;
-  };
-  const soltarUrl = (url: string | undefined) => {
+  }, []);
+  const soltarUrl = useCallback((url: string | undefined) => {
     if (!url) return;
     URL.revokeObjectURL(url);
     urls.current.delete(url);
-  };
+  }, []);
 
-  const renderLocal = useCallback(async (valor: number, id: number) => {
+  const renderLocal = useCallback(async (valor: number, id: number, version: number) => {
     const data = fuente.current;
     const canvas = salida.current;
     if (!data || !canvas) return;
-    canvas.getContext("2d")?.putImageData(quitarFondoLocal(data, valor), 0, 0);
-    const blob = await aBlob(canvas, "image/png");
-    if (ticket.current !== id) return;
-    const url = crearUrl(blob);
-    soltarUrl(ultimoLocal.current);
-    ultimoLocal.current = url;
-    setLocal({ url, blob });
-    setPuedeCompartir(typeof navigator.canShare === "function" && navigator.canShare({ files: [new File([blob], NOMBRE, { type: "image/png" })] }));
-  }, []);
+    try {
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("canvas");
+      context.putImageData(quitarFondoLocal(data, valor), 0, 0);
+      const blob = await aBlob(canvas, "image/png");
+      if (ticket.current !== id || renderTicket.current !== version) return;
+      const url = crearUrl(blob);
+      const anterior = ultimoLocal.current;
+      ultimoLocal.current = url;
+      setErrorLocal("");
+      setLocal({ url, blob });
+      setPuedeCompartir(typeof navigator.canShare === "function" && navigator.canShare({ files: [new File([blob], NOMBRE, { type: "image/png" })] }));
+      if (anterior) {
+        const timer = window.setTimeout(() => {
+          soltarUrl(anterior);
+          revokeTimers.current.delete(timer);
+        }, 1000);
+        revokeTimers.current.add(timer);
+      }
+    } catch {
+      if (ticket.current === id && renderTicket.current === version) {
+        setErrorLocal("No se pudo procesar esta imagen. Ajusta la sensibilidad o prueba con otra imagen.");
+      }
+    }
+  }, [crearUrl, soltarUrl]);
 
   useEffect(() => {
     if (!listo) return;
     const id = ticket.current;
-    const timer = window.setTimeout(() => { void renderLocal(tolerancia, id).catch(() => undefined); }, 90);
-    return () => window.clearTimeout(timer);
+    const version = ++renderTicket.current;
+    const timer = window.setTimeout(() => { void renderLocal(tolerancia, id, version); }, 90);
+    return () => {
+      window.clearTimeout(timer);
+      renderTicket.current += 1;
+    };
   }, [listo, tolerancia, renderLocal]);
 
   const reiniciar = () => {
     controlador.current?.abort();
     ticket.current += 1;
+    renderTicket.current += 1;
     imagen.current = null;
     fuente.current = null;
     salida.current = null;
+    for (const timer of revokeTimers.current) window.clearTimeout(timer);
+    revokeTimers.current.clear();
     for (const url of urls.current) URL.revokeObjectURL(url);
     urls.current.clear();
     ultimoLocal.current = undefined;
-    setListo(false); setCargando(false); setError("");
+    setListo(false); setCargando(false); setError(""); setErrorLocal("");
     setLocal(null); setIa(null); setFaseIa("nada"); setErrorIa(""); setVista("local");
+    setConfirmarDescarte(false);
   };
 
   const elegir = async (file: File | null | undefined) => {
@@ -158,7 +190,7 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
     };
     setVista("ia"); setFaseIa("procesando"); setErrorIa("");
     try {
-      if (!navigator.onLine) { fallo("Sin conexión. Conéctate para usar OpenAI."); return; }
+      if (!navigator.onLine) { fallo("Sin conexión. Conéctate para usar la edición con IA."); return; }
       const body = await aBlob(lienzo(image, IA_MAX_SIDE, "#ffffff").canvas, "image/jpeg", 0.9);
       const response = await fetch("/api/imagenes/quitar-fondo", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body, signal: controller.signal });
       if (ticket.current !== id) return;
@@ -174,8 +206,8 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
       setFaseIa("listo");
     } catch {
       if (controller.signal.aborted && !agotado) return;
-      if (agotado) fallo("OpenAI tardó demasiado. Inténtalo de nuevo.");
-      else if (!navigator.onLine) fallo("Sin conexión. Conéctate para usar OpenAI.");
+      if (agotado) fallo("La edición con IA tardó demasiado. Inténtalo de nuevo.");
+      else if (!navigator.onLine) fallo("Sin conexión. Conéctate para usar la edición con IA.");
       else fallo("No se pudo editar la imagen. Revisa tu conexión e inténtalo de nuevo.");
     } finally {
       window.clearTimeout(timer);
@@ -185,18 +217,46 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
   const actual = vista === "ia" ? ia : local;
 
   const compartir = async () => {
-    if (!actual) return;
+    if (!actual || compartiendoRef.current) return;
+    compartiendoRef.current = true;
+    setCompartiendo(true);
+    setErrorLocal("");
     try {
       await navigator.share({ files: [new File([actual.blob], NOMBRE, { type: "image/png" })] });
-    } catch {
-      return;
+    } catch (cause) {
+      if (mounted.current && !(cause instanceof Error && cause.name === "AbortError")) {
+        setErrorLocal("No se pudieron abrir las opciones para compartir. Puedes usar Guardar.");
+      }
+    } finally {
+      compartiendoRef.current = false;
+      if (mounted.current) setCompartiendo(false);
+    }
+  };
+
+  const guardarArchivo = () => {
+    if (!actual || compartiendo) return;
+    const url = URL.createObjectURL(actual.blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = NOMBRE;
+    document.body.append(link);
+    try {
+      link.click();
+    } finally {
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     }
   };
 
   useEffect(() => {
+    mounted.current = true;
     const abiertas = urls.current;
+    const timers = revokeTimers.current;
     return () => {
+      mounted.current = false;
       controlador.current?.abort();
+      for (const timer of timers) window.clearTimeout(timer);
+      timers.clear();
       for (const url of abiertas) URL.revokeObjectURL(url);
     };
   }, []);
@@ -208,7 +268,7 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
     <button type="button" className={styles.back} onClick={onBack}><ArrowLeft size={18} aria-hidden />Otros</button>
     <div className={styles.header}>
       <h1>Editar imagen</h1>
-      {abierto && <button type="button" className={styles.close} aria-label="Descartar y empezar de nuevo" onClick={reiniciar}><X size={20} aria-hidden /></button>}
+      {abierto && <button type="button" className={styles.close} aria-label="Descartar y empezar de nuevo" onClick={() => { if (listo && (local || ia)) setConfirmarDescarte(true); else reiniciar(); }}><X size={20} aria-hidden /></button>}
     </div>
     <input name="foto-camara" ref={camera} type="file" accept="image/*" capture="environment" hidden aria-label="Tomar foto" onChange={event => { void elegir(event.target.files?.[0]); event.target.value = ""; }} />
     <input name="foto-galeria" ref={library} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden aria-label="Elegir imagen" onChange={event => { void elegir(event.target.files?.[0]); event.target.value = ""; }} />
@@ -224,19 +284,22 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
 
     {error && <>
       <p className={styles.error} role="alert"><TriangleAlert size={18} aria-hidden /><span>{error}</span></p>
-      <div className={styles.actions}><button type="button" className={styles.primary} onClick={() => library.current?.click()}>Elegir otra</button></div>
+      <div className={styles.actions}>
+        <button type="button" className={styles.primary} onClick={() => library.current?.click()}><Images size={21} aria-hidden />Elegir otra</button>
+        <button type="button" className={styles.secondary} onClick={() => camera.current?.click()}><Camera size={21} aria-hidden />Tomar foto</button>
+      </div>
     </>}
 
     {(cargando || listo) && <>
       {faseIa !== "nada" && <div className="pantalla-tabs" aria-label="Resultado">
         <SegmentIndicator activeIndex={vista === "local" ? 0 : 1} />
         <button type="button" aria-pressed={vista === "local"} onClick={() => setVista("local")}>Sin IA</button>
-        <button type="button" aria-pressed={vista === "ia"} onClick={() => setVista("ia")}>OpenAI</button>
+        <button type="button" aria-pressed={vista === "ia"} onClick={() => setVista("ia")}>Con IA</button>
       </div>}
       <div className={`${styles.preview} ${own.checker}`}>
         {actual && <div className={styles.photo} style={{ backgroundImage: `url("${actual.url}")` }} role="img" aria-label="Imagen sin fondo" />}
         {(cargando || procesandoIa) && <span className={styles.sweep} aria-hidden />}
-        {(cargando || procesandoIa) && <span className={styles.reading} role="status"><LoaderCircle size={17} className={styles.spin} aria-hidden />{cargando ? "Abriendo imagen…" : "OpenAI está quitando el fondo…"}</span>}
+        {(cargando || procesandoIa) && <span className={styles.reading} role="status"><LoaderCircle size={17} className={styles.spin} aria-hidden />{cargando ? "Abriendo imagen…" : "Quitando el fondo con IA…"}</span>}
       </div>
 
       {vista === "local" && listo && <label className={own.slider}>
@@ -245,17 +308,31 @@ export function EditarImagenScreen({ onBack }: { onBack: () => void }) {
         <small>Súbela si queda fondo; bájala si se borra parte del sujeto.</small>
       </label>}
 
+      {errorLocal && <p className={styles.error} role="alert"><TriangleAlert size={18} aria-hidden /><span>{errorLocal}</span></p>}
+
       {vista === "ia" && faseIa === "error" && <>
         <p className={styles.error} role="alert"><TriangleAlert size={18} aria-hidden /><span>{errorIa}</span></p>
-        <div className={styles.actions}><button type="button" className={styles.secondary} disabled={!online} onClick={() => void probarIa()}>{online ? "Reintentar con OpenAI" : "Sin conexión"}</button></div>
+        <div className={styles.actions}><button type="button" className={styles.secondary} disabled={!online} onClick={() => void probarIa()}>{online ? "Reintentar con IA" : "Sin conexión"}</button></div>
       </>}
 
       {listo && <div className={styles.actions}>
-        {actual && puedeCompartir && <button type="button" className={styles.primary} onClick={() => void compartir()}><Share2 size={21} aria-hidden />Compartir</button>}
-        {actual && <a className={`${puedeCompartir ? styles.secondary : styles.primary} ${own.link}`} href={actual.url} download={NOMBRE}><Download size={21} aria-hidden />Guardar</a>}
-        {faseIa === "nada" && <button type="button" className={styles.secondary} disabled={!online} onClick={() => void probarIa()}><Sparkles size={21} aria-hidden />{online ? "Probar con OpenAI" : "OpenAI requiere conexión"}</button>}
+        {actual && puedeCompartir && <button type="button" className={styles.primary} disabled={compartiendo} onClick={() => void compartir()}><Share2 size={21} aria-hidden />{compartiendo ? "Abriendo opciones…" : "Compartir"}</button>}
+        {actual && <button type="button" className={puedeCompartir ? styles.secondary : styles.primary} disabled={compartiendo} onClick={guardarArchivo}><Download size={21} aria-hidden />Guardar</button>}
+        {faseIa === "nada" && <button type="button" className={styles.secondary} disabled={!online} onClick={() => void probarIa()}><Sparkles size={21} aria-hidden />{online ? "Probar con IA" : "Edición con IA requiere conexión"}</button>}
         <button type="button" className={styles.secondary} onClick={() => library.current?.click()}><Images size={21} aria-hidden />Otra imagen</button>
+        <button type="button" className={styles.secondary} onClick={() => camera.current?.click()}><Camera size={21} aria-hidden />Tomar foto</button>
       </div>}
     </>}
+
+    <BottomSheet open={confirmarDescarte} onClose={() => setConfirmarDescarte(false)} title="Descartar imagen">
+      <div className="admin-confirm">
+        <h3>¿Descartar la imagen editada?</h3>
+        <p className="pantalla-status">Perderás el resultado actual si todavía no lo has guardado.</p>
+        <div className="auth-actions">
+          <button type="button" className="secondary-button" onClick={() => setConfirmarDescarte(false)}>Seguir editando</button>
+          <button type="button" className="admin-danger-solid" onClick={reiniciar}>Descartar</button>
+        </div>
+      </div>
+    </BottomSheet>
   </section>;
 }

@@ -63,6 +63,34 @@ export function editorValueFromRaw(value: string | null | undefined) {
   return value ?? "";
 }
 
+export function normalizeRevisionEditValue(
+  field: RevisionEditField,
+  value: string | null | undefined,
+) {
+  const text = editorValueFromRaw(value);
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  if (
+    (field === "casita" || QUANTITY_LIMITS[field as keyof typeof QUANTITY_LIMITS] !== undefined) &&
+    /^\d+$/.test(trimmed)
+  ) {
+    return String(Number(trimmed));
+  }
+  if (BOOLEAN_FIELDS.has(field as (typeof INVENTORY_FIELDS)[number]["key"])) {
+    const normalized = normalizeText(trimmed);
+    if (normalized === "si") return "Si";
+    if (normalized === "no") return "No";
+    return text;
+  }
+  if (field === "caja_fuerte") {
+    const normalized = normalizeText(trimmed);
+    if (normalized === "check inn" || normalized === "check in") return "Check in";
+    const matched = CAJA_FUERTE_FILTERS.find((option) => normalizeText(option) === normalized);
+    return matched ?? text;
+  }
+  return text;
+}
+
 export function auditRawLabel(value: string | null | undefined) {
   return value == null ? "null" : value;
 }
@@ -190,7 +218,9 @@ export function validateRevisionField(field: RevisionEditField, value: string | 
   return undefined;
 }
 
-function evidenceCount(row: Pick<RevisionCasitaInicio, "evidencia_01" | "evidencia_02" | "evidencia_03">) {
+export function revisionEvidenceCount(
+  row: Pick<RevisionCasitaInicio, "evidencia_01" | "evidencia_02" | "evidencia_03">,
+) {
   return (["evidencia_01", "evidencia_02", "evidencia_03"] as const).filter(
     (key) => row[key]?.trim(),
   ).length;
@@ -203,21 +233,28 @@ export function validateRevisionFieldDependencies(
     RevisionCasitaInicio,
     "caja_fuerte" | "room_move" | "evidencia_01" | "evidencia_02" | "evidencia_03"
   >,
+  options?: {
+    clearEvidence?: boolean;
+    roomMove?: string | null;
+  },
 ) {
   const persisted = persistRevisionFieldValue(field, value);
   if (field === "caja_fuerte") {
-    const room = persistRevisionFieldValue("room_move", row.room_move);
-    const photos = evidenceCount(row);
+    const room = persistRevisionFieldValue(
+      "room_move",
+      options?.roomMove !== undefined ? options.roomMove : row.room_move,
+    );
+    const photos = options?.clearEvidence ? 0 : revisionEvidenceCount(row);
     if (persisted === "Room Move" && !room) {
       return "Indica el movimiento entre casitas (máximo 120 caracteres).";
     }
     const limit = evidencePhotoLimit(persisted ?? "");
     if (limit === 0 && photos !== 0) return "Esta opción no admite evidencias.";
-    if (limit === 1 && (!row.evidencia_01?.trim() || photos !== 1)) {
+    if (limit === 1 && photos > 1) {
       return "Esta opción requiere solo la evidencia 1.";
     }
-    if (limit > 1 && (!row.evidencia_01?.trim() || photos < 1 || photos > 3)) {
-      return "Añade la evidencia 1.";
+    if (limit > 1 && photos > 3) {
+      return "Puedes añadir hasta 3 evidencias.";
     }
     return undefined;
   }

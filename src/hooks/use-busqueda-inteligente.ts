@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBusquedaRevisiones } from "@/app/actions/revisiones";
+import { useRevisiones } from "@/components/screens/revisiones-provider";
 import { quitarFiltro, type FiltrosSerializados } from "@/lib/busqueda-filtros";
+import { replaceArchiveRow } from "@/lib/revision-edit";
 import type { InicioRevisionRow } from "@/types/database";
 
 // lista: revisiones que coinciden; cobertura: revisiones que cuentan para casitas pendientes; conteo: revisiones contadas.
@@ -32,14 +34,47 @@ export function esPreguntaNatural(texto: string) {
 }
 
 export function useBusquedaInteligente() {
+  const { revisionPatch } = useRevisiones();
   const [busqueda, setBusqueda] = useState<BusquedaInteligente | null>(null);
+  const [appliedPatch, setAppliedPatch] = useState(revisionPatch);
   const controller = useRef<AbortController | null>(null);
   const actual = useRef<BusquedaInteligente | null>(null);
   const cargando = useRef(false);
+  const generacion = useRef(0);
+
+  if (appliedPatch !== revisionPatch) {
+    setAppliedPatch(revisionPatch);
+    if (revisionPatch?.id && busqueda?.estado === "lista") {
+      const updated = replaceArchiveRow(busqueda.revisiones, revisionPatch);
+      if (updated !== busqueda.revisiones) {
+        setBusqueda({ ...busqueda, revisiones: updated });
+      }
+    }
+  }
 
   useEffect(() => {
     actual.current = busqueda;
   }, [busqueda]);
+
+  useEffect(() => {
+    const onDeleted = (event: Event) => {
+      const ids = new Set((event as CustomEvent<string[]>).detail);
+      if (!ids.size) return;
+      setBusqueda((previa) => {
+        if (previa?.estado !== "lista") return previa;
+        const revisiones = previa.revisiones.filter((row) => !ids.has(row.id));
+        const removed = previa.revisiones.length - revisiones.length;
+        if (!removed) return previa;
+        return {
+          ...previa,
+          revisiones,
+          total: Math.max(0, previa.total - removed),
+        };
+      });
+    };
+    window.addEventListener("casitas:revisiones-eliminadas", onDeleted);
+    return () => window.removeEventListener("casitas:revisiones-eliminadas", onDeleted);
+  }, []);
 
   useEffect(() => () => controller.current?.abort(), []);
 
@@ -47,6 +82,8 @@ export function useBusquedaInteligente() {
     const pregunta = texto.replace(/\s+/g, " ").trim();
     if (pregunta.length < 3) return;
     controller.current?.abort();
+    generacion.current += 1;
+    cargando.current = false;
     const peticion = new AbortController();
     controller.current = peticion;
     setBusqueda({ pregunta, estado: "buscando" });
@@ -89,13 +126,14 @@ export function useBusquedaInteligente() {
     const inicial = actual.current;
     if (cargando.current || inicial?.estado !== "lista" || inicial.ajustando || inicial.revisiones.length >= inicial.total) return;
     cargando.current = true;
+    const gen = generacion.current;
     const peticion = controller.current;
     setBusqueda({ ...inicial, cargandoMas: true, errorMas: null });
     const { rows, error } = await fetchBusquedaRevisiones(inicial.filtros, inicial.revisiones.length)
       .then((resultado) => resultado.error ? { ...resultado, error: "No pudimos cargar más revisiones." } : resultado)
       .catch(() => ({ rows: [] as InicioRevisionRow[], error: "No pudimos cargar más revisiones." }));
+    if (gen !== generacion.current || controller.current !== peticion || peticion?.signal.aborted) return;
     cargando.current = false;
-    if (controller.current !== peticion || peticion?.signal.aborted) return;
     setBusqueda((previa) => {
       if (previa?.estado !== "lista" || previa.pregunta !== inicial.pregunta) return previa;
       const ids = new Set(previa.revisiones.map((row) => row.id));
@@ -115,6 +153,8 @@ export function useBusquedaInteligente() {
     const inicial = actual.current;
     if (inicial?.estado !== "lista" || !inicial.filtros || inicial.ajustando) return;
     controller.current?.abort();
+    generacion.current += 1;
+    cargando.current = false;
     const peticion = new AbortController();
     controller.current = peticion;
     const filtros = quitarFiltro(inicial.filtros, id);
@@ -143,6 +183,8 @@ export function useBusquedaInteligente() {
 
   const cerrar = useCallback(() => {
     controller.current?.abort();
+    generacion.current += 1;
+    cargando.current = false;
     setBusqueda(null);
   }, []);
 
