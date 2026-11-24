@@ -44,6 +44,7 @@ export function mapInicioRevision(row: RevisionCasitaInicio): InicioRevisionRow 
     evidencia_01: asText(row.evidencia_01),
     evidencia_02: asText(row.evidencia_02),
     evidencia_03: asText(row.evidencia_03),
+    evidencia_04: asText(row.evidencia_04),
     camas_ordenadas: asText(row.camas_ordenadas),
     cola_caballo: asText(row.cola_caballo),
     notas: asText(row.notas),

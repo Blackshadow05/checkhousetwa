@@ -12,22 +12,49 @@ export const QUANTITY_LIMITS: Partial<Record<InventoryKey, number>> = {
   binoculares: 3, secadora: 3, accesorios_secadora: 8,
   steamer: 3, plancha_cabello: 2, bolso_yute: 3,
 };
-export const MAX_PHOTOS = 3;
+export const DEFAULT_MAX_PHOTOS = 3;
+export const EXTENDED_MAX_PHOTOS = 4;
+export const MAX_PHOTOS = EXTENDED_MAX_PHOTOS;
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 export const CAJA_FUERTE_NO_EVIDENCE = new Set(["Si", "No"]);
 export const CAJA_FUERTE_SINGLE_EVIDENCE = new Set(["Check out", "Guardar Upsell"]);
+export const CASITAS_CUATRO_EVIDENCIAS = new Set(["1", "2", "3", "4", "7", "8", "9", "10"]);
 
-export function evidencePhotoLimit(cajaFuerte: string): 0 | 1 | typeof MAX_PHOTOS {
-  if (!cajaFuerte || CAJA_FUERTE_NO_EVIDENCE.has(cajaFuerte)) return 0;
-  if (CAJA_FUERTE_SINGLE_EVIDENCE.has(cajaFuerte)) return 1;
-  return MAX_PHOTOS;
+export function casitaAllowsFourPhotos(casita?: string | null): boolean {
+  const trimmed = casita?.trim() ?? "";
+  if (!/^\d+$/.test(trimmed)) return false;
+  return CASITAS_CUATRO_EVIDENCIAS.has(String(Number(trimmed)));
 }
 
-// En reconocimiento las fotos van primero, antes de elegir la caja fuerte.
-// Mientras no haya elección (o sin fotos todavía) se permite el máximo; al elegir se recorta al límite real.
-export function revisionPhotoLimit(mode: RevisionMode | undefined, cajaFuerte: string, photoCount?: number): number {
-  if (mode === "reconocimiento" && (!cajaFuerte || photoCount === 0)) return MAX_PHOTOS;
-  return evidencePhotoLimit(cajaFuerte);
+export function maxEvidencePhotosForCasita(casita?: string | null): 3 | 4 {
+  return casitaAllowsFourPhotos(casita) ? EXTENDED_MAX_PHOTOS : DEFAULT_MAX_PHOTOS;
+}
+
+export function evidencePhotoLimit(cajaFuerte: string, casita?: string | null): 0 | 1 | 3 | 4 {
+  if (!cajaFuerte || CAJA_FUERTE_NO_EVIDENCE.has(cajaFuerte)) return 0;
+  if (CAJA_FUERTE_SINGLE_EVIDENCE.has(cajaFuerte)) return 1;
+  return maxEvidencePhotosForCasita(casita);
+}
+
+// En reconocimiento las fotos van primero, antes de elegir la caja fuerte y la casita.
+// Mientras falte caja fuerte o casita se permite el máximo extendido; al elegir se ajusta al límite real.
+export function revisionPhotoLimit(
+  mode: RevisionMode | undefined,
+  cajaFuerte: string,
+  photoCount?: number,
+  casita?: string | null,
+): number {
+  if (mode === "reconocimiento") {
+    if (!cajaFuerte || photoCount === 0) {
+      return casita?.trim() ? maxEvidencePhotosForCasita(casita) : EXTENDED_MAX_PHOTOS;
+    }
+    if (!casita?.trim()) {
+      if (CAJA_FUERTE_NO_EVIDENCE.has(cajaFuerte)) return 0;
+      if (CAJA_FUERTE_SINGLE_EVIDENCE.has(cajaFuerte)) return 1;
+      return EXTENDED_MAX_PHOTOS;
+    }
+  }
+  return evidencePhotoLimit(cajaFuerte, casita);
 }
 
 export type RevisionFormValues = Record<InventoryKey, string> & {
@@ -118,7 +145,7 @@ export function validateRevisionForm(values: RevisionFormValues, step?: number, 
       errors.room_move = "Indica el movimiento entre casitas (máximo 120 caracteres).";
     }
     if (step === undefined) {
-      const limit = evidencePhotoLimit(values.caja_fuerte);
+      const limit = evidencePhotoLimit(values.caja_fuerte, values.casita);
       if (limit === 0 && photoCount > 0) errors.evidencias = "Esta opción no admite evidencias.";
       else if (limit === 1 && photoCount < 1) errors.evidencias = "Añade la evidencia 1.";
       else if (limit === 1 && photoCount > 1) errors.evidencias = "Solo puedes añadir la evidencia 1.";
@@ -161,7 +188,7 @@ export function revisionInsert(id: string, values: RevisionFormValues, photos: s
     quien_revisa: values.quien_revisa.trim(), created_at: values.created_at.replace("T", " "),
     caja_fuerte: values.caja_fuerte, puertas_ventanas: values.puertas_ventanas.trim(),
     room_move: values.room_move.trim() || null, notas: values.notas.trim() || null,
-    evidencia_01: photos[0] ?? null, evidencia_02: photos[1] ?? null, evidencia_03: photos[2] ?? null,
+    evidencia_01: photos[0] ?? null, evidencia_02: photos[1] ?? null, evidencia_03: photos[2] ?? null, evidencia_04: photos[3] ?? null,
     registro_reconocimiento: registro,
   };
 }

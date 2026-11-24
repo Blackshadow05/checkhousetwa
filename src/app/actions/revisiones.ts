@@ -3,9 +3,9 @@
 import { getArchiveRevisiones, getInicioRevisiones, getLatestRevisionCasita, getRevisionInicioById, listRevisionEdits, listRevisionNotes } from "@/lib/db/revisiones-casitas";
 import type { ArchiveQuery } from "@/lib/revisiones-archive";
 import { createPrivateClient, createPrivateSession } from "@/lib/auth/session";
-import { costaRicaDateTime, pendienteInsert, revisionInsert, validatePendienteForm, validateRevisionForm, withCurrentRevisionTime, type RevisionFormValues } from "@/lib/revision-form";
+import { costaRicaDateTime, MAX_PHOTOS, pendienteInsert, revisionInsert, validatePendienteForm, validateRevisionForm, withCurrentRevisionTime, type RevisionFormValues } from "@/lib/revision-form";
 import { isEvidenceCloudinaryPath } from "@/lib/revision-evidence";
-import { isRevisionEditField, persistRevisionFieldValue, puedeEditarRevision, validateRevisionField, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
+import { isRevisionEditField, persistRevisionFieldValue, puedeEditarRevision, validateRevisionField, validateRevisionFieldDependencies, mapRegistroEdicion, type RevisionEditField, type RevisionEditHistoryItem } from "@/lib/revision-edit";
 import { mapNotaRevision, noteRevisionPage, NOTAS_REVISION_PAGE_SIZE, persistNotaRevision, persistNotaRevisionImage, validateNotaRevision, validateNotaRevisionImage, type RevisionNoteItem } from "@/lib/revision-notes";
 import { parseEvidenceEditPayload, puedeEditarEvidencias } from "@/lib/revision-evidence-edit";
 import { saveRevision, saveNotaRevision, editRevisionCajaFuerte, editRevisionCampo, editRevisionEvidencias, type SaveNoteResult } from "@/lib/save-revision";
@@ -38,7 +38,7 @@ export async function createRevision(input: { id: string; values: RevisionFormVa
   try {
     if (!input || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.id) ||
       !input.values || Object.values(input.values).some((value) => typeof value !== "string") ||
-      !Array.isArray(input.photos) || input.photos.length > 3 ||
+      !Array.isArray(input.photos) || input.photos.length > MAX_PHOTOS ||
       (input.completa != null && (typeof input.completa !== "string" || !REVISION_ID.test(input.completa)))) {
       return { row: null, error: "Revisa los datos del formulario e inténtalo de nuevo." };
     }
@@ -192,6 +192,7 @@ export async function fetchLatestRevisionCasita(
 }
 
 const SOLO_AUTOR = "Solo quien hizo esta revisión puede editarla.";
+const SIN_PERMISO_EVIDENCIAS = "No tienes permisos para editar las fotos de esta revisión.";
 
 export async function fetchRevisionEditor(id: string): Promise<{
   row: RevisionCasitaInicio | null;
@@ -207,6 +208,28 @@ export async function fetchRevisionEditor(id: string): Promise<{
     if (result.error) return { row: null, user, error: "No pudimos cargar la revisión. Vuelve a intentarlo." };
     if (!result.data) return { row: null, user, error: "No encontramos esta revisión." };
     if (!puedeEditarRevision(session.usuario, result.data.quien_revisa)) return { row: null, user, error: SOLO_AUTOR };
+    return { row: result.data, user, error: null };
+  } catch {
+    return { row: null, user: null, error: "No pudimos conectar para abrir el editor." };
+  }
+}
+
+export async function fetchRevisionEvidenceEditor(id: string): Promise<{
+  row: RevisionCasitaInicio | null;
+  user: { id: number; nombre: string } | null;
+  error: string | null;
+}> {
+  try {
+    if (!REVISION_ID.test(id)) return { row: null, user: null, error: "No encontramos esta revisión." };
+    const session = await createPrivateSession();
+    if (!session) return { row: null, user: null, error: null };
+    const user = { id: session.usuario.id, nombre: session.usuario.nombre };
+    const result = await getRevisionInicioById(session.client, id);
+    if (result.error) return { row: null, user, error: "No pudimos cargar la revisión. Vuelve a intentarlo." };
+    if (!result.data) return { row: null, user, error: "No encontramos esta revisión." };
+    if (!puedeEditarEvidencias(session.usuario, result.data.quien_revisa)) {
+      return { row: null, user, error: SIN_PERMISO_EVIDENCIAS };
+    }
     return { row: result.data, user, error: null };
   } catch {
     return { row: null, user: null, error: "No pudimos conectar para abrir el editor." };
@@ -253,6 +276,8 @@ export async function editRevisionField(input: {
         limpiarEvidencias: input.limpiarEvidencias === true,
       });
     }
+    const depError = validateRevisionFieldDependencies(campo, input.nuevo, actual.data);
+    if (depError) return { row: null, error: depError };
     return await editRevisionCampo(session.client, {
       id: input.id,
       campo,
@@ -279,7 +304,7 @@ export async function editRevisionEvidence(input: unknown): Promise<{
     if (actual.error) return { row: null, error: "No pudimos comprobar la revisión. Vuelve a intentarlo." };
     if (!actual.data) return { row: null, error: "No encontramos esta revisión." };
     if (!puedeEditarEvidencias(session.usuario, actual.data.quien_revisa)) {
-      return { row: null, error: SOLO_AUTOR };
+      return { row: null, error: SIN_PERMISO_EVIDENCIAS };
     }
     return await editRevisionEvidencias(session.client, {
       id: parsed.id,

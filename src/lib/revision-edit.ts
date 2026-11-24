@@ -219,11 +219,9 @@ export function validateRevisionField(field: RevisionEditField, value: string | 
 }
 
 export function revisionEvidenceCount(
-  row: Pick<RevisionCasitaInicio, "evidencia_01" | "evidencia_02" | "evidencia_03">,
+  row: Pick<RevisionCasitaInicio, "evidencia_01" | "evidencia_02" | "evidencia_03"> & Partial<Pick<RevisionCasitaInicio, "evidencia_04">>,
 ) {
-  return (["evidencia_01", "evidencia_02", "evidencia_03"] as const).filter(
-    (key) => row[key]?.trim(),
-  ).length;
+  return EVIDENCE_FIELDS.filter((key) => row[key]?.trim()).length;
 }
 
 export function validateRevisionFieldDependencies(
@@ -231,8 +229,8 @@ export function validateRevisionFieldDependencies(
   value: string | null,
   row: Pick<
     RevisionCasitaInicio,
-    "caja_fuerte" | "room_move" | "evidencia_01" | "evidencia_02" | "evidencia_03"
-  >,
+    "casita" | "caja_fuerte" | "room_move" | "evidencia_01" | "evidencia_02" | "evidencia_03"
+  > & Partial<Pick<RevisionCasitaInicio, "evidencia_04">>,
   options?: {
     clearEvidence?: boolean;
     roomMove?: string | null;
@@ -248,13 +246,21 @@ export function validateRevisionFieldDependencies(
     if (persisted === "Room Move" && !room) {
       return "Indica el movimiento entre casitas (máximo 120 caracteres).";
     }
-    const limit = evidencePhotoLimit(persisted ?? "");
+    const limit = evidencePhotoLimit(persisted ?? "", row.casita);
     if (limit === 0 && photos !== 0) return "Esta opción no admite evidencias.";
     if (limit === 1 && photos > 1) {
       return "Esta opción requiere solo la evidencia 1.";
     }
-    if (limit > 1 && photos > 3) {
-      return "Puedes añadir hasta 3 evidencias.";
+    if (limit > 1 && photos > limit) {
+      return `Puedes añadir hasta ${limit} evidencias.`;
+    }
+    return undefined;
+  }
+  if (field === "casita") {
+    const limit = evidencePhotoLimit(row.caja_fuerte ?? "", persisted);
+    const photos = revisionEvidenceCount(row);
+    if (limit > 0 && photos > limit) {
+      return `La casita ${persisted} admite hasta ${limit} evidencias. Quita fotos antes de cambiar la casita.`;
     }
     return undefined;
   }

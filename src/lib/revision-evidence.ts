@@ -1,10 +1,11 @@
-export const EVIDENCE_FIELDS = ["evidencia_01", "evidencia_02", "evidencia_03"] as const;
+export const EVIDENCE_FIELDS = ["evidencia_01", "evidencia_02", "evidencia_03", "evidencia_04"] as const;
 export type EvidenceField = (typeof EVIDENCE_FIELDS)[number];
 
 export const EVIDENCE_EDIT_LABELS: Record<EvidenceField, string> = {
   evidencia_01: "Evidencia 1",
   evidencia_02: "Evidencia 2",
   evidencia_03: "Evidencia 3",
+  evidencia_04: "Evidencia 4",
 };
 
 export const EVIDENCE_MONTHS = [
@@ -13,7 +14,7 @@ export const EVIDENCE_MONTHS = [
 ] as const;
 
 const EVIDENCE_PATH =
-  /^Evidencias\/(?:Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre) \d{4}\/evidencia_0[123]_\d{10,16}$/;
+  /^Evidencias\/(?:Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre) \d{4}\/evidencia_0[1234]_\d{10,16}$/;
 
 export function getMonthFolder(now = new Date()) {
   return `${EVIDENCE_MONTHS[now.getMonth()]} ${now.getFullYear()}`;

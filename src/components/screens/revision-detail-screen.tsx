@@ -40,6 +40,7 @@ import {
   type RevisionEditField,
   type RevisionEditHistoryItem,
 } from "@/lib/revision-edit";
+import { puedeEditarEvidencias } from "@/lib/revision-evidence-edit";
 import {
   mergeNotaRevision,
   type RevisionNoteItem,
@@ -263,7 +264,21 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
   );
   const loadingMoreRef = useRef(false);
   const currentRevisionId = selectedRevision?.id ?? "";
-  const editable = selectedRevision ? puedeEditarRevision(usuario, selectedRevision.quien_revisa) : false;
+  const selectedImages = selectedRevision ? revisionEvidence(selectedRevision) : [];
+  const selectedPhotoLimit = selectedRevision
+    ? evidencePhotoLimit(
+        selectedRevision.caja_fuerte === "—" ? "" : selectedRevision.caja_fuerte,
+        selectedRevision.casita,
+      )
+    : 0;
+  const canEditFields = selectedRevision
+    ? puedeEditarRevision(usuario, selectedRevision.quien_revisa)
+    : false;
+  const canEditEvidence = selectedRevision
+    ? puedeEditarEvidencias(usuario, selectedRevision.quien_revisa) &&
+      (selectedPhotoLimit > 0 || selectedImages.length > 0)
+    : false;
+  const editable = canEditFields || canEditEvidence;
   const [trackedRevisionId, setTrackedRevisionId] = useState(currentRevisionId);
   const [copyMessage, setCopyMessage] = useState("");
   const [editingField, setEditingField] = useState<RevisionEditField | null>(null);
@@ -340,6 +355,12 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
   if (editing && !editable) {
     setEditing(false);
     setEditingField(null);
+    setEditingEvidence(false);
+  }
+  if (editingField !== null && !canEditFields) {
+    setEditingField(null);
+  }
+  if (editingEvidence && !canEditEvidence) {
     setEditingEvidence(false);
   }
 
@@ -493,7 +514,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
   if (!selectedRevision) return null;
 
   const row = selectedRevision;
-  const images = revisionEvidence(row);
+  const images = selectedImages;
   const copyRevision = async () => {
     try {
       await navigator.clipboard.writeText(copyText(row));
@@ -512,9 +533,9 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
   const noLleva = faltantes && resumenNoLleva(faltantes.noLleva);
 
   const activeEditing = editing && editable;
-  const onEdit = activeEditing ? setEditingField : null;
-  const photoLimit = evidencePhotoLimit(row.caja_fuerte === "—" ? "" : row.caja_fuerte);
-  const canEditPhotos = activeEditing && (photoLimit > 0 || images.length > 0);
+  const activeFieldEditing = activeEditing && canEditFields;
+  const onEdit = activeFieldEditing ? setEditingField : null;
+  const canEditPhotos = activeEditing && canEditEvidence;
   const actions = (
     <DetailActions
       editing={activeEditing}
@@ -591,7 +612,7 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
   return (
     <section
-      className={`detail-screen${activeEditing ? " is-editing" : ""}`}
+      className={`detail-screen${activeFieldEditing ? " is-editing" : ""}`}
       data-shared-entry={sharedEntry || undefined}
       role="dialog"
       aria-modal="true"
@@ -628,9 +649,11 @@ export function RevisionDetailScreen({ usuario }: { usuario: UsuarioShell }) {
 
           {activeEditing ? (
             <p className="detail-edit-hint" role="status">
-              {canEditPhotos
+              {activeFieldEditing && canEditPhotos
                 ? "Toca el dato que quieras cambiar. También puedes añadir o quitar fotos de evidencia."
-                : "Toca el dato que quieras cambiar."}
+                : activeFieldEditing
+                  ? "Toca el dato que quieras cambiar."
+                  : "Puedes añadir o quitar fotos de evidencia en esta revisión."}
             </p>
           ) : null}
           {canEditPhotos ? (

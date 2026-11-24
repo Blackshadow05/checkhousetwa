@@ -2,7 +2,7 @@ import { fechaTexto, horaCorta } from "@/lib/fechas";
 import type { InicioRevisionRow } from "@/types/database";
 
 export const INICIO_REVISION_COLUMNS =
-  "id, casita, quien_revisa, caja_fuerte, created_at, puertas_ventanas, chromecast, binoculares, trapo_binoculares, speaker, usb_speaker, controles_tv, secadora, accesorios_secadora, steamer, bolsa_vapor, plancha_cabello, bulto, sombrero, bolso_yute, evidencia_01, evidencia_02, evidencia_03, camas_ordenadas, cola_caballo, notas, nota_extra, room_move, registro_reconocimiento, pendiente, marcada_por, marcada_at" as const;
+  "id, casita, quien_revisa, caja_fuerte, created_at, puertas_ventanas, chromecast, binoculares, trapo_binoculares, speaker, usb_speaker, controles_tv, secadora, accesorios_secadora, steamer, bolsa_vapor, plancha_cabello, bulto, sombrero, bolso_yute, evidencia_01, evidencia_02, evidencia_03, evidencia_04, camas_ordenadas, cola_caballo, notas, nota_extra, room_move, registro_reconocimiento, pendiente, marcada_por, marcada_at" as const;
 
 export const INICIO_LIST_LIMIT = 100;
 export const INICIO_RECENT_DAYS = 2;
@@ -599,7 +599,7 @@ export function hasRevisionValue(value: string | null | undefined) {
 }
 
 export function revisionEvidence(row: InicioRevisionRow) {
-  return [row.evidencia_01, row.evidencia_02, row.evidencia_03].filter(
+  return [row.evidencia_01, row.evidencia_02, row.evidencia_03, row.evidencia_04].filter(
     (value): value is string =>
       typeof value === "string" && value.trim().length > 5,
   );

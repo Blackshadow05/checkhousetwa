@@ -87,6 +87,7 @@ export type Database = {
           evidencia_01: string | null;
           evidencia_02: string | null;
           evidencia_03: string | null;
+          evidencia_04: string | null;
           camas_ordenadas: string | null;
           cola_caballo: string | null;
           notas: string | null;
@@ -130,6 +131,7 @@ export type Database = {
           evidencia_01?: string | null;
           evidencia_02?: string | null;
           evidencia_03?: string | null;
+          evidencia_04?: string | null;
           camas_ordenadas?: string | null;
           cola_caballo?: string | null;
           notas?: string | null;
@@ -173,6 +175,7 @@ export type Database = {
           evidencia_01?: string | null;
           evidencia_02?: string | null;
           evidencia_03?: string | null;
+          evidencia_04?: string | null;
           camas_ordenadas?: string | null;
           cola_caballo?: string | null;
           notas?: string | null;
@@ -297,6 +300,7 @@ export type RevisionCasitaInicio = Pick<
   | "evidencia_01"
   | "evidencia_02"
   | "evidencia_03"
+  | "evidencia_04"
   | "camas_ordenadas"
   | "cola_caballo"
   | "notas"
@@ -338,6 +342,7 @@ export type InicioRevisionRow = {
   evidencia_01: string | null;
   evidencia_02: string | null;
   evidencia_03: string | null;
+  evidencia_04?: string | null;
   camas_ordenadas: string | null;
   cola_caballo: string | null;
   notas: string | null;

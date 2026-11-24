@@ -29,10 +29,11 @@ function FotoPreparando({ url, label }: { url: string; label: string }) {
   );
 }
 
-export function RecognitionScanCard({ photos, previas, limit, scan, status, marks, progreso, error, disabled, active, onPick, onRemove, onRetry, listoHint, children }: {
+export function RecognitionScanCard({ photos, previas, limit, casitaSelected = false, scan, status, marks, progreso, error, disabled, active, onPick, onRemove, onRetry, listoHint, children }: {
   photos: RevisionPhoto[];
   previas: FotoPrevia[];
   limit: number;
+  casitaSelected?: boolean;
   scan: RevisionScan | null;
   status: (photoId: string) => PhotoStatus;
   marks?: ReadonlyMap<string, PhotoMark[]>;
@@ -66,7 +67,7 @@ export function RecognitionScanCard({ photos, previas, limit, scan, status, mark
         <div className={styles.empty}>
           <ScanSearch size={26} strokeWidth={1.5} aria-hidden="true" />
           <strong>Fotografía los artículos</strong>
-          <p>Hasta {cantidadFotos(limit)}. Se cuentan solos; después eliges la caja fuerte y la casita.</p>
+          <p>{!casitaSelected && limit === 4 ? "Hasta 3 fotos (4 en casitas 1–4 y 7–10)." : `Hasta ${cantidadFotos(limit)}.`} Se cuentan solos; después eliges la caja fuerte y la casita.</p>
         </div>
       ) : (
         <div className="revision-photo-grid">

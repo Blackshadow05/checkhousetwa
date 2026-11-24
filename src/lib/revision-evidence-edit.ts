@@ -5,7 +5,6 @@ import {
   type EvidenceField,
 } from "@/lib/revision-evidence";
 import { evidencePhotoLimit, MAX_PHOTOS, type RevisionPhoto } from "@/lib/revision-form";
-import { puedeEditarRevision } from "@/lib/revision-edit";
 import { createUuid } from "@/lib/uuid";
 
 export { EVIDENCE_EDIT_LABELS };
@@ -34,6 +33,7 @@ export function evidenceSlotsFromRow(row: Partial<EvidenceSlots> | null | undefi
     evidencia_01: evidenceSlotValue(row?.evidencia_01),
     evidencia_02: evidenceSlotValue(row?.evidencia_02),
     evidencia_03: evidenceSlotValue(row?.evidencia_03),
+    evidencia_04: evidenceSlotValue(row?.evidencia_04),
   };
 }
 
@@ -50,6 +50,7 @@ export function compactEvidenceSlots(paths: readonly (string | null | undefined)
     evidencia_01: compacted[0] ?? null,
     evidencia_02: compacted[1] ?? null,
     evidencia_03: compacted[2] ?? null,
+    evidencia_04: compacted[3] ?? null,
   };
 }
 
@@ -70,10 +71,11 @@ export function validateEvidencePaths(paths: readonly (string | null | undefined
 export function validateRevisionEvidencePhotos(
   cajaFuerte: string | null | undefined,
   paths: readonly string[],
+  casita?: string | null,
 ) {
   const pathError = validateEvidencePaths(paths);
   if (pathError) return pathError;
-  const limit = evidencePhotoLimit(cajaFuerte ?? "");
+  const limit = evidencePhotoLimit(cajaFuerte ?? "", casita);
   const count = paths.length;
   if (limit === 0 && count > 0) return "Esta opción no admite evidencias.";
   if (limit === 1 && count < 1) return "Añade la evidencia 1.";
@@ -128,11 +130,12 @@ export function uploadsSafeToDiscardAfterSaveFailure(
 }
 
 export function puedeEditarEvidencias(
-  usuario: { nombre: string; rol?: string | null } | null | undefined,
-  quienRevisa: string | null | undefined,
+  usuario: { nombre?: string | null; rol?: string | null } | null | undefined,
+  quienRevisa?: string | null | undefined,
 ) {
+  void quienRevisa;
   if (!usuario) return false;
-  return puedeEditarRevision(usuario, quienRevisa);
+  return usuario.rol !== "inactivo";
 }
 
 function parseSlot(value: unknown) {
@@ -164,19 +167,26 @@ export function parseEvidenceEditPayload(input: unknown): EvidenceEditPayload | 
   if (
     !("evidencia_01" in esperadoRaw) ||
     !("evidencia_02" in esperadoRaw) ||
-    !("evidencia_03" in esperadoRaw)
+    !("evidencia_03" in esperadoRaw) ||
+    !("evidencia_04" in esperadoRaw)
   ) {
     return { error: "Revisa los datos e inténtalo de nuevo." };
   }
   const evidencia_01 = parseSlot(esperadoRaw.evidencia_01);
   const evidencia_02 = parseSlot(esperadoRaw.evidencia_02);
   const evidencia_03 = parseSlot(esperadoRaw.evidencia_03);
-  if (evidencia_01 === undefined || evidencia_02 === undefined || evidencia_03 === undefined) {
+  const evidencia_04 = parseSlot(esperadoRaw.evidencia_04);
+  if (
+    evidencia_01 === undefined ||
+    evidencia_02 === undefined ||
+    evidencia_03 === undefined ||
+    evidencia_04 === undefined
+  ) {
     return { error: "Revisa los datos e inténtalo de nuevo." };
   }
   return {
     id: data.id,
-    esperado: { evidencia_01, evidencia_02, evidencia_03 },
+    esperado: { evidencia_01, evidencia_02, evidencia_03, evidencia_04 },
     fotos: data.fotos,
   };
 }
@@ -196,16 +206,18 @@ export function snapshotEvidenceDraft(items: readonly EvidenceDraftItem[]): Evid
 export function canAddEvidenceDraft(
   items: readonly EvidenceDraftItem[],
   cajaFuerte: string | null | undefined,
+  casita?: string | null,
 ) {
-  return items.length < evidencePhotoLimit(cajaFuerte ?? "");
+  return items.length < evidencePhotoLimit(cajaFuerte ?? "", casita);
 }
 
 export function addEvidenceDraftItems(
   items: readonly EvidenceDraftItem[],
   photos: readonly RevisionPhoto[],
   cajaFuerte: string | null | undefined,
+  casita?: string | null,
 ) {
-  const limit = evidencePhotoLimit(cajaFuerte ?? "");
+  const limit = evidencePhotoLimit(cajaFuerte ?? "", casita);
   const room = Math.max(0, limit - items.length);
   const added = photos.slice(0, room).map((photo) => ({
     kind: "new" as const,

@@ -121,7 +121,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
 }) {
   const { draft, storage, restored, update, detach, keepForLater } = useRevisionDraft(open, mode);
   const [salida, setSalida] = useState<{ leave: () => void } | null>(null);
-  const [confirmarCaja, setConfirmarCaja] = useState<{ valor: string; quitadas: number; limite: number } | null>(null);
+  const [confirmarRecorte, setConfirmarRecorte] = useState<{ campo: "caja_fuerte" | "casita"; valor: string; quitadas: number; limite: number } | null>(null);
   const [guardandoSalida, setGuardandoSalida] = useState(false);
   const [errorSalida, setErrorSalida] = useState("");
   const draftRef = useRef(draft);
@@ -138,7 +138,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     return () => onExitGuard(null);
   }, [onExitGuard]);
   if (!open && salida) setSalida(null);
-  if (!open && confirmarCaja) setConfirmarCaja(null);
+  if (!open && confirmarRecorte) setConfirmarRecorte(null);
   const { online, revisiones } = useRevisiones();
   const [errors, setErrors] = useState<RevisionFormErrors>({});
   const [message, setMessage] = useState("");
@@ -173,7 +173,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
     setAvisoFotos("");
     setAvisoEspera(false);
     setEditarRevisor(false);
-    setConfirmarCaja(null);
+    setConfirmarRecorte(null);
     setResultadosVistos(false);
   }
 
@@ -274,24 +274,40 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
   };
 
   const applyFieldChange = (name: keyof RevisionFormValues, value: string) => {
-    const nuevoLimite = revisionPhotoLimit(draft.mode, value);
-    const quitadas = name === "caja_fuerte" ? Math.max(0, photos.length - nuevoLimite) : 0;
+    const nextCaja = name === "caja_fuerte" ? value : values.caja_fuerte;
+    const nextCasita = name === "casita" ? value : values.casita;
+    const nuevoLimite = revisionPhotoLimit(draft.mode, nextCaja, photos.length, nextCasita);
+    const quitadas = name === "caja_fuerte" || name === "casita" ? Math.max(0, photos.length - nuevoLimite) : 0;
     update((previous) => {
-      const next = name !== "caja_fuerte"
+      const next = name !== "caja_fuerte" && name !== "casita"
         ? { ...previous, values: { ...previous.values, [name]: value } }
         : (() => {
-          const limit = revisionPhotoLimit(previous.mode, value);
-          for (const photo of previous.photos.slice(limit)) void discardUpload(photo.id);
-          return conEscaneo({
+          const caja = name === "caja_fuerte" ? value : previous.values.caja_fuerte;
+          const casita = name === "casita" ? value : previous.values.casita;
+          const limit = revisionPhotoLimit(previous.mode, caja, previous.photos.length, casita);
+          const trimmed = previous.photos.length > limit;
+          if (trimmed) {
+            for (const photo of previous.photos.slice(limit)) void discardUpload(photo.id);
+          }
+          const nextValues = name === "caja_fuerte"
+            ? { ...previous.values, caja_fuerte: value, room_move: value === "Room Move" ? previous.values.room_move : "" }
+            : { ...previous.values, casita: value };
+          const updatedDraft = {
             ...previous,
-            photos: previous.photos.slice(0, limit),
-            values: { ...previous.values, caja_fuerte: value, room_move: value === "Room Move" ? previous.values.room_move : "" },
-          });
+            photos: trimmed ? previous.photos.slice(0, limit) : previous.photos,
+            values: nextValues,
+          };
+          return trimmed || name === "caja_fuerte" ? conEscaneo(updatedDraft) : updatedDraft;
         })();
       draftRef.current = next;
       return next;
     });
-    setErrors((previous) => ({ ...previous, [name]: undefined, evidencias: name === "caja_fuerte" ? undefined : previous.evidencias, room_move: name === "caja_fuerte" ? undefined : previous.room_move }));
+    setErrors((previous) => ({
+      ...previous,
+      [name]: undefined,
+      evidencias: name === "caja_fuerte" || name === "casita" ? undefined : previous.evidencias,
+      room_move: name === "caja_fuerte" ? undefined : previous.room_move,
+    }));
     setMessage("");
     if (name === "caja_fuerte") {
       setScanError("");
@@ -300,18 +316,24 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
           ? "Esta opción no usa fotos; se quitaron las que habías agregado."
           : nuevoLimite === 1
             ? "Esta opción usa solo 1 foto; se quitaron las demás."
-            : `Esta opción usa hasta ${nuevoLimite} fotos; se quitaron ${quitadas}.`
+            : `Esta opción usa hasta ${nuevoLimite} fotos; se ${quitadas === 1 ? "quitó 1 foto" : `quitaron ${quitadas}`}.`
+        : "");
+    } else if (name === "casita") {
+      setAvisoFotos(quitadas > 0
+        ? `La casita ${Number(value)} usa hasta ${nuevoLimite} fotos; se ${quitadas === 1 ? "quitó 1 foto" : `quitaron ${quitadas}`}.`
         : "");
     }
   };
   const change = (name: keyof RevisionFormValues, value: string) => {
     if (recognition && !hayFotosEvidencia) return;
     if (recognition && name === "casita" && !values.caja_fuerte) return;
-    if (name === "caja_fuerte") {
-      const nuevoLimite = revisionPhotoLimit(draft.mode, value);
+    if (name === "caja_fuerte" || name === "casita") {
+      const nextCaja = name === "caja_fuerte" ? value : values.caja_fuerte;
+      const nextCasita = name === "casita" ? value : values.casita;
+      const nuevoLimite = revisionPhotoLimit(draft.mode, nextCaja, photos.length, nextCasita);
       const quitadas = Math.max(0, photos.length - nuevoLimite);
       if (quitadas > 0) {
-        setConfirmarCaja({ valor: value, quitadas, limite: nuevoLimite });
+        setConfirmarRecorte({ campo: name, valor: value, quitadas, limite: nuevoLimite });
         return;
       }
     }
@@ -327,7 +349,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
       target?.scrollIntoView({ block: "center", behavior: "instant" });
     });
   };
-  const photoLimit = revisionPhotoLimit(draft.mode, values.caja_fuerte, photos.length);
+  const photoLimit = revisionPhotoLimit(draft.mode, values.caja_fuerte, photos.length, values.casita);
   const canAddNextEvidence = photos.length < photoLimit;
   const continuarEnModoManual = () => {
     setScanError("");
@@ -356,7 +378,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
       }
       if (prepared.length) {
         const next = [...photos, ...prepared].slice(0, photoLimit);
-        update((previous) => ({ ...previous, photos: [...previous.photos, ...prepared].slice(0, revisionPhotoLimit(previous.mode, previous.values.caja_fuerte)) }));
+        update((previous) => ({ ...previous, photos: [...previous.photos, ...prepared].slice(0, revisionPhotoLimit(previous.mode, previous.values.caja_fuerte, previous.photos.length + prepared.length, previous.values.casita)) }));
         ensureBackgroundUploads(next);
         setErrors((previous) => ({ ...previous, evidencias: undefined }));
       }
@@ -395,7 +417,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
           return conEscaneo({
             ...previous,
             values: nextValues,
-            photos: [...previous.photos, photo].slice(0, revisionPhotoLimit(previous.mode, nextValues.caja_fuerte)),
+            photos: [...previous.photos, photo].slice(0, revisionPhotoLimit(previous.mode, nextValues.caja_fuerte, previous.photos.length + 1, nextValues.casita)),
           });
         });
       } catch (error) {
@@ -458,6 +480,9 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
       delete nextErrors.created_at;
     }
     if (recognition && !stamped.casita) {
+      if (photos.length <= revisionPhotoLimit(draft.mode, stamped.caja_fuerte, photos.length, "")) {
+        delete nextErrors.evidencias;
+      }
       for (const key of INVENTARIO_KEYS) delete nextErrors[key];
       delete nextErrors.camas_ordenadas;
     }
@@ -585,7 +610,7 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
             {!recognition && datosRevisionCard}
             {!completarDespues && recognition && <>
               <FormCard icon={<ScanSearch size={18} />} title="Fotos de evidencia">
-                <RecognitionScanCard photos={photos} previas={previasActivas} limit={photoLimit} scan={scan} status={photoStatus} marks={scanMarks} progreso={revelado.progreso}
+                <RecognitionScanCard photos={photos} previas={previasActivas} limit={photoLimit} casitaSelected={Boolean(values.casita)} scan={scan} status={photoStatus} marks={scanMarks} progreso={revelado.progreso}
                   error={scanNotice} disabled={busy} active={open} onPick={(files) => void addScanPhotos(files)} onRemove={removePhoto}
                   onRetry={falloEscaneo ? escaneo.reintentar : undefined} listoHint={listoHint}>
                   {(falloEscaneo || scanError) && (
@@ -648,31 +673,39 @@ export function RevisionFormScreen({ open, mode = "manual", reviewer, onClose, o
         </div>
       </form>
       <BottomSheet
-        open={Boolean(confirmarCaja)}
-        onClose={() => setConfirmarCaja(null)}
-        title={confirmarCaja ? `¿Cambiar a ${statusAppearance(confirmarCaja.valor).label}?` : "Cambiar caja fuerte"}
+        open={Boolean(confirmarRecorte)}
+        onClose={() => setConfirmarRecorte(null)}
+        title={
+          confirmarRecorte
+            ? confirmarRecorte.campo === "caja_fuerte"
+              ? `¿Cambiar a ${statusAppearance(confirmarRecorte.valor).label}?`
+              : `¿Cambiar a Casita ${Number(confirmarRecorte.valor)}?`
+            : "Cambiar opción"
+        }
       >
-        {confirmarCaja && (
+        {confirmarRecorte && (
           <>
             <p className="sheet-description">
-              {confirmarCaja.limite === 0
-                ? `Esta opción no usa fotos de evidencia. Si cambias, se ${confirmarCaja.quitadas === 1 ? "quitará la foto agregada" : `quitarán las ${confirmarCaja.quitadas} fotos agregadas`}.`
-                : `Esta opción usa solo ${confirmarCaja.limite} foto de evidencia. Si cambias, se ${confirmarCaja.quitadas === 1 ? "quitará 1 foto adicional" : `quitarán ${confirmarCaja.quitadas} fotos adicionales`}${recognition ? " y su escaneo" : ""}.`}
+              {confirmarRecorte.campo === "casita"
+                ? `Esta casita usa hasta ${confirmarRecorte.limite} fotos de evidencia. Si cambias, se ${confirmarRecorte.quitadas === 1 ? "quitará 1 foto adicional" : `quitarán ${confirmarRecorte.quitadas} fotos adicionales`}${recognition ? " y su escaneo" : ""}.`
+                : confirmarRecorte.limite === 0
+                  ? `Esta opción no usa fotos de evidencia. Si cambias, se ${confirmarRecorte.quitadas === 1 ? "quitará la foto agregada" : `quitarán las ${confirmarRecorte.quitadas} fotos agregadas`}.`
+                  : `Esta opción usa ${confirmarRecorte.limite === 1 ? "solo 1 foto" : `hasta ${confirmarRecorte.limite} fotos`} de evidencia. Si cambias, se ${confirmarRecorte.quitadas === 1 ? "quitará 1 foto adicional" : `quitarán ${confirmarRecorte.quitadas} fotos adicionales`}${recognition ? " y su escaneo" : ""}.`}
             </p>
             <div className="revision-exit-actions">
-              <button type="button" className="primary-button" onClick={() => setConfirmarCaja(null)}>
+              <button type="button" className="primary-button" onClick={() => setConfirmarRecorte(null)}>
                 Mantener fotos
               </button>
               <button
                 type="button"
                 className="text-action revision-exit-discard"
                 onClick={() => {
-                  const target = confirmarCaja.valor;
-                  setConfirmarCaja(null);
-                  applyFieldChange("caja_fuerte", target);
+                  const { campo, valor } = confirmarRecorte;
+                  setConfirmarRecorte(null);
+                  applyFieldChange(campo, valor);
                 }}
               >
-                {confirmarCaja.quitadas === 1 ? "Cambiar y quitar 1 foto" : `Cambiar y quitar ${confirmarCaja.quitadas} fotos`}
+                {confirmarRecorte.quitadas === 1 ? "Cambiar y quitar 1 foto" : `Cambiar y quitar ${confirmarRecorte.quitadas} fotos`}
               </button>
             </div>
           </>

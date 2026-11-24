@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Camera, ImageOff, ImagePlus, LoaderCircle, X } from "lucide-react";
-import { editRevisionEvidence, fetchRevisionEditor } from "@/app/actions/revisiones";
+import { editRevisionEvidence, fetchRevisionEvidenceEditor } from "@/app/actions/revisiones";
 import { LoginForm } from "@/components/auth/login-form";
 import { RevisionPhotoPreview } from "@/components/screens/revision-photo-preview";
 import { useRevisiones } from "@/components/screens/revisiones-provider";
@@ -185,7 +185,7 @@ export function RevisionEvidenceEditSheet({
       snapshotRef.current = snapshotEvidenceDraft(itemsRef.current);
     }
     let live = true;
-    void dedupeRequest(`editor:${revisionId}`, () => fetchRevisionEditor(revisionId))
+    void dedupeRequest(`evidence-editor:${revisionId}`, () => fetchRevisionEvidenceEditor(revisionId))
       .then((result) => {
         if (!live) return;
         if (!result.user && !result.error) {
@@ -216,8 +216,9 @@ export function RevisionEvidenceEditSheet({
   }, [attempt, open, revisionId, sessionKey]);
 
   const cajaFuerte = raw?.caja_fuerte ?? (selectedRevision?.id === revisionId ? selectedRevision.caja_fuerte : "");
-  const limit = evidencePhotoLimit(cajaFuerte === "—" ? "" : cajaFuerte ?? "");
-  const canAdd = canAddEvidenceDraft(items, cajaFuerte === "—" ? "" : cajaFuerte);
+  const casita = raw?.casita ?? (selectedRevision?.id === revisionId ? selectedRevision.casita : "");
+  const limit = evidencePhotoLimit(cajaFuerte === "—" ? "" : cajaFuerte ?? "", casita);
+  const canAdd = canAddEvidenceDraft(items, cajaFuerte === "—" ? "" : cajaFuerte, casita);
   const expected: EvidenceSlots | null = raw ? evidenceSlotsFromRow(raw) : null;
 
   const addPhotos = async (files: FileList | null) => {
@@ -246,6 +247,7 @@ export function RevisionEvidenceEditSheet({
           itemsRef.current,
           prepared,
           cajaFuerte === "—" ? "" : cajaFuerte,
+          casita,
         );
         updateItems(result.items);
         ensureBackgroundUploads(result.added.map((item) => item.photo));

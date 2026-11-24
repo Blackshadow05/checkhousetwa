@@ -38,7 +38,19 @@ const NOTA_REVISION_COLUMNS = "id, revision_id, nota, usuario, imagen, hora, cre
 
 export async function saveRevision(client: Client, row: RevisionCasitaInsert, completa: string | null = null): Promise<SaveResult> {
   const result = await client.rpc("guardar_revision_casita", { p_revision: row as Json, p_completa: completa });
-  if (!result.error && result.data) return { row: mapInicioRevision(result.data), error: null };
+  if (!result.error && result.data) {
+    if (row.evidencia_04 && !result.data.evidencia_04) {
+      const patch = await client
+        .from(REVISIONES_TABLE)
+        .update({ evidencia_04: row.evidencia_04 })
+        .eq("id", result.data.id)
+        .select(INICIO_REVISION_COLUMNS)
+        .single();
+      if (!patch.error && patch.data) return { row: mapInicioRevision(patch.data), error: null };
+      return { row: null, error: "No pudimos guardar la cuarta evidencia. Conservamos tu borrador; vuelve a intentarlo." };
+    }
+    return { row: mapInicioRevision(result.data), error: null };
+  }
   if (result.error?.code === "P0001" && /revision_ya_completada/i.test(result.error.message)) {
     return { row: null, error: "Otra persona ya completó esta revisión. Puedes descartar este intento." };
   }
@@ -185,7 +197,7 @@ export async function editRevisionEvidencias(
   input: { id: string; esperado: EvidenceSlots; fotos: string[]; editor: string },
 ): Promise<SaveResult> {
   // evidencias no están en editar_campo_revision_casita. Solo se escriben estas
-  // tres columnas ya existentes; el resto de la fila no se toca.
+  // columnas de evidencia; el resto de la fila no se toca.
   if (!Array.isArray(input.fotos)) {
     return { row: null, error: "Revisa los datos e inténtalo de nuevo." };
   }
@@ -203,7 +215,11 @@ export async function editRevisionEvidencias(
 
   const current = evidenceSlotsFromRow(actual.data);
   const expected = evidenceSlotsFromRow(input.esperado);
-  const countError = validateRevisionEvidencePhotos(actual.data.caja_fuerte, evidencePathsFromSlots(next));
+  const countError = validateRevisionEvidencePhotos(
+    actual.data.caja_fuerte,
+    evidencePathsFromSlots(next),
+    actual.data.casita,
+  );
   if (countError) return { row: null, error: countError };
 
   const decision = revisionEvidenceEditDecision(current, expected, next);
@@ -214,6 +230,7 @@ export async function editRevisionEvidencias(
     evidencia_01: next.evidencia_01,
     evidencia_02: next.evidencia_02,
     evidencia_03: next.evidencia_03,
+    evidencia_04: next.evidencia_04,
   };
   let query = client.from(REVISIONES_TABLE).update(payload).eq("id", input.id);
   for (const field of EVIDENCE_FIELDS) {
@@ -259,7 +276,9 @@ export async function editRevisionCajaFuerte(
   const persistedCaja = persistRevisionFieldValue("caja_fuerte", input.nuevo);
   const currentSlots = evidenceSlotsFromRow(actual.data);
   const hasCurrentPhotos = evidencePathsFromSlots(currentSlots).length > 0;
-  const clearEvidence = Boolean(input.limpiarEvidencias) && evidencePhotoLimit(persistedCaja ?? "") === 0;
+  const clearEvidence =
+    Boolean(input.limpiarEvidencias) &&
+    evidencePhotoLimit(persistedCaja ?? "", actual.data.casita) === 0;
 
   const depError = validateRevisionFieldDependencies("caja_fuerte", persistedCaja, actual.data, {
     clearEvidence,
@@ -291,6 +310,7 @@ export async function editRevisionCajaFuerte(
     payload.evidencia_01 = null;
     payload.evidencia_02 = null;
     payload.evidencia_03 = null;
+    payload.evidencia_04 = null;
   }
 
   let query = client.from(REVISIONES_TABLE).update(payload).eq("id", input.id);

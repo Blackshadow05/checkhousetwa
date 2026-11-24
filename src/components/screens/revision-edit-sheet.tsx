@@ -138,7 +138,7 @@ export function RevisionEditSheet({
 
   const expected = raw && activeField ? raw[activeField] ?? null : null;
   const currentPhotoCount = raw ? revisionEvidenceCount(raw) : 0;
-  const nextPhotoLimit = activeField === "caja_fuerte" ? evidencePhotoLimit(value) : 0;
+  const nextPhotoLimit = activeField === "caja_fuerte" ? evidencePhotoLimit(value, raw?.casita) : 0;
   const willClearEvidence = activeField === "caja_fuerte" && nextPhotoLimit === 0 && currentPhotoCount > 0;
   const needsPhotosAfterSave = activeField === "caja_fuerte" && nextPhotoLimit > 0 && currentPhotoCount === 0;
   const showRoomMoveInput = activeField === "caja_fuerte" && value === "Room Move";
