@@ -2602,7 +2602,7 @@ button.detail-tile:active {
   position: fixed;
   left: max(14px, env(safe-area-inset-left));
   right: max(14px, env(safe-area-inset-right));
-  top: calc(12px + env(safe-area-inset-top));
+  bottom: calc(83px + env(safe-area-inset-bottom));
   max-width: 490px;
   margin: 0 auto;
   display: flex;
@@ -2654,7 +2654,7 @@ button.detail-tile:active {
   color: inherit;
 }
 @keyframes update-toast-in {
-  from { opacity: 0; transform: translateY(-24px) scale(.96); }
+  from { opacity: 0; transform: translateY(24px) scale(.96); }
   to { opacity: 1; transform: none; }
 }
 @keyframes update-toast-spin {
